@@ -68,7 +68,7 @@ fun TacticalMapScreen(
                     color = NeonCyan
                 )
                 Text(
-                    text = "TURN \${gameState.turn}",
+                    text = "TURN ${gameState.turn}",
                     style = MaterialTheme.typography.headlineMedium
                 )
                 Text(

@@ -3,22 +3,29 @@ package com.novaempire.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import com.novaempire.app.ui.screens.FactionSelectionScreen
-import com.novaempire.app.ui.screens.MainMenuScreen
-import com.novaempire.app.ui.screens.TacticalMapScreen
+import com.novaempire.app.ui.screens.*
 import com.novaempire.app.ui.theme.NovaEmpireTheme
 import com.novaempire.core.engine.GameEngine
 import com.novaempire.core.engine.GameIntent
 
-enum class Screen {
+enum class AppScreen {
     MAIN_MENU,
     FACTION_SELECTION,
-    TACTICAL_MAP
+    GAME
+}
+
+enum class GameTab {
+    MAP,
+    SYSTEM,
+    TECH,
+    INTEL
 }
 
 class MainActivity : ComponentActivity() {
@@ -32,29 +39,28 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    var currentScreen by remember { mutableStateOf(Screen.MAIN_MENU) }
+                    var currentScreen by remember { mutableStateOf(AppScreen.MAIN_MENU) }
                     var gameState by remember { mutableStateOf(gameEngine.state) }
 
                     when (currentScreen) {
-                        Screen.MAIN_MENU -> {
+                        AppScreen.MAIN_MENU -> {
                             MainMenuScreen(
-                                onNewGameClick = { currentScreen = Screen.FACTION_SELECTION },
+                                onNewGameClick = { currentScreen = AppScreen.FACTION_SELECTION },
                                 onSettingsClick = {}
                             )
                         }
-                        Screen.FACTION_SELECTION -> {
+                        AppScreen.FACTION_SELECTION -> {
                             FactionSelectionScreen(
-                                onStartGameClick = { faction ->
-                                    // Initialize game with faction
-                                    currentScreen = Screen.TACTICAL_MAP
+                                onStartGameClick = { _ ->
+                                    currentScreen = AppScreen.GAME
                                 },
-                                onBackClick = { currentScreen = Screen.MAIN_MENU }
+                                onBackClick = { currentScreen = AppScreen.MAIN_MENU }
                             )
                         }
-                        Screen.TACTICAL_MAP -> {
-                            TacticalMapScreen(
+                        AppScreen.GAME -> {
+                            GameContainer(
                                 gameState = gameState,
-                                onEndTurnClick = {
+                                onEndTurn = {
                                     gameEngine.processIntent(GameIntent.EndTurn)
                                     gameState = gameEngine.state
                                 }
@@ -62,6 +68,53 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun GameContainer(
+    gameState: com.novaempire.core.domain.state.GameState,
+    onEndTurn: () -> Unit
+) {
+    var currentTab by remember { mutableStateOf(GameTab.MAP) }
+
+    Scaffold(
+        bottomBar = {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.primary
+            ) {
+                NavigationBarItem(
+                    selected = currentTab == GameTab.MAP,
+                    onClick = { currentTab = GameTab.MAP },
+                    icon = { Text("MAP") }
+                )
+                NavigationBarItem(
+                    selected = currentTab == GameTab.SYSTEM,
+                    onClick = { currentTab = GameTab.SYSTEM },
+                    icon = { Text("SYSTEM") }
+                )
+                NavigationBarItem(
+                    selected = currentTab == GameTab.TECH,
+                    onClick = { currentTab = GameTab.TECH },
+                    icon = { Text("TECH") }
+                )
+                NavigationBarItem(
+                    selected = currentTab == GameTab.INTEL,
+                    onClick = { currentTab = GameTab.INTEL },
+                    icon = { Text("INTEL") }
+                )
+            }
+        }
+    ) { paddingValues ->
+        Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+            when (currentTab) {
+                GameTab.MAP -> TacticalMapScreen(gameState = gameState, onEndTurnClick = onEndTurn)
+                GameTab.SYSTEM -> StarSystemManagementScreen()
+                GameTab.TECH -> TechTreeScreen()
+                GameTab.INTEL -> DiplomacyIntelScreen()
             }
         }
     }
