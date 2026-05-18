@@ -13,8 +13,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.input.pointer.pointerInput
@@ -92,7 +95,7 @@ fun TacticalMapScreen(
                         dragStartHex = null
                         ghostPath = null
                     },
-                    onDrag = { change, dragAmount ->
+                    onDrag = { change, _ ->
                         val start = dragStartHex
                         if (start != null) {
                             val coord = pixelToHex(change.position.x, change.position.y, size.width / 2f, size.height / 2f)
@@ -122,36 +125,47 @@ fun TacticalMapScreen(
 
                 if (isExplored) {
                     val baseColor = when (tile.terrain) {
-                        TerrainType.PLANET -> Color.Green
-                        TerrainType.ASTEROIDS -> Color.Gray
-                        TerrainType.NEBULA -> Color.Magenta
+                        TerrainType.PLANET -> NeonGreen
+                        TerrainType.ASTEROIDS -> NeonOrange
+                        TerrainType.NEBULA -> Color(0xFFB026FF)
                         TerrainType.BLACK_HOLE -> Color.Black
-                        else -> VoidBlack
+                        else -> NeonCyan
                     }
 
-                    // Apply Fog of War darkening
-                    val terrainColor = if (isVisible) {
-                        baseColor.copy(alpha = 0.3f)
-                    } else {
-                        baseColor.copy(alpha = 0.1f) // Dimmed
+                    // Apply Fog of War darkening and holographic styling
+                    val alphaMod = if (isVisible) 0.15f else 0.05f
+
+                    // Base Hex Gradient
+                    val bgBrush = Brush.radialGradient(
+                        colors = listOf(baseColor.copy(alpha = alphaMod), Color.Transparent),
+                        center = Offset(x, y),
+                        radius = hexRadius
+                    )
+                    drawHexagonPath(x, y, hexRadius, brush = bgBrush, fill = true)
+
+                    // Holographic scanlines (simple pattern on visible hexes)
+                    if (isVisible && tile.terrain != TerrainType.EMPTY) {
+                         drawHexagonPath(x, y, hexRadius, color = baseColor.copy(alpha=0.05f), fill = true)
                     }
 
-                    drawHexagon(x, y, hexRadius - 2f, terrainColor, fill = true)
+                    // Inner Glow Stroke
+                    val strokeColor = if (tile.coord == selectedHex) NeonCyan else baseColor.copy(alpha = if (isVisible) 0.5f else 0.2f)
+                    val strokeWidth = if (tile.coord == selectedHex) 4f else 1.5f
+                    drawHexagonPath(x, y, hexRadius - strokeWidth/2, color = strokeColor, fill = false, strokeWidth = strokeWidth)
 
-                    val strokeColor = if (tile.coord == selectedHex) NeonCyan else Color.DarkGray.copy(alpha = if (isVisible) 1f else 0.5f)
-                    val strokeWidth = if (tile.coord == selectedHex) 4f else 1f
-                    drawHexagon(x, y, hexRadius, strokeColor, fill = false, strokeWidth)
-
-                    if (tile.terrain == TerrainType.PLANET) {
-                        drawCircle(
-                            color = Color.White.copy(alpha = if (isVisible) 0.5f else 0.2f),
-                            radius = 15f,
-                            center = Offset(x, y)
-                        )
+                    // Specialized Terrain Drawing
+                    if (isVisible) {
+                        when (tile.terrain) {
+                            TerrainType.PLANET -> drawPlanet(x, y, hexRadius)
+                            TerrainType.ASTEROIDS -> drawAsteroids(x, y, hexRadius)
+                            TerrainType.NEBULA -> drawNebula(x, y, hexRadius)
+                            else -> {}
+                        }
                     }
                 } else {
-                    // Unexplored
-                    drawHexagon(x, y, hexRadius, VoidBlack, fill = true)
+                    // Unexplored Void
+                    drawHexagonPath(x, y, hexRadius, color = VoidBlack, fill = true)
+                    drawHexagonPath(x, y, hexRadius, color = Color(0xFF1A1D24), fill = false, strokeWidth = 1f)
                 }
             }
 
@@ -167,7 +181,7 @@ fun TacticalMapScreen(
                         val py = centerY + hexRadius * (3f / 2 * coord.r)
                         val currentPoint = Offset(px, py)
                         drawLine(
-                            color = NeonCyan.copy(alpha = 0.6f),
+                            color = NeonCyan.copy(alpha = 0.8f),
                             start = prevPoint,
                             end = currentPoint,
                             strokeWidth = 6f
@@ -177,7 +191,7 @@ fun TacticalMapScreen(
                     val dest = path.last()
                     val dx = centerX + hexRadius * (sqrt(3f) * dest.q + sqrt(3f) / 2 * dest.r)
                     val dy = centerY + hexRadius * (3f / 2 * dest.r)
-                    drawHexagon(dx, dy, hexRadius, NeonCyan.copy(alpha = 0.8f), fill = true)
+                    drawHexagonPath(dx, dy, hexRadius, color = NeonCyan.copy(alpha = 0.3f), fill = true)
                 }
             }
 
@@ -188,17 +202,28 @@ fun TacticalMapScreen(
 
                 val unitColor = when(unit.faction) {
                     Faction.DOMINION -> NeonRed
-                    Faction.TRADERS -> NeonOrange
+                    Faction.TRADERS -> NeonGold
                     Faction.SYNTH -> NeonCyan
                     else -> Color.White
                 }
 
+                // Holographic ship indicator
+                val alpha = if (unit.hasMoved) 0.5f else 1.0f
                 val path = Path()
-                path.moveTo(x, y - 20f)
-                path.lineTo(x + 15f, y + 15f)
-                path.lineTo(x - 15f, y + 15f)
+                path.moveTo(x, y - 25f)
+                path.lineTo(x + 18f, y + 15f)
+                path.lineTo(x, y + 5f) // indented engine area
+                path.lineTo(x - 18f, y + 15f)
                 path.close()
-                drawPath(path, if (unit.hasMoved) unitColor.copy(alpha=0.5f) else unitColor, style = Fill)
+
+                // Ship Glow
+                val glowBrush = Brush.radialGradient(
+                    colors = listOf(unitColor.copy(alpha = alpha * 0.8f), Color.Transparent),
+                    center = Offset(x, y),
+                    radius = 30f
+                )
+                drawPath(path, glowBrush, style = Fill)
+                drawPath(path, unitColor.copy(alpha = alpha), style = Stroke(width = 3f))
             }
         }
 
@@ -282,13 +307,81 @@ fun TacticalMapScreen(
         )
     }
 }
-//... (drawHexagon and hexRound functions remain below in the file, keeping them as they are in the bash script context would require full file write, doing full write)
 
-fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHexagon(
+// Custom specialized terrain drawing functions
+
+fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float) {
+    // Planet core
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(NeonGreen.copy(alpha = 0.8f), NeonGreen.copy(alpha = 0.2f), Color.Transparent),
+            center = Offset(x, y),
+            radius = hexRadius * 0.4f
+        ),
+        radius = hexRadius * 0.4f,
+        center = Offset(x, y)
+    )
+    // Orbital rings
+    drawOval(
+        color = NeonCyan.copy(alpha = 0.6f),
+        topLeft = Offset(x - hexRadius * 0.6f, y - hexRadius * 0.2f),
+        size = Size(hexRadius * 1.2f, hexRadius * 0.4f),
+        style = Stroke(width = 2f)
+    )
+}
+
+fun DrawScope.drawAsteroids(x: Float, y: Float, hexRadius: Float) {
+    // Draw a cluster of small technical geometric shapes
+    val offsets = listOf(
+        Offset(-15f, -20f), Offset(10f, -25f), Offset(20f, 10f),
+        Offset(-25f, 15f), Offset(0f, 25f), Offset(-5f, 0f)
+    )
+    val sizes = listOf(8f, 12f, 10f, 14f, 6f, 16f)
+
+    offsets.forEachIndexed { index, offset ->
+        val ax = x + offset.x
+        val ay = y + offset.y
+        val r = sizes[index]
+
+        val path = Path()
+        path.moveTo(ax, ay - r)
+        path.lineTo(ax + r, ay)
+        path.lineTo(ax, ay + r)
+        path.lineTo(ax - r, ay)
+        path.close()
+
+        drawPath(path, color = NeonOrange.copy(alpha = 0.6f), style = Stroke(width = 1.5f))
+    }
+}
+
+fun DrawScope.drawNebula(x: Float, y: Float, hexRadius: Float) {
+    // Draw swirling translucent gas clouds
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(Color(0xFFB026FF).copy(alpha = 0.5f), Color.Transparent),
+            center = Offset(x - 10f, y - 10f),
+            radius = hexRadius * 0.7f
+        ),
+        radius = hexRadius * 0.7f,
+        center = Offset(x - 10f, y - 10f)
+    )
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(NeonCyan.copy(alpha = 0.3f), Color.Transparent),
+            center = Offset(x + 15f, y + 10f),
+            radius = hexRadius * 0.6f
+        ),
+        radius = hexRadius * 0.6f,
+        center = Offset(x + 15f, y + 10f)
+    )
+}
+
+fun DrawScope.drawHexagonPath(
     centerX: Float,
     centerY: Float,
     radius: Float,
-    color: Color,
+    color: Color = Color.Unspecified,
+    brush: Brush? = null,
     fill: Boolean = false,
     strokeWidth: Float = 2f
 ) {
@@ -296,20 +389,22 @@ fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHexagon(
     for (i in 0..5) {
         val angleDeg = 60f * i - 30f
         val angleRad = Math.PI / 180f * angleDeg
-        val x = centerX + radius * cos(angleRad).toFloat()
-        val y = centerY + radius * sin(angleRad).toFloat()
+        val px = centerX + radius * cos(angleRad).toFloat()
+        val py = centerY + radius * sin(angleRad).toFloat()
         if (i == 0) {
-            path.moveTo(x, y)
+            path.moveTo(px, py)
         } else {
-            path.lineTo(x, y)
+            path.lineTo(px, py)
         }
     }
     path.close()
 
     if (fill) {
-        drawPath(path = path, color = color, style = Fill)
+        if (brush != null) drawPath(path = path, brush = brush)
+        else drawPath(path = path, color = color, style = Fill)
     } else {
-        drawPath(path = path, color = color, style = Stroke(width = strokeWidth))
+        if (brush != null) drawPath(path = path, brush = brush, style = Stroke(width = strokeWidth))
+        else drawPath(path = path, color = color, style = Stroke(width = strokeWidth))
     }
 }
 
