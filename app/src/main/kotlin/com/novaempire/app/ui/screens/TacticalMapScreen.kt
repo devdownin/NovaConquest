@@ -125,13 +125,17 @@ fun TacticalMapScreen(
                             val targetCoord = path.last()
                             val targetUnit = gameState.units[targetCoord]
 
+                            // Ensure we have a valid action
                             if (targetUnit != null && targetUnit.faction != gameState.activeFaction) {
-                                // Initiate Combat Preview instead of moving
+                                // Initiate Combat Preview
                                 combatPreviewData = Pair(start, targetCoord)
-                            } else {
+                            } else if (targetUnit == null) {
+                                // Execute movement
                                 onMoveUnit(start, targetCoord)
                             }
                         }
+
+                        // Only clear drag states, DO NOT clear combatPreviewData here!
                         dragStartHex = null
                         ghostPath = null
                     },
@@ -147,9 +151,11 @@ fun TacticalMapScreen(
                                 val gridMap = GameGridMap(gameState)
                                 // If hovering over enemy unit, pretend it's passable just to draw the attack path
                                 val originalUnit = gameState.units[coord]
+                                val tile = gameState.map.getTileAt(coord)
                                 val path = if (originalUnit != null && originalUnit.faction != gameState.activeFaction) {
-                                    // Custom pathfinder override or direct check since attack range is 1 usually
                                     if (start.distanceTo(coord) == 1) listOf(coord) else null
+                                } else if (tile != null && !tile.terrain.isPassable) {
+                                    null // Prevent drawing path to an impassable terrain directly
                                 } else {
                                     HexPathfinder.findPath(start, coord, gridMap, maxCost = 4)
                                 }
