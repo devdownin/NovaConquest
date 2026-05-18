@@ -18,9 +18,18 @@ import com.novaempire.app.ui.theme.NeonCyan
 import com.novaempire.app.ui.theme.NeonGold
 import com.novaempire.app.ui.theme.NeonRed
 import com.novaempire.app.ui.theme.TextSecondary
+import com.novaempire.core.domain.models.DiplomaticRelation
+import com.novaempire.core.domain.models.Faction
+import com.novaempire.core.domain.state.GameState
 
 @Composable
-fun DiplomacyIntelScreen() {
+fun DiplomacyIntelScreen(
+    gameState: GameState,
+    onChangeRelation: (Faction, DiplomaticRelation) -> Unit
+) {
+    val playerState = gameState.playerStates[gameState.activeFaction]
+    val relations = playerState?.relations ?: emptyMap()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -28,7 +37,6 @@ fun DiplomacyIntelScreen() {
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -39,7 +47,7 @@ fun DiplomacyIntelScreen() {
                 style = MaterialTheme.typography.headlineLarge
             )
             Text(
-                text = "TURN 42",
+                text = "TURN \${gameState.turn}",
                 style = MaterialTheme.typography.headlineMedium,
                 color = TextSecondary
             )
@@ -47,30 +55,35 @@ fun DiplomacyIntelScreen() {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Factions List
         Text(
             text = "KNOWN FACTIONS",
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        FactionIntelCard(
-            name = "Traders",
-            status = "Neutral",
-            accentColor = NeonGold,
-            intel = "FLEET STRENGTH: WEAK\\nCAPITAL: SERENITY STATION"
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        FactionIntelCard(
-            name = "Xylar",
-            status = "Hostile",
-            accentColor = NeonCyan,
-            intel = "FLEET STRENGTH: UNKNOWN\\nCAPITAL: CRYSTAL SPIRE"
-        )
+        val otherFactions = Faction.values().filter { it != gameState.activeFaction }
+
+        otherFactions.forEach { faction ->
+            val relation = relations[faction] ?: DiplomaticRelation.NEUTRAL
+            val accentColor = when (relation) {
+                DiplomaticRelation.ALLIANCE -> NeonCyan
+                DiplomaticRelation.WAR -> NeonRed
+                DiplomaticRelation.NEUTRAL -> NeonGold
+            }
+
+            FactionIntelCard(
+                name = faction.name,
+                status = relation.name,
+                accentColor = accentColor,
+                intel = "FLEET STRENGTH: UNKNOWN\\nCAPITAL: UNKNOWN",
+                onProposeAlliance = { onChangeRelation(faction, DiplomaticRelation.ALLIANCE) },
+                onDeclareWar = { onChangeRelation(faction, DiplomaticRelation.WAR) }
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Scoreboard
         Text(
             text = "GALACTIC SCOREBOARD",
             style = MaterialTheme.typography.headlineMedium,
@@ -83,16 +96,25 @@ fun DiplomacyIntelScreen() {
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                ScoreRow(rank = 1, name = "DOMINION", score = 450, color = NeonRed)
-                ScoreRow(rank = 2, name = "SYNTH", score = 320, color = NeonCyan)
-                ScoreRow(rank = 3, name = "TRADERS", score = 210, color = NeonGold)
+                val sortedPlayers = gameState.playerStates.values.sortedByDescending { it.credits }
+                sortedPlayers.forEachIndexed { index, player ->
+                    val color = if (player.faction == gameState.activeFaction) NeonCyan else TextSecondary
+                    ScoreRow(rank = index + 1, name = player.faction.name, score = player.credits, color = color)
+                }
             }
         }
     }
 }
 
 @Composable
-fun FactionIntelCard(name: String, status: String, accentColor: androidx.compose.ui.graphics.Color, intel: String) {
+fun FactionIntelCard(
+    name: String,
+    status: String,
+    accentColor: androidx.compose.ui.graphics.Color,
+    intel: String,
+    onProposeAlliance: () -> Unit,
+    onDeclareWar: () -> Unit
+) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
@@ -111,7 +133,7 @@ fun FactionIntelCard(name: String, status: String, accentColor: androidx.compose
                     color = accentColor
                 )
                 Text(
-                    text = "STATUS: ${status.uppercase()}",
+                    text = "STATUS: \${status.uppercase()}",
                     style = MaterialTheme.typography.labelLarge,
                     color = accentColor
                 )
@@ -124,8 +146,12 @@ fun FactionIntelCard(name: String, status: String, accentColor: androidx.compose
             )
             Spacer(modifier = Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                IndustrialButton(text = "PROPOSE ALLIANCE", onClick = { }, modifier = Modifier.weight(1f))
-                IndustrialButton(text = "DECLARE WAR", onClick = { }, color = NeonRed, modifier = Modifier.weight(1f))
+                if (status != "ALLIANCE") {
+                    IndustrialButton(text = "PROPOSE ALLIANCE", onClick = onProposeAlliance, modifier = Modifier.weight(1f))
+                }
+                if (status != "WAR") {
+                    IndustrialButton(text = "DECLARE WAR", onClick = onDeclareWar, color = NeonRed, modifier = Modifier.weight(1f))
+                }
             }
         }
     }
@@ -139,7 +165,7 @@ fun ScoreRow(rank: Int, name: String, score: Int, color: androidx.compose.ui.gra
             .padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(text = "$rank. $name", style = MaterialTheme.typography.bodyLarge, color = color)
+        Text(text = "\$rank. \$name", style = MaterialTheme.typography.bodyLarge, color = color)
         Text(text = score.toString(), style = MaterialTheme.typography.bodyLarge)
     }
 }

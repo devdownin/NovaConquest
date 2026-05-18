@@ -22,6 +22,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.core.*
+import kotlinx.coroutines.delay
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.theme.*
 import com.novaempire.core.domain.models.Faction
@@ -40,14 +42,43 @@ fun TacticalMapScreen(
     gameState: GameState,
     onEndTurnClick: () -> Unit,
     onMoveUnit: (from: HexCoord, to: HexCoord) -> Unit,
-    onAttackUnit: (from: HexCoord, to: HexCoord) -> Unit
+    onAttackUnit: (from: HexCoord, to: HexCoord) -> Unit,
+    onOpenAcademy: () -> Unit
 ) {
     var selectedHex by remember { mutableStateOf<HexCoord?>(null) }
     var ghostPath by remember { mutableStateOf<List<HexCoord>?>(null) }
     var dragStartHex by remember { mutableStateOf<HexCoord?>(null) }
 
-    // Combat preview state
     var combatPreviewData by remember { mutableStateOf<Pair<HexCoord, HexCoord>?>(null) }
+
+    // Animation state
+    var activeCombatAnim by remember { mutableStateOf<com.novaempire.core.domain.state.CombatEvent?>(null) }
+    val laserProgress = remember { Animatable(0f) }
+    val explosionScale = remember { Animatable(0f) }
+
+    LaunchedEffect(gameState.lastCombatEvent) {
+        if (gameState.lastCombatEvent != null && gameState.lastCombatEvent != activeCombatAnim) {
+            activeCombatAnim = gameState.lastCombatEvent
+            // Reset
+            laserProgress.snapTo(0f)
+            explosionScale.snapTo(0f)
+
+            // Animate laser
+            laserProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 300, easing = LinearEasing)
+            )
+
+            // Animate explosion
+            explosionScale.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
+            )
+
+            delay(200)
+            activeCombatAnim = null
+        }
+    }
 
     val hexRadius = 80f
 
@@ -217,8 +248,12 @@ fun TacticalMapScreen(
 
             // Draw Units
             gameState.units.values.filter { visibleHexes.contains(it.position) }.forEach { unit ->
-                val x = centerX + hexRadius * (sqrt(3f) * unit.position.q + sqrt(3f) / 2 * unit.position.r)
-                val y = centerY + hexRadius * (3f / 2 * unit.position.r)
+                val x = centerX + hexRadius * (sqrt(3f) * unit.position.q.toFloat() + sqrt(3f) / 2 * unit.position.r.toFloat())
+                val y = centerY + hexRadius * (3f / 2 * unit.position.r.toFloat())
+
+                // Hide unit if it was just destroyed and explosion is happening
+                val isDestroyedTarget = activeCombatAnim?.defenderCoord == unit.position && activeCombatAnim?.targetDestroyed == true
+                if (isDestroyedTarget && explosionScale.value > 0.5f) return@forEach
 
                 val unitColor = when(unit.faction) {
                     Faction.DOMINION -> NeonRed
@@ -242,6 +277,38 @@ fun TacticalMapScreen(
                 )
                 drawPath(path, glowBrush, style = Fill)
                 drawPath(path, unitColor.copy(alpha = alpha), style = Stroke(width = 3f))
+            }
+
+            // Draw Combat Animations
+            activeCombatAnim?.let { combat ->
+                val ax = centerX + hexRadius * (sqrt(3f) * combat.attackerCoord.q.toFloat() + sqrt(3f) / 2 * combat.attackerCoord.r.toFloat())
+                val ay = centerY + hexRadius * (3f / 2 * combat.attackerCoord.r.toFloat())
+
+                val dx = centerX + hexRadius * (sqrt(3f) * combat.defenderCoord.q.toFloat() + sqrt(3f) / 2 * combat.defenderCoord.r.toFloat())
+                val dy = centerY + hexRadius * (3f / 2 * combat.defenderCoord.r.toFloat())
+
+                if (laserProgress.value > 0f && laserProgress.value < 1f) {
+                    val currentEx = ax + (dx - ax) * laserProgress.value
+                    val currentEy = ay + (dy - ay) * laserProgress.value
+                    drawLine(
+                        color = NeonRed,
+                        start = Offset(ax, ay),
+                        end = Offset(currentEx, currentEy),
+                        strokeWidth = 8f
+                    )
+                }
+
+                if (explosionScale.value > 0f) {
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(NeonOrange.copy(alpha = 1f - explosionScale.value), Color.Transparent),
+                            center = Offset(dx, dy),
+                            radius = hexRadius * explosionScale.value
+                        ),
+                        radius = hexRadius * explosionScale.value,
+                        center = Offset(dx, dy)
+                    )
+                }
             }
         }
 
@@ -313,16 +380,25 @@ fun TacticalMapScreen(
             }
         }
 
-        // Bottom Right End Turn
-        IndustrialButton(
-            text = "END TURN",
-            onClick = onEndTurnClick,
+        // Bottom Right Actions
+        Column(
             modifier = Modifier
                 .width(150.dp)
                 .padding(bottom = 100.dp, end = 16.dp)
                 .align(Alignment.BottomEnd),
-            color = NeonOrange
-        )
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            IndustrialButton(
+                text = "ACADEMY",
+                onClick = onOpenAcademy,
+                color = NeonCyan
+            )
+            IndustrialButton(
+                text = "END TURN",
+                onClick = onEndTurnClick,
+                color = NeonOrange
+            )
+        }
 
         // Combat Preview Overlay
         combatPreviewData?.let { (attackerCoord, defenderCoord) ->

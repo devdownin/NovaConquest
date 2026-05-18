@@ -160,7 +160,6 @@ class GameEngine {
                 val spawnCenter = intent.location ?: playerState.capitalCoord ?: return state
 
                 if (playerState.credits >= cost) {
-                    // Find a free hex to spawn (center, or adjacent)
                     val gridMap = GameGridMap(state)
                     val spawnCandidates = listOf(spawnCenter) + gridMap.getNeighbors(spawnCenter)
                     val spawnHex = spawnCandidates.firstOrNull { state.units[it] == null && gridMap.isPassable(it) }
@@ -175,7 +174,7 @@ class GameEngine {
                             faction = state.activeFaction,
                             position = spawnHex,
                             currentHp = intent.unitType.maxHp,
-                            hasMoved = true, // Cannot move on the turn it is built
+                            hasMoved = true,
                             hasAttacked = true
                         )
                         val updatedUnits = state.units.toMutableMap()
@@ -185,6 +184,39 @@ class GameEngine {
                         updateVision(nextState)
                     } else state
                 } else state
+            }
+            is GameIntent.RecruitHero -> {
+                val playerState = state.playerStates[state.activeFaction] ?: return state
+                val hero = com.novaempire.core.domain.models.HeroRegistry.getHero(intent.heroId) ?: return state
+
+                if (playerState.credits >= hero.cost && !playerState.recruitedHeroes.contains(hero.id)) {
+                    val newPlayerState = playerState.copy(
+                        credits = playerState.credits - hero.cost,
+                        recruitedHeroes = playerState.recruitedHeroes + hero.id
+                    )
+                    val newPlayerStates = state.playerStates.toMutableMap()
+                    newPlayerStates[state.activeFaction] = newPlayerState
+                    state.copy(playerStates = newPlayerStates)
+                } else state
+            }
+            is GameIntent.ChangeRelation -> {
+                val playerState = state.playerStates[state.activeFaction] ?: return state
+                val newRelations = playerState.relations.toMutableMap()
+                newRelations[intent.targetFaction] = intent.newRelation
+
+                val newPlayerState = playerState.copy(relations = newRelations)
+                val newPlayerStates = state.playerStates.toMutableMap()
+                newPlayerStates[state.activeFaction] = newPlayerState
+
+                // Also update the target's relation to us for symmetry
+                val targetState = newPlayerStates[intent.targetFaction]
+                if (targetState != null) {
+                    val targetRelations = targetState.relations.toMutableMap()
+                    targetRelations[state.activeFaction] = intent.newRelation
+                    newPlayerStates[intent.targetFaction] = targetState.copy(relations = targetRelations)
+                }
+
+                state.copy(playerStates = newPlayerStates)
             }
         }
     }
@@ -232,4 +264,6 @@ sealed class GameIntent {
     data class AttackUnit(val attacker: HexCoord, val defender: HexCoord) : GameIntent()
     data class ResearchTech(val techId: String) : GameIntent()
     data class BuildUnit(val unitType: UnitType, val location: HexCoord? = null) : GameIntent()
+    data class RecruitHero(val heroId: String) : GameIntent()
+    data class ChangeRelation(val targetFaction: Faction, val newRelation: com.novaempire.core.domain.models.DiplomaticRelation) : GameIntent()
 }

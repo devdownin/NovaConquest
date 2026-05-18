@@ -19,7 +19,8 @@ enum class AppScreen {
     MAIN_MENU,
     FACTION_SELECTION,
     GAME,
-    VICTORY
+    VICTORY,
+    HERO_ACADEMY // Added screen navigation
 }
 
 enum class GameTab {
@@ -43,7 +44,6 @@ class MainActivity : ComponentActivity() {
                     val gameState by gameViewModel.gameState.collectAsState()
                     var currentScreen by remember { mutableStateOf(AppScreen.MAIN_MENU) }
 
-                    // Monitor for victory condition
                     LaunchedEffect(gameState.winner) {
                         if (gameState.winner != null) {
                             currentScreen = AppScreen.VICTORY
@@ -83,7 +83,22 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onBuildUnit = { unitType ->
                                     gameViewModel.dispatch(GameIntent.BuildUnit(unitType))
+                                },
+                                onChangeRelation = { faction, relation ->
+                                    gameViewModel.dispatch(GameIntent.ChangeRelation(faction, relation))
+                                },
+                                onOpenAcademy = {
+                                    currentScreen = AppScreen.HERO_ACADEMY
                                 }
+                            )
+                        }
+                        AppScreen.HERO_ACADEMY -> {
+                            HeroAcademyScreen(
+                                gameState = gameState,
+                                onRecruitClick = { heroId ->
+                                    gameViewModel.dispatch(GameIntent.RecruitHero(heroId))
+                                },
+                                onBackClick = { currentScreen = AppScreen.GAME }
                             )
                         }
                         AppScreen.VICTORY -> {
@@ -106,7 +121,9 @@ fun GameContainer(
     onMoveUnit: (com.novaempire.core.hex.HexCoord, com.novaempire.core.hex.HexCoord) -> Unit,
     onAttackUnit: (com.novaempire.core.hex.HexCoord, com.novaempire.core.hex.HexCoord) -> Unit,
     onResearchTech: (String) -> Unit,
-    onBuildUnit: (com.novaempire.core.domain.models.UnitType) -> Unit
+    onBuildUnit: (com.novaempire.core.domain.models.UnitType) -> Unit,
+    onChangeRelation: (com.novaempire.core.domain.models.Faction, com.novaempire.core.domain.models.DiplomaticRelation) -> Unit,
+    onOpenAcademy: () -> Unit
 ) {
     var currentTab by remember { mutableStateOf(GameTab.MAP) }
 
@@ -145,7 +162,8 @@ fun GameContainer(
                     gameState = gameState,
                     onEndTurnClick = onEndTurn,
                     onMoveUnit = onMoveUnit,
-                    onAttackUnit = onAttackUnit
+                    onAttackUnit = onAttackUnit,
+                    onOpenAcademy = onOpenAcademy
                 )
                 GameTab.SYSTEM -> StarSystemManagementScreen(
                     gameState = gameState,
@@ -155,7 +173,10 @@ fun GameContainer(
                     gameState = gameState,
                     onResearchTech = onResearchTech
                 )
-                GameTab.INTEL -> DiplomacyIntelScreen()
+                GameTab.INTEL -> DiplomacyIntelScreen(
+                    gameState = gameState,
+                    onChangeRelation = onChangeRelation
+                )
             }
         }
     }

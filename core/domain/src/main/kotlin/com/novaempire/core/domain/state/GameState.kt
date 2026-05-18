@@ -6,6 +6,12 @@ import com.novaempire.core.domain.models.GameMap
 import com.novaempire.core.domain.models.GameUnit
 import com.novaempire.core.hex.HexCoord
 
+data class CombatEvent(
+    val attackerCoord: HexCoord,
+    val defenderCoord: HexCoord,
+    val targetDestroyed: Boolean
+)
+
 data class GameState(
     val turn: Int = 1,
     val activeFaction: Faction = Faction.DOMINION,
@@ -15,7 +21,8 @@ data class GameState(
     val activeEvent: GalacticEvent = GalacticEvent.NONE,
     val eventDurationRemaining: Int = 0,
     val winner: Faction? = null,
-    val victoryReason: String? = null
+    val victoryReason: String? = null,
+    val lastCombatEvent: CombatEvent? = null
 )
 
 data class PlayerState(
@@ -24,5 +31,7 @@ data class PlayerState(
     val techUnlocked: Set<String> = emptySet(),
     val exploredHexes: Set<HexCoord> = emptySet(),
     val visibleHexes: Set<HexCoord> = emptySet(),
-    val capitalCoord: HexCoord? = null // Store the capital for production
+    val capitalCoord: HexCoord? = null,
+    val recruitedHeroes: Set<String> = emptySet(),
+    val relations: Map<Faction, com.novaempire.core.domain.models.DiplomaticRelation> = emptyMap()
 )

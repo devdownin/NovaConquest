@@ -16,17 +16,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.theme.*
-
-data class HeroData(val name: String, val faction: String, val bonus: String, val cost: Int, val color: Color)
+import com.novaempire.core.domain.models.Faction
+import com.novaempire.core.domain.models.Hero
+import com.novaempire.core.domain.models.HeroRegistry
+import com.novaempire.core.domain.state.GameState
 
 @Composable
-fun HeroAcademyScreen() {
-    val heroes = listOf(
-        HeroData("Commander Vance", "DOMINION", "+15% Fleet Attack", 50, NeonRed),
-        HeroData("Captain Elara", "TRADERS", "+10% Trade Income", 40, NeonOrange),
-        HeroData("High Seer Nix", "ANCIENTS", "Passive Fleet Healing", 75, Color(0xFFB026FF)),
-        HeroData("Architect Kael", "SYNTH", "-10% Tech Cost", 60, NeonCyan)
-    )
+fun HeroAcademyScreen(
+    gameState: GameState,
+    onRecruitClick: (String) -> Unit,
+    onBackClick: () -> Unit
+) {
+    val playerState = gameState.playerStates[gameState.activeFaction]
+    val credits = playerState?.credits ?: 0
+    val recruitedHeroes = playerState?.recruitedHeroes ?: emptySet()
 
     Column(
         modifier = Modifier
@@ -44,7 +47,7 @@ fun HeroAcademyScreen() {
                 style = MaterialTheme.typography.headlineLarge
             )
             Text(
-                text = "124 C",
+                text = "\$credits C",
                 style = MaterialTheme.typography.headlineMedium,
                 color = NeonCyan
             )
@@ -56,31 +59,49 @@ fun HeroAcademyScreen() {
             verticalArrangement = Arrangement.spacedBy(16.dp),
             modifier = Modifier.fillMaxSize()
         ) {
-            items(heroes.size) { index ->
-                HeroCard(hero = heroes[index])
+            items(HeroRegistry.ALL_HEROES.size) { index ->
+                val hero = HeroRegistry.ALL_HEROES[index]
+                val isRecruited = recruitedHeroes.contains(hero.id)
+                val canAfford = credits >= hero.cost
+
+                HeroCard(
+                    hero = hero,
+                    isRecruited = isRecruited,
+                    canAfford = canAfford,
+                    onRecruit = { onRecruitClick(hero.id) }
+                )
             }
         }
     }
 }
 
 @Composable
-fun HeroCard(hero: HeroData) {
+fun HeroCard(hero: Hero, isRecruited: Boolean, canAfford: Boolean, onRecruit: () -> Unit) {
+    val color = when (hero.targetFaction) {
+        Faction.DOMINION -> NeonRed
+        Faction.TRADERS -> NeonOrange
+        Faction.SYNTH -> NeonCyan
+        Faction.ANCIENT_NPC -> Color(0xFFB026FF)
+        else -> NeonCyan
+    }
+
+    val alpha = if (isRecruited) 0.5f else 1.0f
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f * alpha),
         shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, hero.color.copy(alpha = 0.5f))
+        border = BorderStroke(1.dp, color.copy(alpha = 0.5f * alpha))
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Placeholder for avatar
             Surface(
                 modifier = Modifier.size(80.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 shape = CutCornerShape(8.dp),
-                border = BorderStroke(1.dp, hero.color)
+                border = BorderStroke(1.dp, color.copy(alpha = alpha))
             ) {}
 
             Spacer(modifier = Modifier.width(16.dp))
@@ -89,29 +110,37 @@ fun HeroCard(hero: HeroData) {
                 Text(
                     text = hero.name.uppercase(),
                     style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha)
                 )
                 Text(
-                    text = "FACTION: \${hero.faction}",
+                    text = "FACTION: \${hero.targetFaction.name}",
                     style = MaterialTheme.typography.labelLarge,
-                    color = hero.color
+                    color = color.copy(alpha = alpha)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "BONUS: \${hero.bonus}",
+                    text = "BONUS: \${hero.bonusDescription}",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
+                    color = TextSecondary.copy(alpha = alpha)
                 )
             }
 
             Spacer(modifier = Modifier.width(16.dp))
 
-            IndustrialButton(
-                text = "RECRUIT (\${hero.cost} C)",
-                onClick = { },
-                color = hero.color,
-                modifier = Modifier.width(120.dp)
-            )
+            if (isRecruited) {
+                Text(
+                    text = "RECRUITED",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = color
+                )
+            } else {
+                IndustrialButton(
+                    text = "RECRUIT (\${hero.cost} C)",
+                    onClick = onRecruit,
+                    color = if (canAfford) color else NeonRed,
+                    modifier = Modifier.width(120.dp)
+                )
+            }
         }
     }
 }

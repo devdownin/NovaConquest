@@ -40,6 +40,12 @@ object CombatResolver {
             newUnits[defenderCoord] = updatedDefender
         }
 
-        return state.copy(units = newUnits)
+        val combatEvent = com.novaempire.core.domain.state.CombatEvent(
+            attackerCoord = attackerCoord,
+            defenderCoord = defenderCoord,
+            targetDestroyed = defenderRemainingHp <= 0
+        )
+
+        return state.copy(units = newUnits, lastCombatEvent = combatEvent)
     }
 }
