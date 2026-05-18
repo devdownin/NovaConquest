@@ -18,7 +18,8 @@ import com.novaempire.core.engine.GameIntent
 enum class AppScreen {
     MAIN_MENU,
     FACTION_SELECTION,
-    GAME
+    GAME,
+    VICTORY
 }
 
 enum class GameTab {
@@ -41,6 +42,13 @@ class MainActivity : ComponentActivity() {
                     val gameViewModel: GameViewModel = viewModel()
                     val gameState by gameViewModel.gameState.collectAsState()
                     var currentScreen by remember { mutableStateOf(AppScreen.MAIN_MENU) }
+
+                    // Monitor for victory condition
+                    LaunchedEffect(gameState.winner) {
+                        if (gameState.winner != null) {
+                            currentScreen = AppScreen.VICTORY
+                        }
+                    }
 
                     when (currentScreen) {
                         AppScreen.MAIN_MENU -> {
@@ -72,7 +80,16 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onResearchTech = { techId ->
                                     gameViewModel.dispatch(GameIntent.ResearchTech(techId))
+                                },
+                                onBuildUnit = { unitType ->
+                                    gameViewModel.dispatch(GameIntent.BuildUnit(unitType))
                                 }
+                            )
+                        }
+                        AppScreen.VICTORY -> {
+                            VictoryScreen(
+                                gameState = gameState,
+                                onMainMenuClick = { currentScreen = AppScreen.MAIN_MENU }
                             )
                         }
                     }
@@ -88,7 +105,8 @@ fun GameContainer(
     onEndTurn: () -> Unit,
     onMoveUnit: (com.novaempire.core.hex.HexCoord, com.novaempire.core.hex.HexCoord) -> Unit,
     onAttackUnit: (com.novaempire.core.hex.HexCoord, com.novaempire.core.hex.HexCoord) -> Unit,
-    onResearchTech: (String) -> Unit
+    onResearchTech: (String) -> Unit,
+    onBuildUnit: (com.novaempire.core.domain.models.UnitType) -> Unit
 ) {
     var currentTab by remember { mutableStateOf(GameTab.MAP) }
 
@@ -129,7 +147,10 @@ fun GameContainer(
                     onMoveUnit = onMoveUnit,
                     onAttackUnit = onAttackUnit
                 )
-                GameTab.SYSTEM -> StarSystemManagementScreen()
+                GameTab.SYSTEM -> StarSystemManagementScreen(
+                    gameState = gameState,
+                    onBuildUnit = onBuildUnit
+                )
                 GameTab.TECH -> TechTreeScreen(
                     gameState = gameState,
                     onResearchTech = onResearchTech

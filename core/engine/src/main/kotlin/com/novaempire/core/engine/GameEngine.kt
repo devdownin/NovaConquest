@@ -42,16 +42,44 @@ class GameEngine {
         var initialState = GameState(map = map, units = units)
 
         // Initialize player states
-        val playerStates = Faction.values().associateWith { PlayerState(faction = it) }.toMutableMap()
+        val playerStates = Faction.values().associateWith { faction ->
+            val capital = if (faction == Faction.DOMINION && spawnPoints.isNotEmpty()) spawnPoints[0]
+                          else if (faction == Faction.TRADERS && spawnPoints.size > 1) spawnPoints[1]
+                          else null
+            PlayerState(faction = faction, capitalCoord = capital)
+        }.toMutableMap()
         initialState = initialState.copy(playerStates = playerStates)
 
         // Calculate initial vision
         return updateVision(initialState)
     }
 
+    private fun checkVictoryConditions(state: GameState): GameState {
+        if (state.winner != null) return state
+
+        // Tech Victory: 6 techs unlocked
+        val techWinner = state.playerStates.values.find { it.techUnlocked.size >= 6 }
+        if (techWinner != null) {
+            return state.copy(winner = techWinner.faction, victoryReason = "Technological Dominance")
+        }
+
+        // Domination Victory: (Simplified for demo) Owns 5 planets
+        // Alternatively, since planets don't strictly have ownership yet, let's just use Turn Limit
+        if (state.turn >= 60) {
+            // Highest credits wins
+            val scoreWinner = state.playerStates.values.maxByOrNull { it.credits }
+            if (scoreWinner != null) {
+                return state.copy(winner = scoreWinner.faction, victoryReason = "Time Limit Reached - Score Victory")
+            }
+        }
+
+        return state
+    }
+
     fun processIntent(intent: GameIntent) {
         _state.update { currentState ->
-            reduce(currentState, intent)
+            val nextState = reduce(currentState, intent)
+            checkVictoryConditions(nextState)
         }
     }
 
@@ -126,6 +154,38 @@ class GameEngine {
                     state
                 }
             }
+            is GameIntent.BuildUnit -> {
+                val playerState = state.playerStates[state.activeFaction] ?: return state
+                val cost = intent.unitType.cost
+                val spawnCenter = intent.location ?: playerState.capitalCoord ?: return state
+
+                if (playerState.credits >= cost) {
+                    // Find a free hex to spawn (center, or adjacent)
+                    val gridMap = GameGridMap(state)
+                    val spawnCandidates = listOf(spawnCenter) + gridMap.getNeighbors(spawnCenter)
+                    val spawnHex = spawnCandidates.firstOrNull { state.units[it] == null && gridMap.isPassable(it) }
+
+                    if (spawnHex != null) {
+                        val newPlayerState = playerState.copy(credits = playerState.credits - cost)
+                        val newPlayerStates = state.playerStates.toMutableMap()
+                        newPlayerStates[state.activeFaction] = newPlayerState
+
+                        val newUnit = GameUnit(
+                            type = intent.unitType,
+                            faction = state.activeFaction,
+                            position = spawnHex,
+                            currentHp = intent.unitType.maxHp,
+                            hasMoved = true, // Cannot move on the turn it is built
+                            hasAttacked = true
+                        )
+                        val updatedUnits = state.units.toMutableMap()
+                        updatedUnits[spawnHex] = newUnit
+
+                        val nextState = state.copy(playerStates = newPlayerStates, units = updatedUnits)
+                        updateVision(nextState)
+                    } else state
+                } else state
+            }
         }
     }
 
@@ -171,4 +231,5 @@ sealed class GameIntent {
     data class MoveUnit(val from: HexCoord, val to: HexCoord) : GameIntent()
     data class AttackUnit(val attacker: HexCoord, val defender: HexCoord) : GameIntent()
     data class ResearchTech(val techId: String) : GameIntent()
+    data class BuildUnit(val unitType: UnitType, val location: HexCoord? = null) : GameIntent()
 }

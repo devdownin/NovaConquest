@@ -14,9 +14,13 @@ import androidx.compose.ui.unit.dp
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.theme.NeonCyan
 import com.novaempire.app.ui.theme.TextSecondary
+import com.novaempire.core.domain.state.GameState
 
 @Composable
-fun VictoryScreen(onMainMenuClick: () -> Unit) {
+fun VictoryScreen(
+    gameState: GameState,
+    onMainMenuClick: () -> Unit
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -35,7 +39,7 @@ fun VictoryScreen(onMainMenuClick: () -> Unit) {
                 color = NeonCyan
             )
             Text(
-                text = "Technological Dominance",
+                text = gameState.victoryReason ?: "Domination",
                 style = MaterialTheme.typography.headlineMedium,
                 color = TextSecondary,
                 modifier = Modifier.padding(bottom = 64.dp)
@@ -51,11 +55,9 @@ fun VictoryScreen(onMainMenuClick: () -> Unit) {
                     modifier = Modifier.padding(32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    VictoryStat("Faction", "Xylar")
+                    VictoryStat("Faction", gameState.winner?.name ?: "Unknown")
                     Spacer(modifier = Modifier.height(16.dp))
-                    VictoryStat("Cycles Elapsed", "64")
-                    Spacer(modifier = Modifier.height(16.dp))
-                    VictoryStat("Systems Controlled", "12/24")
+                    VictoryStat("Cycles Elapsed", gameState.turn.toString())
                     Spacer(modifier = Modifier.height(32.dp))
                     Text(
                         text = "FINAL SCORE",
@@ -63,7 +65,7 @@ fun VictoryScreen(onMainMenuClick: () -> Unit) {
                         color = TextSecondary
                     )
                     Text(
-                        text = "18,450",
+                        text = gameState.playerStates[gameState.winner]?.credits?.toString() ?: "0",
                         style = MaterialTheme.typography.displayLarge,
                         color = NeonCyan
                     )

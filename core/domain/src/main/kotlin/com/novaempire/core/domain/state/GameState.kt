@@ -13,7 +13,9 @@ data class GameState(
     val map: GameMap = GameMap(),
     val units: Map<HexCoord, GameUnit> = emptyMap(),
     val activeEvent: GalacticEvent = GalacticEvent.NONE,
-    val eventDurationRemaining: Int = 0
+    val eventDurationRemaining: Int = 0,
+    val winner: Faction? = null,
+    val victoryReason: String? = null
 )
 
 data class PlayerState(
@@ -21,5 +23,6 @@ data class PlayerState(
     val credits: Int = 10,
     val techUnlocked: Set<String> = emptySet(),
     val exploredHexes: Set<HexCoord> = emptySet(),
-    val visibleHexes: Set<HexCoord> = emptySet()
+    val visibleHexes: Set<HexCoord> = emptySet(),
+    val capitalCoord: HexCoord? = null // Store the capital for production
 )

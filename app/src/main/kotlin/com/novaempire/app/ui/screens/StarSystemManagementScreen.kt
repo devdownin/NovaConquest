@@ -13,16 +13,23 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.theme.NeonCyan
 import com.novaempire.app.ui.theme.NeonOrange
+import com.novaempire.app.ui.theme.NeonRed
 import com.novaempire.app.ui.theme.TextSecondary
 import com.novaempire.core.domain.models.UnitType
+import com.novaempire.core.domain.state.GameState
 
 @Composable
-fun StarSystemManagementScreen() {
+fun StarSystemManagementScreen(
+    gameState: GameState,
+    onBuildUnit: (UnitType) -> Unit
+) {
+    val playerState = gameState.playerStates[gameState.activeFaction]
+    val credits = playerState?.credits ?: 0
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -37,12 +44,12 @@ fun StarSystemManagementScreen() {
         ) {
             Column {
                 Text(
-                    text = "ALPHA CENTAURI PRIME",
+                    text = "\${gameState.activeFaction.name} CAPITAL",
                     style = MaterialTheme.typography.headlineLarge,
                     color = NeonCyan
                 )
                 Text(
-                    text = "LVL 03 | PRODUCTION: +7 C/TURN",
+                    text = "PRODUCTION HUB | CREDITS: \$credits C",
                     style = MaterialTheme.typography.labelLarge,
                     color = TextSecondary
                 )
@@ -71,16 +78,16 @@ fun StarSystemManagementScreen() {
                 ) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(0.6f)
+                            .fillMaxWidth(1f)
                             .fillMaxHeight()
                             .background(NeonCyan)
                     )
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 IndustrialButton(
-                    text = "UPGRADE SYSTEM (COST: 12 C)",
+                    text = "SYSTEM FULLY UPGRADED",
                     onClick = { },
-                    color = NeonOrange
+                    color = NeonCyan
                 )
             }
         }
@@ -100,18 +107,22 @@ fun StarSystemManagementScreen() {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             items(UnitType.values()) { unitType ->
-                UnitProductionCard(unitType = unitType)
+                UnitProductionCard(
+                    unitType = unitType,
+                    canAfford = credits >= unitType.cost,
+                    onBuild = { onBuildUnit(unitType) }
+                )
             }
         }
     }
 }
 
 @Composable
-fun UnitProductionCard(unitType: UnitType) {
+fun UnitProductionCard(unitType: UnitType, canAfford: Boolean, onBuild: () -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+        border = BorderStroke(1.dp, if (canAfford) NeonCyan else MaterialTheme.colorScheme.surfaceVariant),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -120,20 +131,21 @@ fun UnitProductionCard(unitType: UnitType) {
             Text(
                 text = unitType.name,
                 style = MaterialTheme.typography.labelLarge,
-                color = NeonCyan
+                color = if (canAfford) NeonCyan else TextSecondary
             )
             Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(text = "HP: ${unitType.maxHp}", style = MaterialTheme.typography.bodyMedium)
-                Text(text = "ATK: ${unitType.attack}", style = MaterialTheme.typography.bodyMedium)
+                Text(text = "HP: \${unitType.maxHp}", style = MaterialTheme.typography.bodyMedium)
+                Text(text = "ATK: \${unitType.attack}", style = MaterialTheme.typography.bodyMedium)
             }
             Spacer(modifier = Modifier.height(16.dp))
             IndustrialButton(
-                text = "BUILD (${unitType.cost} C)",
-                onClick = { }
+                text = "BUILD (\${unitType.cost} C)",
+                onClick = onBuild,
+                color = if (canAfford) NeonCyan else NeonRed
             )
         }
     }
