@@ -47,6 +47,8 @@ fun TacticalMapScreen(
     onEndTurnClick: () -> Unit,
     onMoveUnit: (from: HexCoord, to: HexCoord) -> Unit,
     onAttackUnit: (from: HexCoord, to: HexCoord) -> Unit,
+    onSiegePlanet: (from: HexCoord, to: HexCoord) -> Unit,
+    onCapturePlanet: (from: HexCoord, to: HexCoord) -> Unit,
     onOpenAcademy: () -> Unit
 ) {
     var selectedHex by remember { mutableStateOf<HexCoord?>(null) }
@@ -231,7 +233,7 @@ fun TacticalMapScreen(
 
                     if (isVisible) {
                         when (tile.terrain) {
-                            TerrainType.PLANET -> drawPlanet(x, y, hexRadius)
+                            TerrainType.PLANET -> drawPlanet(x, y, hexRadius, tile.owner)
                             TerrainType.ASTEROIDS -> drawAsteroids(x, y, hexRadius)
                             TerrainType.NEBULA -> drawNebula(x, y, hexRadius)
                             else -> {}
@@ -450,10 +452,21 @@ fun TacticalMapScreen(
     }
 }
 
-fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float) {
+fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float, owner: Faction?) {
+    val planetColor = when (owner) {
+        Faction.DOMINION -> NeonRed
+        Faction.TRADERS -> NeonGold
+        Faction.SYNTH -> NeonCyan
+        Faction.NOMADS -> NeonOrange
+        Faction.KAELEN -> NeonGreen
+        Faction.XYLAR -> Color.Cyan
+        Faction.ANCIENT_NPC -> Color.Magenta
+        else -> NeonGreen // Neutral
+    }
+
     drawCircle(
         brush = Brush.radialGradient(
-            colors = listOf(NeonGreen.copy(alpha = 0.8f), NeonGreen.copy(alpha = 0.2f), Color.Transparent),
+            colors = listOf(planetColor.copy(alpha = 0.8f), planetColor.copy(alpha = 0.2f), Color.Transparent),
             center = Offset(x, y),
             radius = hexRadius * 0.4f
         ),
@@ -466,6 +479,14 @@ fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float) {
         size = Size(hexRadius * 1.2f, hexRadius * 0.4f),
         style = Stroke(width = 2f)
     )
+    if (owner != null) {
+        drawCircle(
+            color = planetColor,
+            radius = hexRadius * 0.5f,
+            center = Offset(x, y),
+            style = Stroke(width = 3f)
+        )
+    }
 }
 
 fun DrawScope.drawAsteroids(x: Float, y: Float, hexRadius: Float) {

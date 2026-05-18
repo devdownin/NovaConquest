@@ -88,11 +88,17 @@ class MainActivity : ComponentActivity() {
                                 onAttackUnit = { from, to ->
                                     gameViewModel.dispatch(GameIntent.AttackUnit(from, to))
                                 },
+                                onSiegePlanet = { from, to ->
+                                    gameViewModel.dispatch(GameIntent.SiegePlanet(from, to))
+                                },
+                                onCapturePlanet = { from, to ->
+                                    gameViewModel.dispatch(GameIntent.CapturePlanet(from, to))
+                                },
                                 onResearchTech = { techId ->
                                     gameViewModel.dispatch(GameIntent.ResearchTech(techId))
                                 },
-                                onBuildUnit = { unitType ->
-                                    gameViewModel.dispatch(GameIntent.BuildUnit(unitType))
+                                onBuildUnit = { unitType, location ->
+                                    gameViewModel.dispatch(GameIntent.BuildUnit(unitType, location))
                                 },
                                 onChangeRelation = { faction, relation ->
                                     gameViewModel.dispatch(GameIntent.ChangeRelation(faction, relation))
@@ -130,8 +136,10 @@ fun GameContainer(
     onEndTurn: () -> Unit,
     onMoveUnit: (com.novaempire.core.hex.HexCoord, com.novaempire.core.hex.HexCoord) -> Unit,
     onAttackUnit: (com.novaempire.core.hex.HexCoord, com.novaempire.core.hex.HexCoord) -> Unit,
+    onSiegePlanet: (com.novaempire.core.hex.HexCoord, com.novaempire.core.hex.HexCoord) -> Unit,
+    onCapturePlanet: (com.novaempire.core.hex.HexCoord, com.novaempire.core.hex.HexCoord) -> Unit,
     onResearchTech: (String) -> Unit,
-    onBuildUnit: (com.novaempire.core.domain.models.UnitType) -> Unit,
+    onBuildUnit: (com.novaempire.core.domain.models.UnitType, com.novaempire.core.hex.HexCoord) -> Unit,
     onChangeRelation: (com.novaempire.core.domain.models.Faction, com.novaempire.core.domain.models.DiplomaticRelation) -> Unit,
     onOpenAcademy: () -> Unit
 ) {
@@ -173,6 +181,8 @@ fun GameContainer(
                     onEndTurnClick = onEndTurn,
                     onMoveUnit = onMoveUnit,
                     onAttackUnit = onAttackUnit,
+                    onSiegePlanet = onSiegePlanet,
+                    onCapturePlanet = onCapturePlanet,
                     onOpenAcademy = onOpenAcademy
                 )
                 GameTab.SYSTEM -> StarSystemManagementScreen(

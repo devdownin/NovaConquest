@@ -87,6 +87,9 @@ class GameEngine {
         return when (intent) {
 
             is GameIntent.StartNewGame -> {
+                createInitialState(com.novaempire.core.domain.models.MapSize.MEDIUM)
+            }
+            is GameIntent.StartNewGameWithSize -> {
                 createInitialState(intent.mapSize)
             }
             is GameIntent.LoadGame -> {
@@ -263,6 +266,38 @@ class GameEngine {
 
                 state.copy(playerStates = newPlayerStates)
             }
+            is GameIntent.SiegePlanet -> {
+                val unit = state.units[intent.attackerCoord]
+                val tile = state.map.tiles[intent.planetCoord]
+                if (unit != null && unit.faction == state.activeFaction && !unit.hasAttacked && tile != null && tile.terrain == com.novaempire.core.domain.models.TerrainType.PLANET && tile.owner != state.activeFaction) {
+                    val siegeDamage = if (unit.type == UnitType.BATTLESHIP) 2 else 1
+                    val newLevel = Math.max(0, tile.systemLevel - siegeDamage)
+
+                    val updatedUnits = state.units.toMutableMap()
+                    updatedUnits[intent.attackerCoord] = unit.copy(hasAttacked = true)
+
+                    val newTiles = state.map.tiles.toMutableMap()
+                    newTiles[intent.planetCoord] = tile.copy(systemLevel = newLevel)
+                    val newMap = state.map.copy(tiles = newTiles)
+
+                    state.copy(units = updatedUnits, map = newMap)
+                } else state
+            }
+            is GameIntent.CapturePlanet -> {
+                val unit = state.units[intent.unitCoord]
+                val tile = state.map.tiles[intent.planetCoord]
+                // Must be adjacent or on it, level must be 0
+                if (unit != null && unit.faction == state.activeFaction && !unit.hasAttacked && tile != null && tile.terrain == com.novaempire.core.domain.models.TerrainType.PLANET && tile.systemLevel == 0 && tile.owner != state.activeFaction) {
+                    val updatedUnits = state.units.toMutableMap()
+                    updatedUnits[intent.unitCoord] = unit.copy(hasAttacked = true)
+
+                    val newTiles = state.map.tiles.toMutableMap()
+                    newTiles[intent.planetCoord] = tile.copy(owner = state.activeFaction, systemLevel = 1) // Rebuild at level 1
+                    val newMap = state.map.copy(tiles = newTiles)
+
+                    state.copy(units = updatedUnits, map = newMap)
+                } else state
+            }
         }
     }
 
@@ -311,6 +346,9 @@ sealed class GameIntent {
     data class BuildUnit(val unitType: UnitType, val location: HexCoord? = null) : GameIntent()
     data class RecruitHero(val heroId: String) : GameIntent()
     data class ChangeRelation(val targetFaction: Faction, val newRelation: com.novaempire.core.domain.models.DiplomaticRelation) : GameIntent()
-    data class StartNewGame(val mapSize: com.novaempire.core.domain.models.MapSize = com.novaempire.core.domain.models.MapSize.MEDIUM) : GameIntent()
+    object StartNewGame : GameIntent()
+    data class StartNewGameWithSize(val mapSize: com.novaempire.core.domain.models.MapSize = com.novaempire.core.domain.models.MapSize.MEDIUM) : GameIntent()
     data class LoadGame(val loadedState: GameState) : GameIntent()
+    data class SiegePlanet(val attackerCoord: HexCoord, val planetCoord: HexCoord) : GameIntent()
+    data class CapturePlanet(val unitCoord: HexCoord, val planetCoord: HexCoord) : GameIntent()
 }
