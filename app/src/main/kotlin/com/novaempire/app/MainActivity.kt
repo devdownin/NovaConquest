@@ -193,6 +193,8 @@ fun GameContainer(
                     onOpenAcademy = onOpenAcademy
                 )
                 GameTab.SYSTEM -> StarSystemManagementScreen(
+                    coord = gameState.map.tiles.keys.first(),
+                    onClose = { },
                     gameState = gameState,
                     onBuildUnit = onBuildUnit
                 )
