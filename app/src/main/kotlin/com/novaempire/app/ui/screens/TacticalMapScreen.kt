@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.theme.*
 import com.novaempire.core.domain.models.Faction
+import com.novaempire.core.domain.models.GalacticEvent
 import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.engine.GameGridMap
@@ -42,6 +43,10 @@ fun TacticalMapScreen(
     var dragStartHex by remember { mutableStateOf<HexCoord?>(null) }
     val hexRadius = 80f
 
+    val currentPlayerState = gameState.playerStates[gameState.activeFaction]
+    val exploredHexes = currentPlayerState?.exploredHexes ?: emptySet()
+    val visibleHexes = currentPlayerState?.visibleHexes ?: emptySet()
+
     fun pixelToHex(x: Float, y: Float, centerX: Float, centerY: Float): HexCoord {
         val q = (sqrt(3.0) / 3 * (x - centerX) - 1.0 / 3 * (y - centerY)) / hexRadius
         val r = (2.0 / 3 * (y - centerY)) / hexRadius
@@ -56,10 +61,10 @@ fun TacticalMapScreen(
         // Tactical Map Canvas
         Canvas(modifier = Modifier
             .fillMaxSize()
-            .pointerInput(gameState) { // Re-bind if state changes drastically
+            .pointerInput(gameState) {
                 detectTapGestures { offset ->
                     val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f)
-                    if (gameState.map.tiles.containsKey(coord)) {
+                    if (gameState.map.tiles.containsKey(coord) && exploredHexes.contains(coord)) {
                         selectedHex = coord
                     }
                 }
@@ -93,7 +98,7 @@ fun TacticalMapScreen(
                             val coord = pixelToHex(change.position.x, change.position.y, size.width / 2f, size.height / 2f)
                             if (coord != start && gameState.map.tiles.containsKey(coord)) {
                                 val gridMap = GameGridMap(gameState)
-                                ghostPath = HexPathfinder.findPath(start, coord, gridMap, maxCost = 4) // Hardcoded mobility for now
+                                ghostPath = HexPathfinder.findPath(start, coord, gridMap, maxCost = 4)
                             } else {
                                 ghostPath = null
                             }
@@ -107,30 +112,46 @@ fun TacticalMapScreen(
             val centerX = width / 2
             val centerY = height / 2
 
-            // Draw Terrain
+            // Draw Terrain & Fog of War
             gameState.map.tiles.values.forEach { tile ->
                 val x = centerX + hexRadius * (sqrt(3f) * tile.coord.q + sqrt(3f) / 2 * tile.coord.r)
                 val y = centerY + hexRadius * (3f / 2 * tile.coord.r)
 
-                val terrainColor = when (tile.terrain) {
-                    TerrainType.PLANET -> Color.Green.copy(alpha = 0.2f)
-                    TerrainType.ASTEROIDS -> Color.Gray.copy(alpha = 0.4f)
-                    TerrainType.NEBULA -> Color.Magenta.copy(alpha = 0.2f)
-                    TerrainType.BLACK_HOLE -> Color.Black
-                    else -> VoidBlack
-                }
+                val isExplored = exploredHexes.contains(tile.coord)
+                val isVisible = visibleHexes.contains(tile.coord)
 
-                drawHexagon(x, y, hexRadius - 2f, terrainColor, fill = true)
+                if (isExplored) {
+                    val baseColor = when (tile.terrain) {
+                        TerrainType.PLANET -> Color.Green
+                        TerrainType.ASTEROIDS -> Color.Gray
+                        TerrainType.NEBULA -> Color.Magenta
+                        TerrainType.BLACK_HOLE -> Color.Black
+                        else -> VoidBlack
+                    }
 
-                // Draw selection highlight
-                if (tile.coord == selectedHex) {
-                    drawHexagon(x, y, hexRadius, NeonCyan, fill = false, 4f)
+                    // Apply Fog of War darkening
+                    val terrainColor = if (isVisible) {
+                        baseColor.copy(alpha = 0.3f)
+                    } else {
+                        baseColor.copy(alpha = 0.1f) // Dimmed
+                    }
+
+                    drawHexagon(x, y, hexRadius - 2f, terrainColor, fill = true)
+
+                    val strokeColor = if (tile.coord == selectedHex) NeonCyan else Color.DarkGray.copy(alpha = if (isVisible) 1f else 0.5f)
+                    val strokeWidth = if (tile.coord == selectedHex) 4f else 1f
+                    drawHexagon(x, y, hexRadius, strokeColor, fill = false, strokeWidth)
+
+                    if (tile.terrain == TerrainType.PLANET) {
+                        drawCircle(
+                            color = Color.White.copy(alpha = if (isVisible) 0.5f else 0.2f),
+                            radius = 15f,
+                            center = Offset(x, y)
+                        )
+                    }
                 } else {
-                    drawHexagon(x, y, hexRadius, Color.DarkGray, fill = false, 1f)
-                }
-
-                if (tile.terrain == TerrainType.PLANET) {
-                    drawCircle(color = Color.White.copy(alpha = 0.5f), radius = 15f, center = Offset(x, y))
+                    // Unexplored
+                    drawHexagon(x, y, hexRadius, VoidBlack, fill = true)
                 }
             }
 
@@ -153,7 +174,6 @@ fun TacticalMapScreen(
                         )
                         prevPoint = currentPoint
                     }
-                    // Highlight destination
                     val dest = path.last()
                     val dx = centerX + hexRadius * (sqrt(3f) * dest.q + sqrt(3f) / 2 * dest.r)
                     val dy = centerY + hexRadius * (3f / 2 * dest.r)
@@ -161,8 +181,8 @@ fun TacticalMapScreen(
                 }
             }
 
-            // Draw Units
-            gameState.units.values.forEach { unit ->
+            // Draw Units (only if visible)
+            gameState.units.values.filter { visibleHexes.contains(it.position) }.forEach { unit ->
                 val x = centerX + hexRadius * (sqrt(3f) * unit.position.q + sqrt(3f) / 2 * unit.position.r)
                 val y = centerY + hexRadius * (3f / 2 * unit.position.r)
 
@@ -173,7 +193,6 @@ fun TacticalMapScreen(
                     else -> Color.White
                 }
 
-                // Draw ship icon placeholder (triangle)
                 val path = Path()
                 path.moveTo(x, y - 20f)
                 path.lineTo(x + 15f, y + 15f)
@@ -209,6 +228,13 @@ fun TacticalMapScreen(
                     text = "TURN \${gameState.turn}",
                     style = MaterialTheme.typography.headlineMedium
                 )
+                if (gameState.activeEvent != GalacticEvent.NONE) {
+                    Text(
+                        text = gameState.activeEvent.displayName.uppercase(),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = NeonOrange
+                    )
+                }
             }
         }
 
@@ -230,7 +256,7 @@ fun TacticalMapScreen(
                         Text("HEX \${coord.q}, \${coord.r}", style = MaterialTheme.typography.labelLarge, color = NeonCyan)
                         Text("Terrain: \${tile.terrain.name}", style = MaterialTheme.typography.bodyMedium)
 
-                        if (unit != null) {
+                        if (unit != null && visibleHexes.contains(coord)) {
                             Spacer(modifier = Modifier.height(8.dp))
                             Text("Unit: \${unit.type.name}", style = MaterialTheme.typography.bodyLarge, color = NeonOrange)
                             Text("Faction: \${unit.faction.name}", style = MaterialTheme.typography.bodyMedium)
@@ -256,6 +282,7 @@ fun TacticalMapScreen(
         )
     }
 }
+//... (drawHexagon and hexRound functions remain below in the file, keeping them as they are in the bash script context would require full file write, doing full write)
 
 fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHexagon(
     centerX: Float,
