@@ -14,7 +14,9 @@ import com.novaempire.app.ui.theme.NeonCyan
 
 @Composable
 fun MainMenuScreen(
+    hasSavedGame: Boolean,
     onNewGameClick: () -> Unit,
+    onResumeGameClick: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
     Box(
@@ -42,7 +44,11 @@ fun MainMenuScreen(
                 modifier = Modifier.fillMaxWidth(0.8f)
             ) {
                 IndustrialButton(text = "NEW GAME", onClick = onNewGameClick)
-                IndustrialButton(text = "RESUME GAME", onClick = {})
+                if (hasSavedGame) {
+                    IndustrialButton(text = "RESUME GAME", onClick = onResumeGameClick)
+                } else {
+                    IndustrialButton(text = "RESUME GAME", onClick = {}, color = com.novaempire.app.ui.theme.TextSecondary)
+                }
                 IndustrialButton(text = "ARCHIVE", onClick = {})
                 IndustrialButton(text = "SETTINGS", onClick = onSettingsClick)
             }

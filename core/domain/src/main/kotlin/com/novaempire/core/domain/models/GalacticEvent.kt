@@ -1,5 +1,7 @@
 package com.novaempire.core.domain.models
+import kotlinx.serialization.Serializable
 
+@Serializable
 enum class GalacticEvent(val displayName: String, val description: String) {
     NONE("No Active Events", ""),
     ION_STORM("Ion Storm", "Global movement -1. Shields do not regenerate."),

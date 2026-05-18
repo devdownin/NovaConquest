@@ -1,10 +1,12 @@
 package com.novaempire.core.hex
+import kotlinx.serialization.Serializable
 
 import kotlin.math.abs
 
 /**
  * Cube coordinates for a hexagonal grid.
  */
+@Serializable
 data class HexCoord(val q: Int, val r: Int, val s: Int) {
     init {
         require(q + r + s == 0) { "q + r + s must equal 0" }

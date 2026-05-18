@@ -52,8 +52,18 @@ class MainActivity : ComponentActivity() {
 
                     when (currentScreen) {
                         AppScreen.MAIN_MENU -> {
+                            val hasSave = gameViewModel.hasSavedGame()
                             MainMenuScreen(
-                                onNewGameClick = { currentScreen = AppScreen.FACTION_SELECTION },
+                                hasSavedGame = hasSave,
+                                onNewGameClick = {
+                                    gameViewModel.startNewGame()
+                                    currentScreen = AppScreen.FACTION_SELECTION
+                                },
+                                onResumeGameClick = {
+                                    if (gameViewModel.loadGame()) {
+                                        currentScreen = AppScreen.GAME
+                                    }
+                                },
                                 onSettingsClick = {}
                             )
                         }

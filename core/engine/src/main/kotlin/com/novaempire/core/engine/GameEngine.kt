@@ -85,6 +85,13 @@ class GameEngine {
 
     private fun reduce(state: GameState, intent: GameIntent): GameState {
         return when (intent) {
+
+            is GameIntent.StartNewGame -> {
+                createInitialState()
+            }
+            is GameIntent.LoadGame -> {
+                intent.loadedState
+            }
             is GameIntent.EndTurn -> {
                 val allFactions = Faction.values().filter { it != Faction.ANCIENT_NPC }
                 val nextFactionIndex = (allFactions.indexOf(state.activeFaction) + 1) % allFactions.size
@@ -266,4 +273,6 @@ sealed class GameIntent {
     data class BuildUnit(val unitType: UnitType, val location: HexCoord? = null) : GameIntent()
     data class RecruitHero(val heroId: String) : GameIntent()
     data class ChangeRelation(val targetFaction: Faction, val newRelation: com.novaempire.core.domain.models.DiplomaticRelation) : GameIntent()
+    object StartNewGame : GameIntent()
+    data class LoadGame(val loadedState: GameState) : GameIntent()
 }
