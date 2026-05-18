@@ -63,6 +63,9 @@ class MainActivity : ComponentActivity() {
                                 gameState = gameState,
                                 onEndTurn = {
                                     gameViewModel.dispatch(GameIntent.EndTurn)
+                                },
+                                onMoveUnit = { from, to ->
+                                    gameViewModel.dispatch(GameIntent.MoveUnit(from, to))
                                 }
                             )
                         }
@@ -76,7 +79,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun GameContainer(
     gameState: com.novaempire.core.domain.state.GameState,
-    onEndTurn: () -> Unit
+    onEndTurn: () -> Unit,
+    onMoveUnit: (com.novaempire.core.hex.HexCoord, com.novaempire.core.hex.HexCoord) -> Unit
 ) {
     var currentTab by remember { mutableStateOf(GameTab.MAP) }
 
@@ -111,7 +115,7 @@ fun GameContainer(
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
             when (currentTab) {
-                GameTab.MAP -> TacticalMapScreen(gameState = gameState, onEndTurnClick = onEndTurn)
+                GameTab.MAP -> TacticalMapScreen(gameState = gameState, onEndTurnClick = onEndTurn, onMoveUnit = onMoveUnit)
                 GameTab.SYSTEM -> StarSystemManagementScreen()
                 GameTab.TECH -> TechTreeScreen()
                 GameTab.INTEL -> DiplomacyIntelScreen()
