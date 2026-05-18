@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -16,14 +17,56 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.theme.NeonCyan
+import com.novaempire.app.ui.theme.NeonRed
 import com.novaempire.app.ui.theme.TextSecondary
+import com.novaempire.core.domain.models.TechBranch
+import com.novaempire.core.domain.models.TechDefinition
+import com.novaempire.core.domain.models.TechRegistry
+import com.novaempire.core.domain.state.GameState
 
-enum class TechState { UNLOCKED, AVAILABLE, LOCKED }
+enum class TechNodeState { UNLOCKED, AVAILABLE, LOCKED }
 
-data class TechNode(val name: String, val cost: Int, val state: TechState)
+data class UiTechNode(
+    val id: String,
+    val name: String,
+    val cost: Int,
+    val state: TechNodeState,
+    val canAfford: Boolean
+)
 
 @Composable
-fun TechTreeScreen() {
+fun TechTreeScreen(
+    gameState: GameState,
+    onResearchTech: (String) -> Unit
+) {
+    val playerState = gameState.playerStates[gameState.activeFaction]
+    val credits = playerState?.credits ?: 0
+    val unlockedTechs = playerState?.techUnlocked ?: emptySet()
+
+    fun buildUiNode(tech: TechDefinition): UiTechNode {
+        val isUnlocked = unlockedTechs.contains(tech.id)
+        val isAvailable = !isUnlocked && (tech.requiresTechId == null || unlockedTechs.contains(tech.requiresTechId))
+        val cost = TechRegistry.calculateCost(tech.id, unlockedTechs)
+
+        val state = when {
+            isUnlocked -> TechNodeState.UNLOCKED
+            isAvailable -> TechNodeState.AVAILABLE
+            else -> TechNodeState.LOCKED
+        }
+
+        return UiTechNode(
+            id = tech.id,
+            name = tech.name,
+            cost = cost,
+            state = state,
+            canAfford = credits >= cost
+        )
+    }
+
+    val militaryNodes = TechRegistry.ALL_TECHS.filter { it.branch == TechBranch.MILITARY }.sortedBy { it.tier }.map(::buildUiNode)
+    val expansionNodes = TechRegistry.ALL_TECHS.filter { it.branch == TechBranch.EXPANSION }.sortedBy { it.tier }.map(::buildUiNode)
+    val explorationNodes = TechRegistry.ALL_TECHS.filter { it.branch == TechBranch.EXPLORATION }.sortedBy { it.tier }.map(::buildUiNode)
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -41,7 +84,7 @@ fun TechTreeScreen() {
                 style = MaterialTheme.typography.headlineLarge
             )
             Text(
-                text = "124 C",
+                text = "\$credits C",
                 style = MaterialTheme.typography.headlineMedium,
                 color = NeonCyan
             )
@@ -54,32 +97,34 @@ fun TechTreeScreen() {
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
+                .horizontalScroll(rememberScrollState())
         ) {
-            TechBranch(
+            TechBranchView(
                 title = "MILITARY",
-                nodes = listOf(
-                    TechNode("Hull Plating", 0, TechState.UNLOCKED),
-                    TechNode("Plasma Weapons", 8, TechState.AVAILABLE),
-                    TechNode("Siege Protocols", 15, TechState.LOCKED)
-                ),
-                modifier = Modifier.weight(1f)
+                nodes = militaryNodes,
+                onResearchClick = onResearchTech,
+                modifier = Modifier.width(300.dp)
             )
             Spacer(modifier = Modifier.width(16.dp))
-            TechBranch(
+            TechBranchView(
                 title = "EXPANSION",
-                nodes = listOf(
-                    TechNode("Deep Scanners", 0, TechState.UNLOCKED),
-                    TechNode("Terraforming", 15, TechState.AVAILABLE),
-                    TechNode("Wormhole Navigation", 20, TechState.LOCKED)
-                ),
-                modifier = Modifier.weight(1f)
+                nodes = expansionNodes,
+                onResearchClick = onResearchTech,
+                modifier = Modifier.width(300.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            TechBranchView(
+                title = "EXPLORATION",
+                nodes = explorationNodes,
+                onResearchClick = onResearchTech,
+                modifier = Modifier.width(300.dp)
             )
         }
     }
 }
 
 @Composable
-fun TechBranch(title: String, nodes: List<TechNode>, modifier: Modifier = Modifier) {
+fun TechBranchView(title: String, nodes: List<UiTechNode>, onResearchClick: (String) -> Unit, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier.verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -92,14 +137,14 @@ fun TechBranch(title: String, nodes: List<TechNode>, modifier: Modifier = Modifi
         )
 
         nodes.forEachIndexed { index, node ->
-            TechNodeCard(node = node)
+            TechNodeCard(node = node, onResearchClick = { onResearchClick(node.id) })
             if (index < nodes.size - 1) {
                 // Connection Line
                 Box(
                     modifier = Modifier
                         .width(2.dp)
                         .height(32.dp)
-                        .background(if (node.state == TechState.UNLOCKED) NeonCyan else MaterialTheme.colorScheme.surfaceVariant)
+                        .background(if (node.state == TechNodeState.UNLOCKED) NeonCyan else MaterialTheme.colorScheme.surfaceVariant)
                 )
             }
         }
@@ -107,13 +152,13 @@ fun TechBranch(title: String, nodes: List<TechNode>, modifier: Modifier = Modifi
 }
 
 @Composable
-fun TechNodeCard(node: TechNode) {
+fun TechNodeCard(node: UiTechNode, onResearchClick: () -> Unit) {
     val borderColor = when (node.state) {
-        TechState.UNLOCKED -> Color.Transparent
-        TechState.AVAILABLE -> NeonCyan
-        TechState.LOCKED -> MaterialTheme.colorScheme.surfaceVariant
+        TechNodeState.UNLOCKED -> Color.Transparent
+        TechNodeState.AVAILABLE -> if (node.canAfford) NeonCyan else NeonRed
+        TechNodeState.LOCKED -> MaterialTheme.colorScheme.surfaceVariant
     }
-    val alpha = if (node.state == TechState.LOCKED) 0.5f else 1.0f
+    val alpha = if (node.state == TechNodeState.LOCKED) 0.5f else 1.0f
 
     Surface(
         color = MaterialTheme.colorScheme.surface.copy(alpha = alpha),
@@ -122,20 +167,24 @@ fun TechNodeCard(node: TechNode) {
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 text = node.name,
                 style = MaterialTheme.typography.labelLarge,
-                color = if (node.state == TechState.UNLOCKED) TextSecondary else MaterialTheme.colorScheme.onSurface
+                color = if (node.state == TechNodeState.UNLOCKED) NeonCyan else MaterialTheme.colorScheme.onSurface
             )
-            if (node.state == TechState.AVAILABLE) {
-                Spacer(modifier = Modifier.height(8.dp))
+            if (node.state == TechNodeState.AVAILABLE) {
+                Spacer(modifier = Modifier.height(12.dp))
                 IndustrialButton(
-                    text = "RESEARCH (${node.cost} C)",
-                    onClick = { }
+                    text = "RESEARCH (\${node.cost} C)",
+                    onClick = onResearchClick,
+                    color = if (node.canAfford) NeonCyan else NeonRed
                 )
+            } else if (node.state == TechNodeState.UNLOCKED) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("UNLOCKED", style = MaterialTheme.typography.bodyMedium, color = NeonCyan)
             }
         }
     }

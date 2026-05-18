@@ -13,9 +13,11 @@ object VisionSystem {
     fun calculateVisibleHexes(state: GameState, faction: Faction): Set<HexCoord> {
         val visible = mutableSetOf<HexCoord>()
         val units = state.units.values.filter { it.faction == faction }
+        val playerState = state.playerStates[faction]
 
-        // Also add planets owned by faction (simplified for now as always seeing capital)
-        // For a full implementation, we'd iterate over owned planets as well.
+        // Passive Tech Bonus
+        val hasDeepScanners = playerState?.techUnlocked?.contains("tech_deep_scanners") == true
+        val visionBonus = if (hasDeepScanners) 1 else 0
 
         for (unit in units) {
             var range = when (unit.type) {
@@ -25,6 +27,8 @@ object VisionSystem {
                 UnitType.BATTLESHIP -> 2
                 UnitType.CARRIER -> 3
             }
+
+            range += visionBonus
 
             if (state.activeEvent == GalacticEvent.SOLAR_FLARE) {
                 range = max(1, range / 2)
@@ -55,7 +59,6 @@ object VisionSystem {
         return visible
     }
 
-    // A simplified line algorithm for hex grids
     private fun hasLineOfSight(state: GameState, a: HexCoord, b: HexCoord): Boolean {
         val dist = a.distanceTo(b)
         if (dist <= 1) return true
@@ -69,7 +72,6 @@ object VisionSystem {
             points.add(hexRound(q, r, s))
         }
 
-        // Check if any point on the line (excluding ends) blocks vision
         for (i in 1 until points.size - 1) {
             val tile = state.map.tiles[points[i]]
             if (tile != null && tile.terrain.blocksVision) {

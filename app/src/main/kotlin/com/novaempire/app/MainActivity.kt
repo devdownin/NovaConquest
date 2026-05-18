@@ -69,6 +69,9 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onAttackUnit = { from, to ->
                                     gameViewModel.dispatch(GameIntent.AttackUnit(from, to))
+                                },
+                                onResearchTech = { techId ->
+                                    gameViewModel.dispatch(GameIntent.ResearchTech(techId))
                                 }
                             )
                         }
@@ -84,7 +87,8 @@ fun GameContainer(
     gameState: com.novaempire.core.domain.state.GameState,
     onEndTurn: () -> Unit,
     onMoveUnit: (com.novaempire.core.hex.HexCoord, com.novaempire.core.hex.HexCoord) -> Unit,
-    onAttackUnit: (com.novaempire.core.hex.HexCoord, com.novaempire.core.hex.HexCoord) -> Unit
+    onAttackUnit: (com.novaempire.core.hex.HexCoord, com.novaempire.core.hex.HexCoord) -> Unit,
+    onResearchTech: (String) -> Unit
 ) {
     var currentTab by remember { mutableStateOf(GameTab.MAP) }
 
@@ -126,7 +130,10 @@ fun GameContainer(
                     onAttackUnit = onAttackUnit
                 )
                 GameTab.SYSTEM -> StarSystemManagementScreen()
-                GameTab.TECH -> TechTreeScreen()
+                GameTab.TECH -> TechTreeScreen(
+                    gameState = gameState,
+                    onResearchTech = onResearchTech
+                )
                 GameTab.INTEL -> DiplomacyIntelScreen()
             }
         }

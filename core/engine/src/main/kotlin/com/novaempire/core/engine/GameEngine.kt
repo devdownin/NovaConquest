@@ -100,10 +100,31 @@ class GameEngine {
             is GameIntent.AttackUnit -> {
                 val unit = state.units[intent.attacker]
                 if (unit != null && unit.faction == state.activeFaction && !unit.hasAttacked) {
-                    // For now, assume attack is valid if intent is dispatched
                     val nextState = CombatResolver.resolveCombat(state, intent.attacker, intent.defender)
                     updateVision(nextState)
                 } else state
+            }
+            is GameIntent.ResearchTech -> {
+                val playerState = state.playerStates[state.activeFaction] ?: return state
+                val cost = com.novaempire.core.domain.models.TechRegistry.calculateCost(intent.techId, playerState.techUnlocked)
+
+                val tech = com.novaempire.core.domain.models.TechRegistry.getTech(intent.techId) ?: return state
+                val isAvailable = tech.requiresTechId == null || playerState.techUnlocked.contains(tech.requiresTechId)
+                val isAlreadyUnlocked = playerState.techUnlocked.contains(intent.techId)
+
+                if (isAvailable && !isAlreadyUnlocked && playerState.credits >= cost) {
+                    val newPlayerState = playerState.copy(
+                        credits = playerState.credits - cost,
+                        techUnlocked = playerState.techUnlocked + intent.techId
+                    )
+                    val newPlayerStates = state.playerStates.toMutableMap()
+                    newPlayerStates[state.activeFaction] = newPlayerState
+
+                    val nextState = state.copy(playerStates = newPlayerStates)
+                    updateVision(nextState)
+                } else {
+                    state
+                }
             }
         }
     }
@@ -149,4 +170,5 @@ sealed class GameIntent {
     data class SelectFaction(val faction: Faction) : GameIntent()
     data class MoveUnit(val from: HexCoord, val to: HexCoord) : GameIntent()
     data class AttackUnit(val attacker: HexCoord, val defender: HexCoord) : GameIntent()
+    data class ResearchTech(val techId: String) : GameIntent()
 }
