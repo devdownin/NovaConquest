@@ -25,6 +25,12 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.input.pointer.pointerInput
+
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import com.novaempire.app.audio.AudioManager
+import com.novaempire.app.audio.SoundType
+
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.core.*
 import kotlinx.coroutines.delay
@@ -61,6 +67,7 @@ fun TacticalMapScreen(
 
     var combatPreviewData by remember { mutableStateOf<Pair<HexCoord, HexCoord>?>(null) }
 
+    val haptic = LocalHapticFeedback.current
     // Animation state
     var activeCombatAnim by remember { mutableStateOf<com.novaempire.core.domain.state.CombatEvent?>(null) }
     val laserProgress = remember { Animatable(0f) }
@@ -74,12 +81,15 @@ fun TacticalMapScreen(
             explosionScale.snapTo(0f)
 
             // Animate laser
+            AudioManager.playSound(SoundType.COMBAT_LASER)
             laserProgress.animateTo(
                 targetValue = 1f,
                 animationSpec = tween(durationMillis = 300, easing = LinearEasing)
             )
 
             // Animate explosion
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            AudioManager.playSound(SoundType.COMBAT_EXPLOSION)
             explosionScale.animateTo(
                 targetValue = 1f,
                 animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
@@ -91,6 +101,7 @@ fun TacticalMapScreen(
     }
 
     val hexRadius = 80f
+
 
     val currentPlayerState = gameState.playerStates[gameState.activeFaction]
     val exploredHexes = currentPlayerState?.exploredHexes ?: emptySet()
@@ -129,6 +140,7 @@ fun TacticalMapScreen(
                     val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f)
                     if (gameState.map.tiles.containsKey(coord) && exploredHexes.contains(coord)) {
                         selectedHex = coord
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     }
                 }
             }
@@ -140,6 +152,7 @@ fun TacticalMapScreen(
                         if (unit != null && unit.faction == gameState.activeFaction && !unit.hasMoved) {
                             dragStartHex = coord
                             selectedHex = coord
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         }
                     },
                     onDragEnd = {
@@ -425,7 +438,10 @@ fun TacticalMapScreen(
             )
             IndustrialButton(
                 text = "END TURN",
-                onClick = onEndTurnClick,
+                onClick = {
+                    AudioManager.playSound(SoundType.END_TURN)
+                    onEndTurnClick()
+                },
                 color = NeonOrange
             )
         }

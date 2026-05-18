@@ -14,11 +14,11 @@ import kotlinx.coroutines.flow.update
 import kotlin.random.Random
 
 class GameEngine {
-    private val _state = MutableStateFlow(createInitialState(com.novaempire.core.domain.models.MapSize.MEDIUM))
+    private val _state = MutableStateFlow(createInitialState(com.novaempire.core.domain.models.MapSize.MEDIUM, com.novaempire.core.domain.models.MapArchetype.STANDARD))
     val state: StateFlow<GameState> = _state.asStateFlow()
 
-    private fun createInitialState(mapSize: com.novaempire.core.domain.models.MapSize): GameState {
-        val map = MapFactory.generateMap(radius = mapSize.radius)
+    private fun createInitialState(mapSize: com.novaempire.core.domain.models.MapSize, archetype: com.novaempire.core.domain.models.MapArchetype): GameState {
+        val map = MapFactory.generateMap(radius = mapSize.radius, archetype = archetype)
         val spawnPoints = map.tiles.keys.filter { map.tiles[it]?.terrain == com.novaempire.core.domain.models.TerrainType.PLANET }
         val units = mutableMapOf<HexCoord, GameUnit>()
 
@@ -87,10 +87,10 @@ class GameEngine {
         return when (intent) {
 
             is GameIntent.StartNewGame -> {
-                createInitialState(com.novaempire.core.domain.models.MapSize.MEDIUM)
+                createInitialState(com.novaempire.core.domain.models.MapSize.MEDIUM, com.novaempire.core.domain.models.MapArchetype.STANDARD)
             }
             is GameIntent.StartNewGameWithSize -> {
-                createInitialState(intent.mapSize)
+                createInitialState(intent.mapSize, intent.archetype)
             }
             is GameIntent.LoadGame -> {
                 intent.loadedState
@@ -347,7 +347,10 @@ sealed class GameIntent {
     data class RecruitHero(val heroId: String) : GameIntent()
     data class ChangeRelation(val targetFaction: Faction, val newRelation: com.novaempire.core.domain.models.DiplomaticRelation) : GameIntent()
     object StartNewGame : GameIntent()
-    data class StartNewGameWithSize(val mapSize: com.novaempire.core.domain.models.MapSize = com.novaempire.core.domain.models.MapSize.MEDIUM) : GameIntent()
+    data class StartNewGameWithSize(
+        val mapSize: com.novaempire.core.domain.models.MapSize = com.novaempire.core.domain.models.MapSize.MEDIUM,
+        val archetype: com.novaempire.core.domain.models.MapArchetype = com.novaempire.core.domain.models.MapArchetype.STANDARD
+    ) : GameIntent()
     data class LoadGame(val loadedState: GameState) : GameIntent()
     data class SiegePlanet(val attackerCoord: HexCoord, val planetCoord: HexCoord) : GameIntent()
     data class CapturePlanet(val unitCoord: HexCoord, val planetCoord: HexCoord) : GameIntent()

@@ -12,6 +12,8 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.novaempire.app.ui.screens.*
 import com.novaempire.app.ui.theme.NovaEmpireTheme
+
+import com.novaempire.app.audio.AudioManager
 import com.novaempire.app.ui.viewmodels.GameViewModel
 import com.novaempire.core.engine.GameIntent
 
@@ -34,6 +36,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AudioManager.init(this)
         setContent {
             NovaEmpireTheme {
                 Surface(
@@ -68,8 +71,8 @@ class MainActivity : ComponentActivity() {
                         }
                         AppScreen.FACTION_SELECTION -> {
                             FactionSelectionScreen(
-                                onStartGameClick = { faction, mapSize ->
-                                    gameViewModel.startNewGame(mapSize)
+                                onStartGameClick = { faction, mapSize, archetype ->
+                                    gameViewModel.startNewGame(mapSize, archetype)
                                     gameViewModel.dispatch(GameIntent.SelectFaction(faction))
                                     currentScreen = AppScreen.GAME
                                 },
@@ -127,6 +130,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+    override fun onDestroy() {
+        super.onDestroy()
+        AudioManager.release()
     }
 }
 

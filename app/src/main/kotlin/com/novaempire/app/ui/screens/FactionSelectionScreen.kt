@@ -19,14 +19,16 @@ import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.theme.*
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.MapSize
+import com.novaempire.core.domain.models.MapArchetype
 
 @Composable
 fun FactionSelectionScreen(
-    onStartGameClick: (Faction, MapSize) -> Unit,
+    onStartGameClick: (Faction, MapSize, MapArchetype) -> Unit,
     onBackClick: () -> Unit
 ) {
     var selectedFaction by remember { mutableStateOf(Faction.DOMINION) }
     var selectedMapSize by remember { mutableStateOf(MapSize.MEDIUM) }
+    var selectedArchetype by remember { mutableStateOf(MapArchetype.STANDARD) }
 
     Column(
         modifier = Modifier
@@ -91,6 +93,32 @@ fun FactionSelectionScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
         ) {
+            MapArchetype.values().forEach { archetype ->
+                val isSelected = archetype == selectedArchetype
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .clickable { selectedArchetype = archetype },
+                    color = if (isSelected) NeonCyan.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(4.dp),
+                    border = BorderStroke(1.dp, if (isSelected) NeonCyan else MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = archetype.displayName,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (isSelected) NeonCyan else TextSecondary
+                        )
+                    }
+                }
+            }
+        }
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
+        ) {
             MapSize.values().forEach { mapSize ->
                 val isSelected = mapSize == selectedMapSize
                 Surface(
@@ -125,7 +153,7 @@ fun FactionSelectionScreen(
             )
             IndustrialButton(
                 text = "START GAME",
-                onClick = { onStartGameClick(selectedFaction, selectedMapSize) },
+                onClick = { onStartGameClick(selectedFaction, selectedMapSize, selectedArchetype) },
                 modifier = Modifier.weight(2f)
             )
         }
