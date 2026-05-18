@@ -4,15 +4,15 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.novaempire.app.ui.screens.*
 import com.novaempire.app.ui.theme.NovaEmpireTheme
-import com.novaempire.core.engine.GameEngine
+import com.novaempire.app.ui.viewmodels.GameViewModel
 import com.novaempire.core.engine.GameIntent
 
 enum class AppScreen {
@@ -29,7 +29,6 @@ enum class GameTab {
 }
 
 class MainActivity : ComponentActivity() {
-    private val gameEngine = GameEngine()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,8 +38,9 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
+                    val gameViewModel: GameViewModel = viewModel()
+                    val gameState by gameViewModel.gameState.collectAsState()
                     var currentScreen by remember { mutableStateOf(AppScreen.MAIN_MENU) }
-                    var gameState by remember { mutableStateOf(gameEngine.state) }
 
                     when (currentScreen) {
                         AppScreen.MAIN_MENU -> {
@@ -51,7 +51,8 @@ class MainActivity : ComponentActivity() {
                         }
                         AppScreen.FACTION_SELECTION -> {
                             FactionSelectionScreen(
-                                onStartGameClick = { _ ->
+                                onStartGameClick = { faction ->
+                                    gameViewModel.dispatch(GameIntent.SelectFaction(faction))
                                     currentScreen = AppScreen.GAME
                                 },
                                 onBackClick = { currentScreen = AppScreen.MAIN_MENU }
@@ -61,8 +62,7 @@ class MainActivity : ComponentActivity() {
                             GameContainer(
                                 gameState = gameState,
                                 onEndTurn = {
-                                    gameEngine.processIntent(GameIntent.EndTurn)
-                                    gameState = gameEngine.state
+                                    gameViewModel.dispatch(GameIntent.EndTurn)
                                 }
                             )
                         }
