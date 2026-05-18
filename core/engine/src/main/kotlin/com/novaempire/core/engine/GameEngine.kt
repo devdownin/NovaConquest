@@ -104,6 +104,43 @@ class GameEngine {
                     nextState = triggerGalacticEvent(nextState)
                 }
 
+                // Apply End of Turn Bonuses for the active faction (the one that just finished)
+                val activePlayerState = state.playerStates[state.activeFaction]
+                val hasNix = activePlayerState?.recruitedHeroes?.contains("hero_nix") == true
+
+                var unitsAfterTurn = nextState.units
+                if (hasNix) {
+                    unitsAfterTurn = unitsAfterTurn.mapValues { (coord, unit) ->
+                        if (unit.faction == state.activeFaction && unit.currentHp < unit.type.maxHp) {
+                            unit.copy(currentHp = Math.min(unit.type.maxHp, unit.currentHp + 1))
+                        } else {
+                            unit
+                        }
+                    }
+                }
+
+                // Add credits for the next faction starting their turn
+                val nextPlayerState = nextState.playerStates[nextFaction]
+                val hasElara = nextPlayerState?.recruitedHeroes?.contains("hero_elara") == true
+
+                var systemIncome = 10 // Base income
+                if (hasElara) {
+                    systemIncome += (systemIncome * 0.10).toInt() + 2 // +10% and flat +2 for early game impact
+                }
+
+                // Event modifiers
+                if (nextState.activeEvent == GalacticEvent.ECONOMIC_BOOM) {
+                    systemIncome += 3
+                }
+
+                val nextCredits = (nextPlayerState?.credits ?: 0) + systemIncome
+                val newPlayerStates = nextState.playerStates.toMutableMap()
+                if (nextPlayerState != null) {
+                    newPlayerStates[nextFaction] = nextPlayerState.copy(credits = nextCredits)
+                }
+                nextState = nextState.copy(units = unitsAfterTurn, playerStates = newPlayerStates)
+
+
                 if (nextFaction != Faction.DOMINION) {
                     nextState = UtilityEvaluator.executeAITurn(nextState, nextFaction)
                     nextState = updateVision(nextState)
@@ -141,7 +178,8 @@ class GameEngine {
             }
             is GameIntent.ResearchTech -> {
                 val playerState = state.playerStates[state.activeFaction] ?: return state
-                val cost = com.novaempire.core.domain.models.TechRegistry.calculateCost(intent.techId, playerState.techUnlocked)
+                val hasKael = playerState.recruitedHeroes.contains("hero_kael")
+                val cost = com.novaempire.core.domain.models.TechRegistry.calculateCost(intent.techId, playerState.techUnlocked, hasKael)
 
                 val tech = com.novaempire.core.domain.models.TechRegistry.getTech(intent.techId) ?: return state
                 val isAvailable = tech.requiresTechId == null || playerState.techUnlocked.contains(tech.requiresTechId)

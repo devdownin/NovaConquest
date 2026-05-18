@@ -65,12 +65,14 @@ object UtilityEvaluator {
         val affordableTech = TechRegistry.ALL_TECHS.find { tech ->
             val isAvailable = tech.requiresTechId == null || playerState.techUnlocked.contains(tech.requiresTechId)
             val isUnlocked = playerState.techUnlocked.contains(tech.id)
-            val cost = TechRegistry.calculateCost(tech.id, playerState.techUnlocked)
+            val hasKael = playerState.recruitedHeroes.contains("hero_kael")
+            val cost = TechRegistry.calculateCost(tech.id, playerState.techUnlocked, hasKael)
             isAvailable && !isUnlocked && playerState.credits >= cost
         }
 
         if (affordableTech != null) {
-            val cost = TechRegistry.calculateCost(affordableTech.id, playerState.techUnlocked)
+            val hasKael = playerState.recruitedHeroes.contains("hero_kael")
+            val cost = TechRegistry.calculateCost(affordableTech.id, playerState.techUnlocked, hasKael)
             val newPlayerState = playerState.copy(
                 credits = playerState.credits - cost,
                 techUnlocked = playerState.techUnlocked + affordableTech.id

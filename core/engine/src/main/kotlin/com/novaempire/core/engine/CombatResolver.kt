@@ -10,8 +10,15 @@ object CombatResolver {
         val attacker = state.units[attackerCoord] ?: return state
         val defender = state.units[defenderCoord] ?: return state
 
+        // Check for Hero Bonuses
+        val attackerPlayer = state.playerStates[attacker.faction]
+        val defenderPlayer = state.playerStates[defender.faction]
+
+        val hasVance = attackerPlayer?.recruitedHeroes?.contains("hero_vance") == true
+        val attackBonus = if (hasVance) Math.max(1, (attacker.type.attack * 0.15).toInt()) else 0
+
         // 1. Attacker deals damage
-        val damageToDefender = attacker.type.attack
+        val damageToDefender = attacker.type.attack + attackBonus
         val defenderRemainingHp = max(0, defender.currentHp - damageToDefender)
 
         var newUnits = state.units.toMutableMap()
