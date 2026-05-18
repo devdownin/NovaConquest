@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
 class GameEngine {
-    private val _state = MutableStateFlow(GameState())
+    private val _state = MutableStateFlow(GameState(map = MapFactory.generateMap(radius = 4)))
     val state: StateFlow<GameState> = _state.asStateFlow()
 
     fun processIntent(intent: GameIntent) {
