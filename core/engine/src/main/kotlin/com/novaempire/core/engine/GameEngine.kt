@@ -14,11 +14,11 @@ import kotlinx.coroutines.flow.update
 import kotlin.random.Random
 
 class GameEngine {
-    private val _state = MutableStateFlow(createInitialState())
+    private val _state = MutableStateFlow(createInitialState(com.novaempire.core.domain.models.MapSize.MEDIUM))
     val state: StateFlow<GameState> = _state.asStateFlow()
 
-    private fun createInitialState(): GameState {
-        val map = MapFactory.generateMap(radius = 4)
+    private fun createInitialState(mapSize: com.novaempire.core.domain.models.MapSize): GameState {
+        val map = MapFactory.generateMap(radius = mapSize.radius)
         val spawnPoints = map.tiles.keys.filter { map.tiles[it]?.terrain == com.novaempire.core.domain.models.TerrainType.PLANET }
         val units = mutableMapOf<HexCoord, GameUnit>()
 
@@ -87,7 +87,7 @@ class GameEngine {
         return when (intent) {
 
             is GameIntent.StartNewGame -> {
-                createInitialState()
+                createInitialState(intent.mapSize)
             }
             is GameIntent.LoadGame -> {
                 intent.loadedState
@@ -311,6 +311,6 @@ sealed class GameIntent {
     data class BuildUnit(val unitType: UnitType, val location: HexCoord? = null) : GameIntent()
     data class RecruitHero(val heroId: String) : GameIntent()
     data class ChangeRelation(val targetFaction: Faction, val newRelation: com.novaempire.core.domain.models.DiplomaticRelation) : GameIntent()
-    object StartNewGame : GameIntent()
+    data class StartNewGame(val mapSize: com.novaempire.core.domain.models.MapSize = com.novaempire.core.domain.models.MapSize.MEDIUM) : GameIntent()
     data class LoadGame(val loadedState: GameState) : GameIntent()
 }

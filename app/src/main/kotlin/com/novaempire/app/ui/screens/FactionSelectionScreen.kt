@@ -18,13 +18,15 @@ import androidx.compose.ui.unit.dp
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.theme.*
 import com.novaempire.core.domain.models.Faction
+import com.novaempire.core.domain.models.MapSize
 
 @Composable
 fun FactionSelectionScreen(
-    onStartGameClick: (Faction) -> Unit,
+    onStartGameClick: (Faction, MapSize) -> Unit,
     onBackClick: () -> Unit
 ) {
     var selectedFaction by remember { mutableStateOf(Faction.DOMINION) }
+    var selectedMapSize by remember { mutableStateOf(MapSize.MEDIUM) }
 
     Column(
         modifier = Modifier
@@ -77,7 +79,39 @@ fun FactionSelectionScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = "MAP CONFIGURATION",
+            style = MaterialTheme.typography.headlineMedium,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
+        ) {
+            MapSize.values().forEach { mapSize ->
+                val isSelected = mapSize == selectedMapSize
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .clickable { selectedMapSize = mapSize },
+                    color = if (isSelected) NeonCyan.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(4.dp),
+                    border = BorderStroke(1.dp, if (isSelected) NeonCyan else MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = mapSize.displayName,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (isSelected) NeonCyan else TextSecondary
+                        )
+                    }
+                }
+            }
+        }
 
         Row(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -91,7 +125,7 @@ fun FactionSelectionScreen(
             )
             IndustrialButton(
                 text = "START GAME",
-                onClick = { onStartGameClick(selectedFaction) },
+                onClick = { onStartGameClick(selectedFaction, selectedMapSize) },
                 modifier = Modifier.weight(2f)
             )
         }
@@ -136,7 +170,7 @@ fun getFactionColor(faction: Faction): Color {
         Faction.SYNTH -> NeonCyan
         Faction.NOMADS -> NeonOrange
         Faction.KAELEN -> NeonGreen
-        Faction.XYLAR -> Color.Cyan // fallback
-        Faction.ANCIENT_NPC -> Color.Magenta // fallback
+        Faction.XYLAR -> Color.Cyan
+        Faction.ANCIENT_NPC -> Color.Magenta
     }
 }

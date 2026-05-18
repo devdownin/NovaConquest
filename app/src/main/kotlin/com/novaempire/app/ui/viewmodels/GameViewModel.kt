@@ -43,7 +43,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         return false
     }
 
-    fun startNewGame() {
-        engine.processIntent(GameIntent.StartNewGame)
+    fun startNewGame(mapSize: com.novaempire.core.domain.models.MapSize = com.novaempire.core.domain.models.MapSize.MEDIUM) {
+        engine.processIntent(GameIntent.StartNewGame(mapSize))
     }
 }

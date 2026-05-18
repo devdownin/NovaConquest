@@ -5,6 +5,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.graphics.graphicsLayer
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -49,6 +53,10 @@ fun TacticalMapScreen(
     var ghostPath by remember { mutableStateOf<List<HexCoord>?>(null) }
     var dragStartHex by remember { mutableStateOf<HexCoord?>(null) }
 
+    var scale by remember { mutableStateOf(1f) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
+
+
     var combatPreviewData by remember { mutableStateOf<Pair<HexCoord, HexCoord>?>(null) }
 
     // Animation state
@@ -87,8 +95,10 @@ fun TacticalMapScreen(
     val visibleHexes = currentPlayerState?.visibleHexes ?: emptySet()
 
     fun pixelToHex(x: Float, y: Float, centerX: Float, centerY: Float): HexCoord {
-        val q = (sqrt(3.0) / 3 * (x - centerX) - 1.0 / 3 * (y - centerY)) / hexRadius
-        val r = (2.0 / 3 * (y - centerY)) / hexRadius
+        val adjustedX = (x - centerX - pan.x) / scale
+        val adjustedY = (y - centerY - pan.y) / scale
+        val q = (sqrt(3.0) / 3 * adjustedX - 1.0 / 3 * adjustedY) / hexRadius
+        val r = (2.0 / 3 * adjustedY) / hexRadius
         return hexRound(q, r, -q-r)
     }
 
@@ -100,6 +110,18 @@ fun TacticalMapScreen(
         // Tactical Map Canvas
         Canvas(modifier = Modifier
             .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTransformGestures { _, panChange, zoomChange, _ ->
+                    scale = (scale * zoomChange).coerceIn(0.5f, 3f)
+                    pan += panChange
+                }
+            }
+            .graphicsLayer(
+                scaleX = scale,
+                scaleY = scale,
+                translationX = pan.x,
+                translationY = pan.y
+            )
             .pointerInput(gameState) {
                 detectTapGestures { offset ->
                     val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f)

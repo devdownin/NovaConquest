@@ -56,7 +56,6 @@ class MainActivity : ComponentActivity() {
                             MainMenuScreen(
                                 hasSavedGame = hasSave,
                                 onNewGameClick = {
-                                    gameViewModel.startNewGame()
                                     currentScreen = AppScreen.FACTION_SELECTION
                                 },
                                 onResumeGameClick = {
@@ -69,7 +68,8 @@ class MainActivity : ComponentActivity() {
                         }
                         AppScreen.FACTION_SELECTION -> {
                             FactionSelectionScreen(
-                                onStartGameClick = { faction ->
+                                onStartGameClick = { faction, mapSize ->
+                                    gameViewModel.startNewGame(mapSize)
                                     gameViewModel.dispatch(GameIntent.SelectFaction(faction))
                                     currentScreen = AppScreen.GAME
                                 },
