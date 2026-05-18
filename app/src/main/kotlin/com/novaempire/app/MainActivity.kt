@@ -66,6 +66,9 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onMoveUnit = { from, to ->
                                     gameViewModel.dispatch(GameIntent.MoveUnit(from, to))
+                                },
+                                onAttackUnit = { from, to ->
+                                    gameViewModel.dispatch(GameIntent.AttackUnit(from, to))
                                 }
                             )
                         }
@@ -80,7 +83,8 @@ class MainActivity : ComponentActivity() {
 fun GameContainer(
     gameState: com.novaempire.core.domain.state.GameState,
     onEndTurn: () -> Unit,
-    onMoveUnit: (com.novaempire.core.hex.HexCoord, com.novaempire.core.hex.HexCoord) -> Unit
+    onMoveUnit: (com.novaempire.core.hex.HexCoord, com.novaempire.core.hex.HexCoord) -> Unit,
+    onAttackUnit: (com.novaempire.core.hex.HexCoord, com.novaempire.core.hex.HexCoord) -> Unit
 ) {
     var currentTab by remember { mutableStateOf(GameTab.MAP) }
 
@@ -115,7 +119,12 @@ fun GameContainer(
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
             when (currentTab) {
-                GameTab.MAP -> TacticalMapScreen(gameState = gameState, onEndTurnClick = onEndTurn, onMoveUnit = onMoveUnit)
+                GameTab.MAP -> TacticalMapScreen(
+                    gameState = gameState,
+                    onEndTurnClick = onEndTurn,
+                    onMoveUnit = onMoveUnit,
+                    onAttackUnit = onAttackUnit
+                )
                 GameTab.SYSTEM -> StarSystemManagementScreen()
                 GameTab.TECH -> TechTreeScreen()
                 GameTab.INTEL -> DiplomacyIntelScreen()

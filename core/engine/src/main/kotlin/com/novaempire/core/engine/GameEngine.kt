@@ -97,6 +97,14 @@ class GameEngine {
                     } else state
                 } else state
             }
+            is GameIntent.AttackUnit -> {
+                val unit = state.units[intent.attacker]
+                if (unit != null && unit.faction == state.activeFaction && !unit.hasAttacked) {
+                    // For now, assume attack is valid if intent is dispatched
+                    val nextState = CombatResolver.resolveCombat(state, intent.attacker, intent.defender)
+                    updateVision(nextState)
+                } else state
+            }
         }
     }
 
@@ -140,4 +148,5 @@ sealed class GameIntent {
     object EndTurn : GameIntent()
     data class SelectFaction(val faction: Faction) : GameIntent()
     data class MoveUnit(val from: HexCoord, val to: HexCoord) : GameIntent()
+    data class AttackUnit(val attacker: HexCoord, val defender: HexCoord) : GameIntent()
 }

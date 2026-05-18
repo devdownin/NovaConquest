@@ -39,11 +39,16 @@ import kotlin.math.sqrt
 fun TacticalMapScreen(
     gameState: GameState,
     onEndTurnClick: () -> Unit,
-    onMoveUnit: (from: HexCoord, to: HexCoord) -> Unit
+    onMoveUnit: (from: HexCoord, to: HexCoord) -> Unit,
+    onAttackUnit: (from: HexCoord, to: HexCoord) -> Unit
 ) {
     var selectedHex by remember { mutableStateOf<HexCoord?>(null) }
     var ghostPath by remember { mutableStateOf<List<HexCoord>?>(null) }
     var dragStartHex by remember { mutableStateOf<HexCoord?>(null) }
+
+    // Combat preview state
+    var combatPreviewData by remember { mutableStateOf<Pair<HexCoord, HexCoord>?>(null) }
+
     val hexRadius = 80f
 
     val currentPlayerState = gameState.playerStates[gameState.activeFaction]
@@ -86,7 +91,15 @@ fun TacticalMapScreen(
                         val start = dragStartHex
                         val path = ghostPath
                         if (start != null && path != null && path.isNotEmpty()) {
-                            onMoveUnit(start, path.last())
+                            val targetCoord = path.last()
+                            val targetUnit = gameState.units[targetCoord]
+
+                            if (targetUnit != null && targetUnit.faction != gameState.activeFaction) {
+                                // Initiate Combat Preview instead of moving
+                                combatPreviewData = Pair(start, targetCoord)
+                            } else {
+                                onMoveUnit(start, targetCoord)
+                            }
                         }
                         dragStartHex = null
                         ghostPath = null
@@ -101,7 +114,15 @@ fun TacticalMapScreen(
                             val coord = pixelToHex(change.position.x, change.position.y, size.width / 2f, size.height / 2f)
                             if (coord != start && gameState.map.tiles.containsKey(coord)) {
                                 val gridMap = GameGridMap(gameState)
-                                ghostPath = HexPathfinder.findPath(start, coord, gridMap, maxCost = 4)
+                                // If hovering over enemy unit, pretend it's passable just to draw the attack path
+                                val originalUnit = gameState.units[coord]
+                                val path = if (originalUnit != null && originalUnit.faction != gameState.activeFaction) {
+                                    // Custom pathfinder override or direct check since attack range is 1 usually
+                                    if (start.distanceTo(coord) == 1) listOf(coord) else null
+                                } else {
+                                    HexPathfinder.findPath(start, coord, gridMap, maxCost = 4)
+                                }
+                                ghostPath = path
                             } else {
                                 ghostPath = null
                             }
@@ -132,10 +153,8 @@ fun TacticalMapScreen(
                         else -> NeonCyan
                     }
 
-                    // Apply Fog of War darkening and holographic styling
                     val alphaMod = if (isVisible) 0.15f else 0.05f
 
-                    // Base Hex Gradient
                     val bgBrush = Brush.radialGradient(
                         colors = listOf(baseColor.copy(alpha = alphaMod), Color.Transparent),
                         center = Offset(x, y),
@@ -143,17 +162,14 @@ fun TacticalMapScreen(
                     )
                     drawHexagonPath(x, y, hexRadius, brush = bgBrush, fill = true)
 
-                    // Holographic scanlines (simple pattern on visible hexes)
                     if (isVisible && tile.terrain != TerrainType.EMPTY) {
                          drawHexagonPath(x, y, hexRadius, color = baseColor.copy(alpha=0.05f), fill = true)
                     }
 
-                    // Inner Glow Stroke
                     val strokeColor = if (tile.coord == selectedHex) NeonCyan else baseColor.copy(alpha = if (isVisible) 0.5f else 0.2f)
                     val strokeWidth = if (tile.coord == selectedHex) 4f else 1.5f
                     drawHexagonPath(x, y, hexRadius - strokeWidth/2, color = strokeColor, fill = false, strokeWidth = strokeWidth)
 
-                    // Specialized Terrain Drawing
                     if (isVisible) {
                         when (tile.terrain) {
                             TerrainType.PLANET -> drawPlanet(x, y, hexRadius)
@@ -163,7 +179,6 @@ fun TacticalMapScreen(
                         }
                     }
                 } else {
-                    // Unexplored Void
                     drawHexagonPath(x, y, hexRadius, color = VoidBlack, fill = true)
                     drawHexagonPath(x, y, hexRadius, color = Color(0xFF1A1D24), fill = false, strokeWidth = 1f)
                 }
@@ -180,8 +195,12 @@ fun TacticalMapScreen(
                         val px = centerX + hexRadius * (sqrt(3f) * coord.q + sqrt(3f) / 2 * coord.r)
                         val py = centerY + hexRadius * (3f / 2 * coord.r)
                         val currentPoint = Offset(px, py)
+
+                        val isAttack = gameState.units[coord]?.faction?.let { it != gameState.activeFaction } ?: false
+                        val pathColor = if (isAttack) NeonRed else NeonCyan
+
                         drawLine(
-                            color = NeonCyan.copy(alpha = 0.8f),
+                            color = pathColor.copy(alpha = 0.6f),
                             start = prevPoint,
                             end = currentPoint,
                             strokeWidth = 6f
@@ -191,11 +210,12 @@ fun TacticalMapScreen(
                     val dest = path.last()
                     val dx = centerX + hexRadius * (sqrt(3f) * dest.q + sqrt(3f) / 2 * dest.r)
                     val dy = centerY + hexRadius * (3f / 2 * dest.r)
-                    drawHexagonPath(dx, dy, hexRadius, color = NeonCyan.copy(alpha = 0.3f), fill = true)
+                    val isAttack = gameState.units[dest]?.faction?.let { it != gameState.activeFaction } ?: false
+                    drawHexagonPath(dx, dy, hexRadius, color = (if (isAttack) NeonRed else NeonCyan).copy(alpha = 0.3f), fill = true)
                 }
             }
 
-            // Draw Units (only if visible)
+            // Draw Units
             gameState.units.values.filter { visibleHexes.contains(it.position) }.forEach { unit ->
                 val x = centerX + hexRadius * (sqrt(3f) * unit.position.q + sqrt(3f) / 2 * unit.position.r)
                 val y = centerY + hexRadius * (3f / 2 * unit.position.r)
@@ -207,16 +227,14 @@ fun TacticalMapScreen(
                     else -> Color.White
                 }
 
-                // Holographic ship indicator
                 val alpha = if (unit.hasMoved) 0.5f else 1.0f
                 val path = Path()
                 path.moveTo(x, y - 25f)
                 path.lineTo(x + 18f, y + 15f)
-                path.lineTo(x, y + 5f) // indented engine area
+                path.lineTo(x, y + 5f)
                 path.lineTo(x - 18f, y + 15f)
                 path.close()
 
-                // Ship Glow
                 val glowBrush = Brush.radialGradient(
                     colors = listOf(unitColor.copy(alpha = alpha * 0.8f), Color.Transparent),
                     center = Offset(x, y),
@@ -267,7 +285,7 @@ fun TacticalMapScreen(
         selectedHex?.let { coord ->
             val tile = gameState.map.getTileAt(coord)
             val unit = gameState.units[coord]
-            if (tile != null) {
+            if (tile != null && combatPreviewData == null) {
                 Surface(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
@@ -305,13 +323,30 @@ fun TacticalMapScreen(
                 .align(Alignment.BottomEnd),
             color = NeonOrange
         )
+
+        // Combat Preview Overlay
+        combatPreviewData?.let { (attackerCoord, defenderCoord) ->
+            val attacker = gameState.units[attackerCoord]
+            val defender = gameState.units[defenderCoord]
+
+            if (attacker != null && defender != null) {
+                CombatPreviewScreen(
+                    attacker = attacker,
+                    defender = defender,
+                    onConfirm = {
+                        onAttackUnit(attackerCoord, defenderCoord)
+                        combatPreviewData = null
+                    },
+                    onCancel = {
+                        combatPreviewData = null
+                    }
+                )
+            }
+        }
     }
 }
 
-// Custom specialized terrain drawing functions
-
 fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float) {
-    // Planet core
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(NeonGreen.copy(alpha = 0.8f), NeonGreen.copy(alpha = 0.2f), Color.Transparent),
@@ -321,7 +356,6 @@ fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float) {
         radius = hexRadius * 0.4f,
         center = Offset(x, y)
     )
-    // Orbital rings
     drawOval(
         color = NeonCyan.copy(alpha = 0.6f),
         topLeft = Offset(x - hexRadius * 0.6f, y - hexRadius * 0.2f),
@@ -331,7 +365,6 @@ fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float) {
 }
 
 fun DrawScope.drawAsteroids(x: Float, y: Float, hexRadius: Float) {
-    // Draw a cluster of small technical geometric shapes
     val offsets = listOf(
         Offset(-15f, -20f), Offset(10f, -25f), Offset(20f, 10f),
         Offset(-25f, 15f), Offset(0f, 25f), Offset(-5f, 0f)
@@ -355,7 +388,6 @@ fun DrawScope.drawAsteroids(x: Float, y: Float, hexRadius: Float) {
 }
 
 fun DrawScope.drawNebula(x: Float, y: Float, hexRadius: Float) {
-    // Draw swirling translucent gas clouds
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(Color(0xFFB026FF).copy(alpha = 0.5f), Color.Transparent),

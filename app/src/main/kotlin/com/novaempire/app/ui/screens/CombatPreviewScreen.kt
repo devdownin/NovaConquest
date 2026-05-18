@@ -13,12 +13,29 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.novaempire.app.ui.components.IndustrialButton
+import com.novaempire.app.ui.theme.NeonCyan
 import com.novaempire.app.ui.theme.NeonGold
+import com.novaempire.app.ui.theme.NeonOrange
 import com.novaempire.app.ui.theme.NeonRed
 import com.novaempire.app.ui.theme.TextSecondary
+import com.novaempire.core.domain.models.Faction
+import com.novaempire.core.domain.models.GameUnit
 
 @Composable
-fun CombatPreviewScreen(onConfirm: () -> Unit, onCancel: () -> Unit) {
+fun CombatPreviewScreen(
+    attacker: GameUnit,
+    defender: GameUnit,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val attackerColor = getFactionColor(attacker.faction)
+    val defenderColor = getFactionColor(defender.faction)
+
+    // Simplified damage prediction
+    val predictedDamage = attacker.type.attack
+    val predictedCounter = if (predictedDamage >= defender.currentHp) 0 else defender.type.attack
+    val targetDestroyed = predictedDamage >= defender.currentHp
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -39,7 +56,8 @@ fun CombatPreviewScreen(onConfirm: () -> Unit, onCancel: () -> Unit) {
             ) {
                 Text(
                     text = "COMBAT PREVIEW",
-                    style = MaterialTheme.typography.headlineLarge
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = NeonRed
                 )
                 Spacer(modifier = Modifier.height(32.dp))
 
@@ -49,7 +67,12 @@ fun CombatPreviewScreen(onConfirm: () -> Unit, onCancel: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Attacker
-                    CombatEntity(name = "Dominion Cruiser", hp = "300/300", atk = "120", color = NeonRed)
+                    CombatEntity(
+                        name = "\${attacker.faction.name} \${attacker.type.name}",
+                        hp = "\${attacker.currentHp}/\${attacker.type.maxHp}",
+                        atk = "\${attacker.type.attack}",
+                        color = attackerColor
+                    )
                     Text(
                         text = "VS",
                         style = MaterialTheme.typography.headlineLarge,
@@ -57,23 +80,30 @@ fun CombatPreviewScreen(onConfirm: () -> Unit, onCancel: () -> Unit) {
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                     // Defender
-                    CombatEntity(name = "Traders Scout", hp = "50/50", atk = "10", color = NeonGold)
+                    CombatEntity(
+                        name = "\${defender.faction.name} \${defender.type.name}",
+                        hp = "\${defender.currentHp}/\${defender.type.maxHp}",
+                        atk = "\${defender.type.attack}",
+                        color = defenderColor
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(32.dp))
 
                 Text(
-                    text = "ESTIMATED DAMAGE: 120",
+                    text = "ESTIMATED DAMAGE: \$predictedDamage",
                     style = MaterialTheme.typography.headlineMedium,
                     color = NeonRed
                 )
+                if (targetDestroyed) {
+                    Text(
+                        text = "TARGET DESTROYED",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = NeonRed
+                    )
+                }
                 Text(
-                    text = "TARGET DESTROYED",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = NeonRed
-                )
-                Text(
-                    text = "COUNTER-ATTACK: None",
+                    text = "COUNTER-ATTACK: \$predictedCounter",
                     style = MaterialTheme.typography.bodyLarge,
                     color = TextSecondary
                 )
@@ -113,7 +143,7 @@ fun CombatEntity(name: String, hp: String, atk: String, color: Color) {
             border = BorderStroke(1.dp, color)
         ) {}
         Spacer(modifier = Modifier.height(8.dp))
-        Text(text = "HP: \${hp}", style = MaterialTheme.typography.labelLarge)
-        Text(text = "ATK: \${atk}", style = MaterialTheme.typography.labelLarge)
+        Text(text = "HP: \$hp", style = MaterialTheme.typography.labelLarge)
+        Text(text = "ATK: \$atk", style = MaterialTheme.typography.labelLarge)
     }
 }
