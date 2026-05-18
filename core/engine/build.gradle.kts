@@ -8,11 +8,13 @@ java {
     targetCompatibility = JavaVersion.VERSION_17
 }
 
-dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
-    implementation(project(":core:domain"))
-    implementation(project(":core:hex"))
-}
 kotlin {
     jvmToolchain(17)
+}
+
+dependencies {
+    implementation(project(":core:domain"))
+    implementation(project(":core:hex"))
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
+    testImplementation("junit:junit:4.13.2")
 }
