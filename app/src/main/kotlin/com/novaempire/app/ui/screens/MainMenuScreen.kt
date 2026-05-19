@@ -68,7 +68,7 @@ fun MainMenuScreen(
             contentAlignment = Alignment.Center
         ) {
             IndustrialPanel(
-                modifier = Modifier.width(400.dp),
+                modifier = Modifier.widthIn(max = 400.dp).fillMaxWidth(0.9f),
                 backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
             ) {
                 Column(

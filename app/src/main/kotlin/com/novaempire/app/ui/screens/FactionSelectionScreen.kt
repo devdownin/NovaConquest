@@ -5,10 +5,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,231 +51,289 @@ fun FactionSelectionScreen(
         HalftoneBackground(modifier = Modifier.fillMaxSize(), color = Color.White.copy(alpha = 0.05f))
         NoiseOverlay(modifier = Modifier.fillMaxSize(), alpha = 0.05f)
 
-        // Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
-                .padding(horizontal = 32.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.fillMaxSize()
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBackClick) {
-                    Icon(imageVector = Icons.Default.Menu, contentDescription = "Back", tint = NeonCyan)
-                }
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = "NOVA CONQUEST",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = NeonCyan
-                )
-            }
-            Icon(Icons.Default.Menu, contentDescription = null, tint = NeonCyan) // Using Menu as placeholder
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = 80.dp, bottom = 32.dp, start = 32.dp, end = 32.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Left Column (8/12 roughly represented by weight 2f)
-            Column(
+            // Header
+            Row(
                 modifier = Modifier
-                    .weight(2f)
-                    .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
+                    .padding(horizontal = 32.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onBackClick) {
+                        Icon(imageVector = Icons.Default.Menu, contentDescription = "Back", tint = NeonCyan)
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(
+                        text = "NOVA CONQUEST",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = NeonCyan
+                    )
+                }
+                Icon(Icons.Default.AccountCircle, contentDescription = null, tint = NeonCyan)
+            }
+
+            BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(32.dp)) {
+                val isCompact = maxWidth < 800.dp
+
+                if (isCompact) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        FactionSelectionPanel(selectedFaction) { selectedFaction = it }
+                        FactionDetailPanel(selectedFaction)
+                        ConfigurationPanel(
+                            selectedArchetype,
+                            { selectedArchetype = it },
+                            selectedMapSize,
+                            { selectedMapSize = it },
+                            commanderCallsign,
+                            { commanderCallsign = it },
+                            { onStartGameClick(selectedFaction, selectedMapSize, selectedArchetype) },
+                            selectedFaction
+                        )
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.spacedBy(24.dp)
+                    ) {
+                        // Left Column (8/12)
+                        Column(
+                            modifier = Modifier
+                                .weight(2f)
+                                .fillMaxHeight(),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            FactionSelectionPanel(selectedFaction) { selectedFaction = it }
+                            FactionDetailPanel(selectedFaction)
+                        }
+
+                        // Right Column (4/12)
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            ConfigurationPanel(
+                                selectedArchetype,
+                                { selectedArchetype = it },
+                                selectedMapSize,
+                                { selectedMapSize = it },
+                                commanderCallsign,
+                                { commanderCallsign = it },
+                                { onStartGameClick(selectedFaction, selectedMapSize, selectedArchetype) },
+                                selectedFaction
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun FactionSelectionPanel(selectedFaction: Faction, onFactionSelect: (Faction) -> Unit) {
+    Column {
+        Text(
+            text = "SELECT FACTION",
+            style = MaterialTheme.typography.headlineLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        HeaderLine(color = NeonCyan, modifier = Modifier.padding(bottom = 8.dp))
+        Text(
+            text = "Choose your alignment. Your choice will dictate initial resources and tactical advantages.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextSecondary,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        IndustrialPanel {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    text = "AVAILABLE FACTIONS",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = TextSecondary,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    val factions = Faction.values().filter { it != Faction.ANCIENT_NPC }
+                    items(factions) { faction ->
+                        FactionCard(
+                            faction = faction,
+                            isSelected = faction == selectedFaction,
+                            onClick = { onFactionSelect(faction) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun FactionDetailPanel(selectedFaction: Faction) {
+    IndustrialPanel(
+        borderColor = getFactionColor(selectedFaction)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
             ) {
                 Column {
                     Text(
-                        text = "SELECT FACTION",
+                        text = selectedFaction.name.uppercase(),
                         style = MaterialTheme.typography.headlineLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(bottom = 8.dp)
+                        color = getFactionColor(selectedFaction)
                     )
-                    HeaderLine(color = NeonCyan, modifier = Modifier.padding(bottom = 8.dp))
                     Text(
-                        text = "Choose your alignment. Your choice will dictate initial resources and tactical advantages.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary,
-                        modifier = Modifier.padding(bottom = 16.dp)
+                        text = "Militaristic Hegemony",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = TextSecondary
                     )
                 }
-
-                // Faction Grid
-                IndustrialPanel {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Text(
-                            text = "AVAILABLE FACTIONS",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = TextSecondary,
-                            modifier = Modifier.padding(bottom = 16.dp)
-                        )
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            val factions = Faction.values().filter { it != Faction.ANCIENT_NPC }
-                            items(factions) { faction ->
-                                FactionCard(
-                                    faction = faction,
-                                    isSelected = faction == selectedFaction,
-                                    onClick = { selectedFaction = faction }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Faction Details
-                IndustrialPanel(
-                    borderColor = getFactionColor(selectedFaction)
-                ) {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Column {
-                                Text(
-                                    text = selectedFaction.name.uppercase(),
-                                    style = MaterialTheme.typography.headlineLarge,
-                                    color = getFactionColor(selectedFaction)
-                                )
-                                Text(
-                                    text = "Militaristic Hegemony", // Should be derived from faction
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = TextSecondary
-                                )
-                            }
-                            Icon(
-                                Icons.Default.Menu,
-                                contentDescription = null,
-                                tint = getFactionColor(selectedFaction).copy(alpha = 0.2f),
-                                modifier = Modifier.size(48.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Text(
-                            text = "A rigid, martial society focused on overwhelming firepower and fortified defenses. The Dominion believes peace is only achieved through absolute control of space.",
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.padding(start = 16.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)).padding(8.dp)
-                        )
-
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            // Bonus Badge
-                            Box(modifier = Modifier.weight(1f).padding(12.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
-                                Column {
-                                    Text("FACTION BONUS", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                                    Text("+15% Hull Integrity, -10% Ship Build Time", style = MaterialTheme.typography.bodyMedium)
-                                }
-                            }
-                            // Units Badge
-                            Box(modifier = Modifier.weight(1f).padding(12.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
-                                Column {
-                                    Text("CORE FLEET", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                                    Text("Dreadnoughts, Heavy Cruisers, Flak Frigates", style = MaterialTheme.typography.bodyMedium)
-                                }
-                            }
-                        }
-                    }
-                }
+                Icon(
+                    Icons.Default.Menu,
+                    contentDescription = null,
+                    tint = getFactionColor(selectedFaction).copy(alpha = 0.2f),
+                    modifier = Modifier.size(48.dp)
+                )
             }
 
-            // Right Column (4/12 roughly represented by weight 1f)
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = "A rigid, martial society focused on overwhelming firepower and fortified defenses. The Dominion believes peace is only achieved through absolute control of space.",
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.padding(start = 16.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)).padding(8.dp)
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                IndustrialPanel {
-                    Column(modifier = Modifier.padding(20.dp)) {
+                Box(modifier = Modifier.widthIn(min = 200.dp).weight(1f, fill = false).padding(12.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
+                    Column {
+                        Text("FACTION BONUS", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                        Text("+15% Hull Integrity, -10% Ship Build Time", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                Box(modifier = Modifier.widthIn(min = 200.dp).weight(1f, fill = false).padding(12.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
+                    Column {
+                        Text("CORE FLEET", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                        Text("Dreadnoughts, Heavy Cruisers, Flak Frigates", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ConfigurationPanel(
+    selectedArchetype: MapArchetype,
+    onArchetypeSelect: (MapArchetype) -> Unit,
+    selectedMapSize: MapSize,
+    onMapSizeSelect: (MapSize) -> Unit,
+    commanderCallsign: String,
+    onCallsignChange: (String) -> Unit,
+    onStartGameClick: () -> Unit,
+    selectedFaction: Faction
+) {
+    IndustrialPanel {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Text(
+                text = "SECTOR CONFIGURATION",
+                style = MaterialTheme.typography.labelLarge,
+                color = TextSecondary,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            HeaderLine(color = TextSecondary, modifier = Modifier.padding(bottom = 24.dp))
+
+            Text("GALAXY ARCHETYPE", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 8.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
+            ) {
+                MapArchetype.values().forEach { archetype ->
+                    val isSelected = archetype == selectedArchetype
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { onArchetypeSelect(archetype) }
+                            .background(if (isSelected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Text(
-                            text = "SECTOR CONFIGURATION",
+                            text = archetype.displayName.uppercase(),
                             style = MaterialTheme.typography.labelLarge,
-                            color = TextSecondary,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                        HeaderLine(color = TextSecondary, modifier = Modifier.padding(bottom = 24.dp))
-
-                        // Map Archetype
-                        Text("GALAXY ARCHETYPE", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 8.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
-                        ) {
-                            MapArchetype.values().forEach { archetype ->
-                                val isSelected = archetype == selectedArchetype
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable { selectedArchetype = archetype }
-                                        .background(if (isSelected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
-                                        .padding(vertical = 8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = archetype.displayName.uppercase(),
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = if (isSelected) NeonCyan else TextSecondary
-                                    )
-                                }
-                            }
-                        }
-
-                        // Map Size
-                        Text("SECTOR SIZE", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 8.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp)
-                        ) {
-                            MapSize.values().forEach { mapSize ->
-                                val isSelected = mapSize == selectedMapSize
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable { selectedMapSize = mapSize }
-                                        .background(if (isSelected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
-                                        .padding(vertical = 8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = mapSize.displayName.uppercase(),
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = if (isSelected) NeonCyan else TextSecondary
-                                    )
-                                }
-                            }
-                        }
-
-                        // Commander Name
-                        Text("COMMANDER CALLSIGN", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 8.dp))
-                        TextField(
-                            value = commanderCallsign,
-                            onValueChange = { commanderCallsign = it },
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp),
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                focusedIndicatorColor = NeonCyan,
-                                unfocusedIndicatorColor = MaterialTheme.colorScheme.surfaceVariant
-                            ),
-                            textStyle = MaterialTheme.typography.bodyLarge
-                        )
-
-                        // Start Button
-                        IndustrialButton(
-                            text = "INITIALIZE",
-                            onClick = { onStartGameClick(selectedFaction, selectedMapSize, selectedArchetype) },
-                            isPrimary = true,
-                            color = getFactionColor(selectedFaction),
-                            icon = { Icon(Icons.Default.PlayArrow, contentDescription = null) }
+                            color = if (isSelected) NeonCyan else TextSecondary
                         )
                     }
                 }
             }
+
+            Text("SECTOR SIZE", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 8.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp)
+            ) {
+                MapSize.values().forEach { mapSize ->
+                    val isSelected = mapSize == selectedMapSize
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { onMapSizeSelect(mapSize) }
+                            .background(if (isSelected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = mapSize.displayName.uppercase(),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (isSelected) NeonCyan else TextSecondary
+                        )
+                    }
+                }
+            }
+
+            Text("COMMANDER CALLSIGN", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 8.dp))
+            TextField(
+                value = commanderCallsign,
+                onValueChange = onCallsignChange,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedIndicatorColor = NeonCyan,
+                    unfocusedIndicatorColor = MaterialTheme.colorScheme.surfaceVariant
+                ),
+                textStyle = MaterialTheme.typography.bodyLarge
+            )
+
+            IndustrialButton(
+                text = "INITIALIZE",
+                onClick = onStartGameClick,
+                isPrimary = true,
+                color = getFactionColor(selectedFaction),
+                icon = { Icon(Icons.Default.Menu, contentDescription = null) }
+            )
         }
     }
 }
@@ -292,7 +352,7 @@ fun FactionCard(
             .size(140.dp)
             .clickable(onClick = onClick)
             .background(backgroundColor, RoundedCornerShape(4.dp))
-            .padding(1.dp), // placeholder for border
+            .padding(1.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {

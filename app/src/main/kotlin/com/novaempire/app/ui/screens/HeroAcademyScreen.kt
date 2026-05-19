@@ -1,24 +1,33 @@
 package com.novaempire.app.ui.screens
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CutCornerShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.novaempire.app.ui.components.HalftoneBackground
 import com.novaempire.app.ui.components.IndustrialButton
-import com.novaempire.app.ui.theme.*
-import com.novaempire.core.domain.models.Faction
+import com.novaempire.app.ui.components.IndustrialPanel
+import com.novaempire.app.ui.components.NoiseOverlay
+import com.novaempire.app.ui.theme.NeonCyan
+import com.novaempire.app.ui.theme.NeonOrange
+import com.novaempire.app.ui.theme.NeonRed
+import com.novaempire.app.ui.theme.TextSecondary
 import com.novaempire.core.domain.models.Hero
-import com.novaempire.core.domain.models.HeroRegistry
+import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.state.GameState
 
 @Composable
@@ -29,116 +38,120 @@ fun HeroAcademyScreen(
 ) {
     val playerState = gameState.playerStates[gameState.activeFaction]
     val credits = playerState?.credits ?: 0
-    val recruitedHeroes = playerState?.recruitedHeroes ?: emptySet()
+    val recruitedHeroes = playerState?.recruitedHeroes ?: emptyList()
 
-    Column(
+    val availableHeroes = listOf(
+        Hero("hero_vance", "Commander Vance", Faction.DOMINION, 1500, "+15% Raw Damage Output"),
+        Hero("hero_kael", "Architect Kael", Faction.SYNTH, 1200, "-10% Tech Research Cost"),
+        Hero("hero_nix", "High Seer Nix", Faction.XYLAR, 2000, "+1 HP Fleet Regen / Turn")
+    ).filter { it.id !in recruitedHeroes }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        HalftoneBackground(modifier = Modifier.fillMaxSize(), color = Color.White.copy(alpha = 0.05f))
+        NoiseOverlay(modifier = Modifier.fillMaxSize(), alpha = 0.05f)
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
         ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onBackClick) {
+                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = NeonCyan)
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text("HERO ACADEMY", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
+                }
+                IndustrialPanel(modifier = Modifier.height(48.dp)) {
+                    Row(modifier = Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("CREDITS", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("${credits} C", style = MaterialTheme.typography.headlineMedium, color = NeonCyan)
+                    }
+                }
+            }
+
             Text(
-                text = "HERO ACADEMY",
-                style = MaterialTheme.typography.headlineLarge
-            )
-            Text(
-                text = "\$credits C",
+                text = "RECRUIT COMMANDERS",
                 style = MaterialTheme.typography.headlineMedium,
-                color = NeonCyan
+                color = TextSecondary,
+                modifier = Modifier.padding(bottom = 16.dp)
             )
-        }
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            items(HeroRegistry.ALL_HEROES.size) { index ->
-                val hero = HeroRegistry.ALL_HEROES[index]
-                val isRecruited = recruitedHeroes.contains(hero.id)
-                val canAfford = credits >= hero.cost
-
-                HeroCard(
-                    hero = hero,
-                    isRecruited = isRecruited,
-                    canAfford = canAfford,
-                    onRecruit = { onRecruitClick(hero.id) }
-                )
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 250.dp),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
+                items(availableHeroes) { hero ->
+                    HeroCard(
+                        hero = hero,
+                        canAfford = credits >= hero.cost,
+                        onRecruit = { onRecruitClick(hero.id) }
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-fun HeroCard(hero: Hero, isRecruited: Boolean, canAfford: Boolean, onRecruit: () -> Unit) {
-    val color = when (hero.targetFaction) {
-        Faction.DOMINION -> NeonRed
-        Faction.TRADERS -> NeonOrange
-        Faction.SYNTH -> NeonCyan
-        Faction.ANCIENT_NPC -> Color(0xFFB026FF)
-        else -> NeonCyan
-    }
+fun HeroCard(
+    hero: Hero,
+    canAfford: Boolean,
+    onRecruit: () -> Unit
+) {
+    val accentColor = NeonCyan
+    val icon = Icons.Default.Menu
 
-    val alpha = if (isRecruited) 0.5f else 1.0f
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f * alpha),
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, color.copy(alpha = 0.5f * alpha))
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                modifier = Modifier.size(80.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = CutCornerShape(8.dp),
-                border = BorderStroke(1.dp, color.copy(alpha = alpha))
-            ) {}
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = hero.name.uppercase(),
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha)
-                )
-                Text(
-                    text = "FACTION: \${hero.targetFaction.name}",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = color.copy(alpha = alpha)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "BONUS: \${hero.bonusDescription}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary.copy(alpha = alpha)
-                )
+    IndustrialPanel(borderColor = accentColor.copy(alpha = 0.5f)) {
+        Column(modifier = Modifier.padding(24.dp)) {
+            // Portrait placeholder
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(8.dp),
+                contentAlignment = Alignment.TopEnd
+            ) {
+                Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(32.dp))
             }
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(text = hero.name.uppercase(), style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
 
-            if (isRecruited) {
-                Text(
-                    text = "RECRUITED",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = color
-                )
-            } else {
+            Spacer(modifier = Modifier.height(16.dp))
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.surfaceVariant))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(text = "SIGNATURE ABILITY", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+            Text(text = hero.bonusDescription, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 8.dp))
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = "${hero.cost} C", style = MaterialTheme.typography.headlineMedium, color = if (canAfford) NeonCyan else NeonRed)
                 IndustrialButton(
-                    text = "RECRUIT (\${hero.cost} C)",
+                    text = "RECRUIT",
                     onClick = onRecruit,
-                    color = if (canAfford) color else NeonRed,
-                    modifier = Modifier.width(120.dp)
+                    isPrimary = canAfford,
+                    color = if (canAfford) NeonCyan else TextSecondary,
+                    modifier = Modifier.widthIn(min = 120.dp)
                 )
             }
         }
