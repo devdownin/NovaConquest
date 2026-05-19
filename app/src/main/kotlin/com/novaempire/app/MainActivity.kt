@@ -190,6 +190,10 @@ fun GameContainer(
                     onAttackUnit = onAttackUnit,
                     onSiegePlanet = onSiegePlanet,
                     onCapturePlanet = onCapturePlanet,
+                    visibleHexes = emptySet(),
+                    onHexClick = { },
+                    onOpenSystemManagement = { },
+                    onClearSelection = { },
                     onOpenAcademy = onOpenAcademy
                 )
                 GameTab.SYSTEM -> StarSystemManagementScreen(
