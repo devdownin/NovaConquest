@@ -30,12 +30,6 @@ jobs:
   lint-and-test:
     name: Lint & Unit Tests
     runs-on: ubuntu-latest
-    container:
-      image: ${{ vars.CI_IMAGE || 'ghcr.io/devdownin/novaempire-ci:latest' }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-      options: --user root
     permissions:
       contents: read
       packages: read   # pull the CI image from ghcr.io
@@ -48,6 +42,12 @@ jobs:
 
       - name: Set up Git safe directory
         run: git config --global --add safe.directory /__w/NovaEmpire/NovaEmpire
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -95,12 +95,6 @@ jobs:
     if: >
       github.ref == 'refs/heads/main' ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.build_release == 'true')
-    container:
-      image: ${{ vars.CI_IMAGE || 'ghcr.io/devdownin/novaempire-ci:latest' }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-      options: --user root
     permissions:
       contents: read
       packages: read
