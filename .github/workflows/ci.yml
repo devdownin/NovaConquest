@@ -54,18 +54,18 @@ jobs:
 
       - name: Spotless check
         if: github.event.inputs.skip_tests != 'true'
-        run: ./gradlew spotlessCheck || echo "Spotless not configured, skipping"
+        run: gradle spotlessCheck || echo "Spotless not configured, skipping"
 
       - name: Detekt
         if: github.event.inputs.skip_tests != 'true'
-        run: ./gradlew detekt || echo "Detekt not configured, skipping"
+        run: gradle detekt || echo "Detekt not configured, skipping"
 
       - name: Unit tests — core modules
         if: github.event.inputs.skip_tests != 'true'
-        run: ./gradlew :core:hex:test :core:domain:test :core:engine:test
+        run: gradle :core:hex:test :core:domain:test :core:engine:test
 
       - name: Assemble debug APK
-        run: ./gradlew :app:assembleDebug
+        run: gradle :app:assembleDebug
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -82,7 +82,7 @@ jobs:
           path: '**/build/test-results/test/TEST-*.xml'
           reporter: java-junit
           fail-on-error: false
-
+          fail-on-empty: 'false'
       - name: Fix workspace permissions for post-run cache
         if: always()
         run: chmod -R 777 . || true
@@ -146,7 +146,7 @@ jobs:
           echo "::notice::APK signed with ephemeral key (1-day validity). Run 'Bootstrap Signing Keystore' workflow to provision a stable production key."
 
       - name: Assemble release APK
-        run: ./gradlew :app:assembleRelease
+        run: gradle :app:assembleRelease
 
       - name: Rename artifact
         run: |
@@ -208,4 +208,4 @@ jobs:
           api-level: 29
           arch: x86_64
           profile: pixel_6
-          script: ./gradlew :app:connectedDebugAndroidTest
+          script: gradle :app:connectedDebugAndroidTest
