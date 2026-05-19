@@ -67,6 +67,7 @@ fun TacticalMapScreen(
     var combatPreviewData by remember { mutableStateOf<Pair<HexCoord, HexCoord>?>(null) }
     var ghostPath by remember { mutableStateOf<List<HexCoord>?>(null) }
     var dragStartHex by remember { mutableStateOf<HexCoord?>(null) }
+    var currentHoveredHex by remember { mutableStateOf<HexCoord?>(null) }
 
     val laserProgress = remember { Animatable(0f) }
     val explosionScale = remember { Animatable(0f) }
@@ -101,12 +102,12 @@ fun TacticalMapScreen(
                     pan += panChange
                 }
             }
-            .graphicsLayer(
-                scaleX = scale,
-                scaleY = scale,
-                translationX = pan.x,
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                translationX = pan.x
                 translationY = pan.y
-            )
+            }
             .pointerInput(gameState) {
                 detectTapGestures { offset ->
                     val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f)
@@ -151,18 +152,28 @@ fun TacticalMapScreen(
                         val start = dragStartHex
                         if (start != null) {
                             val coord = pixelToHex(change.position.x, change.position.y, size.width / 2f, size.height / 2f)
-                            if (coord != start && gameState.map.tiles.containsKey(coord)) {
-                                val gridMap = GameGridMap(gameState)
-                                val targetUnit = gameState.units[coord]
-                                val path = if (targetUnit != null && targetUnit.faction != gameState.activeFaction) {
-                                    // Hack: simulate attack path. In a real scenario we'd do a more complex pathfinding
-                                    if (start.distanceTo(coord) == 1) listOf(coord) else null
+
+                            // Only recalculate if hovered hex changes to save CPU
+                            if (coord != currentHoveredHex) {
+                                currentHoveredHex = coord
+
+                                if (coord != start && gameState.map.tiles.containsKey(coord)) {
+                                    val gridMap = GameGridMap(gameState)
+                                    val targetUnit = gameState.units[coord]
+                                    val path = if (targetUnit != null && targetUnit.faction != gameState.activeFaction) {
+                                        if (start.distanceTo(coord) == 1) listOf(coord) else null
+                                    } else {
+                                        HexPathfinder.findPath(start, coord, gridMap, maxCost = 4)
+                                    }
+
+                                    // Haptic feedback if path is valid and different
+                                    if (path != null && path != ghostPath) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    }
+                                    ghostPath = path
                                 } else {
-                                    HexPathfinder.findPath(start, coord, gridMap, maxCost = 4)
+                                    ghostPath = null
                                 }
-                                ghostPath = path
-                            } else {
-                                ghostPath = null
                             }
                         }
                     }
