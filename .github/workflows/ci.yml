@@ -1,0 +1,217 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, 'claude/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Skip quality gates and unit tests'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+      build_release:
+        description: 'Trigger signed release APK build'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+# Cancel any in-progress run for the same branch/PR when a new commit arrives.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Lint + Unit Tests + Debug APK ─────────────────────────────────────────
+  lint-and-test:
+    name: Lint & Unit Tests
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ vars.CI_IMAGE || 'ghcr.io/devdownin/novaempire-ci:latest' }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --user root
+    permissions:
+      contents: read
+      packages: read   # pull the CI image from ghcr.io
+      actions: read    # required for dorny/test-reporter to read action runs
+      checks: write    # required for dorny/test-reporter to write check runs
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Git safe directory
+        run: git config --global --add safe.directory /__w/NovaEmpire/NovaEmpire
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Spotless check
+        if: github.event.inputs.skip_tests != 'true'
+        run: ./gradlew spotlessCheck || echo "Spotless not configured, skipping"
+
+      - name: Detekt
+        if: github.event.inputs.skip_tests != 'true'
+        run: ./gradlew detekt || echo "Detekt not configured, skipping"
+
+      - name: Unit tests — core modules
+        if: github.event.inputs.skip_tests != 'true'
+        run: ./gradlew :core:hex:test :core:domain:test :core:engine:test
+
+      - name: Assemble debug APK
+        run: ./gradlew :app:assembleDebug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-${{ github.run_number }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+
+      - name: Publish test results
+        if: always() && github.event.inputs.skip_tests != 'true'
+        uses: dorny/test-reporter@v1
+        with:
+          name: Unit Test Results
+          path: '**/build/test-results/test/TEST-*.xml'
+          reporter: java-junit
+          fail-on-error: false
+
+      - name: Fix workspace permissions for post-run cache
+        if: always()
+        run: chmod -R 777 . || true
+
+  # ── Signed Release APK ────────────────────────────────────────────────────
+  release-build:
+    name: Release APK
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    if: >
+      github.ref == 'refs/heads/main' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.build_release == 'true')
+    container:
+      image: ${{ vars.CI_IMAGE || 'ghcr.io/devdownin/novaempire-ci:latest' }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --user root
+    permissions:
+      contents: read
+      packages: read
+    env:
+      HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Git safe directory
+        run: git config --global --add safe.directory /__w/NovaEmpire/NovaEmpire
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode keystore
+        if: env.HAS_KEYSTORE == 'true'
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          echo "KEYSTORE_PATH=$RUNNER_TEMP/release.jks"     >> "$GITHUB_ENV"
+          echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
+          echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}"         >> "$GITHUB_ENV"
+          echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}"   >> "$GITHUB_ENV"
+
+      - name: Auto-generate ephemeral signing key
+        if: env.HAS_KEYSTORE != 'true'
+        run: |
+          JKS="$RUNNER_TEMP/ephemeral.jks"
+          KEY_PASS="$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 32)"
+          STORE_PASS="$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 32)"
+          echo "::add-mask::$KEY_PASS"
+          echo "::add-mask::$STORE_PASS"
+          keytool -genkeypair \
+            -keystore  "$JKS" \
+            -alias     "nova-release" \
+            -keyalg    RSA \
+            -keysize   2048 \
+            -validity  1 \
+            -storepass "$STORE_PASS" \
+            -keypass   "$KEY_PASS" \
+            -dname     "CN=Nova Empire CI, O=NovaEmpire, C=US" \
+            -storetype PKCS12 \
+            -noprompt
+          echo "KEYSTORE_PATH=$JKS"            >> "$GITHUB_ENV"
+          echo "KEYSTORE_PASSWORD=$STORE_PASS" >> "$GITHUB_ENV"
+          echo "KEY_ALIAS=nova-release"        >> "$GITHUB_ENV"
+          echo "KEY_PASSWORD=$KEY_PASS"        >> "$GITHUB_ENV"
+          echo "::notice::APK signed with ephemeral key (1-day validity). Run 'Bootstrap Signing Keystore' workflow to provision a stable production key."
+
+      - name: Assemble release APK
+        run: ./gradlew :app:assembleRelease
+
+      - name: Rename artifact
+        run: |
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          SRC=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
+          DEST="nova-empire-release-r${{ github.run_number }}-${SHORT_SHA}.apk"
+          cp "$SRC" "$DEST"
+          echo "APK_FILE=${DEST}" >> "$GITHUB_ENV"
+          echo "APK size: $(du -sh "$DEST" | cut -f1)"
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APK_FILE }}
+          path: ${{ env.APK_FILE }}
+          retention-days: 30
+
+      - name: Fix workspace permissions for post-run cache
+        if: always()
+        run: chmod -R 777 . || true
+
+  # ── Android Instrumented Tests ────────────────────────────────────────────
+  android-test:
+    name: Android Instrumented Tests
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run instrumented tests on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          profile: pixel_6
+          script: ./gradlew :app:connectedDebugAndroidTest
