@@ -10,15 +10,17 @@ import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 
 class GameViewModel(application: Application) : AndroidViewModel(application) {
-    private val engine = GameEngine()
     private val saveManager: SaveManager
 
     init {
         val saveDir = File(application.filesDir, "saves")
         saveManager = SaveManager(saveDir)
     }
+    private val engine = GameEngine()
+
 
     val gameState: StateFlow<GameState> = engine.state
+    val isAiThinking: StateFlow<Boolean> = engine.isAiThinking
 
     fun dispatch(intent: GameIntent) {
         engine.processIntent(intent)

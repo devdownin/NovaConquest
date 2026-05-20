@@ -9,7 +9,8 @@ import com.novaempire.core.domain.models.TechRegistry
 
 object UtilityEvaluator {
 
-    fun executeAITurn(state: GameState, aiFaction: Faction): GameState {
+    suspend fun executeAITurn(state: GameState, aiFaction: Faction): GameState {
+        kotlinx.coroutines.delay(500) // Simulate complex calculation
         var currentState = state
 
         // 0. Diplomacy Logic

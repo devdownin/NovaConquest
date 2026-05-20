@@ -183,16 +183,27 @@ fun GameContainer(
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
             when (currentTab) {
-                GameTab.MAP -> TacticalMapScreen(
-                    gameState = gameState,
-                    onEndTurnClick = onEndTurn,
-                    onMoveUnit = onMoveUnit,
-                    onAttackUnit = onAttackUnit,
-                    onSiegePlanet = onSiegePlanet,
-                    onCapturePlanet = onCapturePlanet,
-                    onOpenAcademy = onOpenAcademy
-                )
+                GameTab.MAP -> {
+                    val gameViewModel: GameViewModel = viewModel()
+                    val isAiThinking by gameViewModel.isAiThinking.collectAsState()
+                    TacticalMapScreen(
+                        isAiThinking = isAiThinking,
+                        gameState = gameState,
+                        onEndTurnClick = onEndTurn,
+                        onMoveUnit = onMoveUnit,
+                        onAttackUnit = onAttackUnit,
+                        onSiegePlanet = onSiegePlanet,
+                        onCapturePlanet = onCapturePlanet,
+                        visibleHexes = emptySet(),
+                        onHexClick = { },
+                        onOpenSystemManagement = { },
+                        onClearSelection = { },
+                        onOpenAcademy = onOpenAcademy
+                    )
+                }
                 GameTab.SYSTEM -> StarSystemManagementScreen(
+                    coord = gameState.map.tiles.keys.first(),
+                    onClose = { },
                     gameState = gameState,
                     onBuildUnit = onBuildUnit
                 )

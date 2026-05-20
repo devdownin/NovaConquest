@@ -1,17 +1,19 @@
 package com.novaempire.app.ui.screens
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.ui.graphics.graphicsLayer
-
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,23 +24,20 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.Fill
-import androidx.compose.ui.input.pointer.pointerInput
-
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.dp
 import com.novaempire.app.audio.AudioManager
 import com.novaempire.app.audio.SoundType
-
-import androidx.compose.ui.unit.dp
-import androidx.compose.animation.core.*
-import kotlinx.coroutines.delay
 import com.novaempire.app.ui.components.IndustrialButton
+import com.novaempire.app.ui.components.IndustrialPanel
 import com.novaempire.app.ui.theme.*
-import com.novaempire.core.domain.models.Faction
-import com.novaempire.core.domain.models.GalacticEvent
-import com.novaempire.core.domain.models.TerrainType
+import com.novaempire.core.domain.models.*
+import com.novaempire.core.domain.state.CombatEvent
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.engine.GameGridMap
 import com.novaempire.core.hex.HexCoord
@@ -49,92 +48,67 @@ import kotlin.math.sqrt
 
 @Composable
 fun TacticalMapScreen(
+    isAiThinking: Boolean = false,
     gameState: GameState,
+    visibleHexes: Set<HexCoord>,
+    onHexClick: (HexCoord) -> Unit,
+    onMoveUnit: (HexCoord, HexCoord) -> Unit,
+    onAttackUnit: (HexCoord, HexCoord) -> Unit,
     onEndTurnClick: () -> Unit,
-    onMoveUnit: (from: HexCoord, to: HexCoord) -> Unit,
-    onAttackUnit: (from: HexCoord, to: HexCoord) -> Unit,
-    onSiegePlanet: (from: HexCoord, to: HexCoord) -> Unit,
-    onCapturePlanet: (from: HexCoord, to: HexCoord) -> Unit,
-    onOpenAcademy: () -> Unit
+    onOpenSystemManagement: (HexCoord) -> Unit,
+    onSiegePlanet: (HexCoord, HexCoord) -> Unit,
+    onCapturePlanet: (HexCoord, HexCoord) -> Unit,
+    onOpenAcademy: () -> Unit,
+    onClearSelection: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    var selectedHex by remember { mutableStateOf<HexCoord?>(null) }
-    var ghostPath by remember { mutableStateOf<List<HexCoord>?>(null) }
-    var dragStartHex by remember { mutableStateOf<HexCoord?>(null) }
-
     var scale by remember { mutableStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
-
-
+    var selectedHex by remember { mutableStateOf<HexCoord?>(null) }
     var combatPreviewData by remember { mutableStateOf<Pair<HexCoord, HexCoord>?>(null) }
+    var ghostPath by remember { mutableStateOf<List<HexCoord>?>(null) }
+    var dragStartHex by remember { mutableStateOf<HexCoord?>(null) }
+    var currentHoveredHex by remember { mutableStateOf<HexCoord?>(null) }
 
-    val haptic = LocalHapticFeedback.current
-    // Animation state
-    var activeCombatAnim by remember { mutableStateOf<com.novaempire.core.domain.state.CombatEvent?>(null) }
     val laserProgress = remember { Animatable(0f) }
     val explosionScale = remember { Animatable(0f) }
+    var activeCombatEvent by remember { mutableStateOf<CombatEvent?>(null) }
+
+    val haptic = LocalHapticFeedback.current
+    val exploredHexes = gameState.playerStates[gameState.activeFaction]?.exploredHexes ?: emptySet()
 
     LaunchedEffect(gameState.lastCombatEvent) {
-        if (gameState.lastCombatEvent != null && gameState.lastCombatEvent != activeCombatAnim) {
-            activeCombatAnim = gameState.lastCombatEvent
-            // Reset
+        gameState.lastCombatEvent?.let { combat ->
+            activeCombatEvent = combat
+            AudioManager.playSound(SoundType.END_TURN) // using available sound
             laserProgress.snapTo(0f)
             explosionScale.snapTo(0f)
 
-            // Animate laser
-            AudioManager.playSound(SoundType.COMBAT_LASER)
-            laserProgress.animateTo(
-                targetValue = 1f,
-                animationSpec = tween(durationMillis = 300, easing = LinearEasing)
-            )
+            laserProgress.animateTo(1f, animationSpec = tween(300))
+            AudioManager.playSound(SoundType.END_TURN) // using available sound
+            explosionScale.animateTo(1f, animationSpec = tween(400))
 
-            // Animate explosion
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            AudioManager.playSound(SoundType.COMBAT_EXPLOSION)
-            explosionScale.animateTo(
-                targetValue = 1f,
-                animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
-            )
-
-            delay(200)
-            activeCombatAnim = null
+            kotlinx.coroutines.delay(200)
+            activeCombatEvent = null
         }
     }
 
-    val hexRadius = 80f
-
-
-    val currentPlayerState = gameState.playerStates[gameState.activeFaction]
-    val exploredHexes = currentPlayerState?.exploredHexes ?: emptySet()
-    val visibleHexes = currentPlayerState?.visibleHexes ?: emptySet()
-
-    fun pixelToHex(x: Float, y: Float, centerX: Float, centerY: Float): HexCoord {
-        val adjustedX = (x - centerX - pan.x) / scale
-        val adjustedY = (y - centerY - pan.y) / scale
-        val q = (sqrt(3.0) / 3 * adjustedX - 1.0 / 3 * adjustedY) / hexRadius
-        val r = (2.0 / 3 * adjustedY) / hexRadius
-        return hexRound(q, r, -q-r)
-    }
-
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-    ) {
-        // Tactical Map Canvas
-        Canvas(modifier = Modifier
-            .fillMaxSize()
             .pointerInput(Unit) {
-                detectTransformGestures { _, panChange, zoomChange, _ ->
-                    scale = (scale * zoomChange).coerceIn(0.5f, 3f)
+                detectTransformGestures { _, panChange, zoom, _ ->
+                    scale = (scale * zoom).coerceIn(0.5f, 3f)
                     pan += panChange
                 }
             }
-            .graphicsLayer(
-                scaleX = scale,
-                scaleY = scale,
-                translationX = pan.x,
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                translationX = pan.x
                 translationY = pan.y
-            )
+            }
             .pointerInput(gameState) {
                 detectTapGestures { offset ->
                     val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f)
@@ -162,17 +136,12 @@ fun TacticalMapScreen(
                             val targetCoord = path.last()
                             val targetUnit = gameState.units[targetCoord]
 
-                            // Ensure we have a valid action
                             if (targetUnit != null && targetUnit.faction != gameState.activeFaction) {
-                                // Initiate Combat Preview
                                 combatPreviewData = Pair(start, targetCoord)
                             } else if (targetUnit == null) {
-                                // Execute movement
                                 onMoveUnit(start, targetCoord)
                             }
                         }
-
-                        // Only clear drag states, DO NOT clear combatPreviewData here!
                         dragStartHex = null
                         ghostPath = null
                     },
@@ -184,73 +153,111 @@ fun TacticalMapScreen(
                         val start = dragStartHex
                         if (start != null) {
                             val coord = pixelToHex(change.position.x, change.position.y, size.width / 2f, size.height / 2f)
-                            if (coord != start && gameState.map.tiles.containsKey(coord)) {
-                                val gridMap = GameGridMap(gameState)
-                                // If hovering over enemy unit, pretend it's passable just to draw the attack path
-                                val originalUnit = gameState.units[coord]
-                                val tile = gameState.map.getTileAt(coord)
-                                val path = if (originalUnit != null && originalUnit.faction != gameState.activeFaction) {
-                                    if (start.distanceTo(coord) == 1) listOf(coord) else null
-                                } else if (tile != null && !tile.terrain.isPassable) {
-                                    null // Prevent drawing path to an impassable terrain directly
+
+                            // Only recalculate if hovered hex changes to save CPU
+                            if (coord != currentHoveredHex) {
+                                currentHoveredHex = coord
+
+                                if (coord != start && gameState.map.tiles.containsKey(coord)) {
+                                    val gridMap = GameGridMap(gameState)
+                                    val targetUnit = gameState.units[coord]
+                                    val path = if (targetUnit != null && targetUnit.faction != gameState.activeFaction) {
+                                        if (start.distanceTo(coord) == 1) listOf(coord) else null
+                                    } else {
+                                        HexPathfinder.findPath(start, coord, gridMap, maxCost = 4)
+                                    }
+
+                                    // Haptic feedback if path is valid and different
+                                    if (path != null && path != ghostPath) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    }
+                                    ghostPath = path
                                 } else {
-                                    HexPathfinder.findPath(start, coord, gridMap, maxCost = 4)
+                                    ghostPath = null
                                 }
-                                ghostPath = path
-                            } else {
-                                ghostPath = null
                             }
                         }
                     }
                 )
             }
-        ) {
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
             val width = size.width
             val height = size.height
-            val centerX = width / 2
-            val centerY = height / 2
+            val centerX = width / 2f
+            val centerY = height / 2f
 
-            // Draw Terrain & Fog of War
+            val hexRadius = 60f
+            val hexWidth = sqrt(3f) * hexRadius
+            val hexHeight = 2f * hexRadius
+            val horizSpacing = hexWidth
+            val vertSpacing = 3f / 4f * hexHeight
+
             gameState.map.tiles.values.forEach { tile ->
-                val x = centerX + hexRadius * (sqrt(3f) * tile.coord.q + sqrt(3f) / 2 * tile.coord.r)
-                val y = centerY + hexRadius * (3f / 2 * tile.coord.r)
+                val q = tile.coord.q
+                val r = tile.coord.r
+                val x = centerX + horizSpacing * (q + r / 2f)
+                val y = centerY + vertSpacing * r
 
-                val isExplored = exploredHexes.contains(tile.coord)
                 val isVisible = visibleHexes.contains(tile.coord)
+                val isExplored = exploredHexes.contains(tile.coord)
 
                 if (isExplored) {
                     val baseColor = when (tile.terrain) {
-                        TerrainType.PLANET -> NeonGreen
-                        TerrainType.ASTEROIDS -> NeonOrange
-                        TerrainType.NEBULA -> Color(0xFFB026FF)
-                        TerrainType.BLACK_HOLE -> Color.Black
-                        else -> NeonCyan
+                        TerrainType.EMPTY -> VoidBlack
+                        TerrainType.ASTEROIDS -> Color(0xFF2A2E39)
+                        TerrainType.NEBULA -> Color(0xFF3B2A45)
+                        TerrainType.PLANET -> Color(0xFF15202B)
+                        TerrainType.BLACK_HOLE -> Color(0xFF452A15)
+                        TerrainType.WORMHOLE -> Color(0xFF151B2B)
+                        TerrainType.PLASMA_CLOUD -> Color(0xFF451A15)
+                        TerrainType.ION_STORM -> Color(0xFF3B3A45)
+                        TerrainType.ANOMALY -> Color(0xFF2A4539)
                     }
 
-                    val alphaMod = if (isVisible) 0.15f else 0.05f
+                    val alpha = if (isVisible) 1f else 0.4f
 
-                    val bgBrush = Brush.radialGradient(
-                        colors = listOf(baseColor.copy(alpha = alphaMod), Color.Transparent),
-                        center = Offset(x, y),
-                        radius = hexRadius
+                    drawHexagonPath(
+                        centerX = x, centerY = y, radius = hexRadius,
+                        color = baseColor.copy(alpha = alpha), fill = true
                     )
-                    drawHexagonPath(x, y, hexRadius, brush = bgBrush, fill = true)
 
-                    if (isVisible && tile.terrain != TerrainType.EMPTY) {
-                         drawHexagonPath(x, y, hexRadius, color = baseColor.copy(alpha=0.05f), fill = true)
+                    drawHexagonPath(
+                        centerX = x, centerY = y, radius = hexRadius,
+                        color = Color(0xFF8F9094).copy(alpha = 0.2f * alpha),
+                        strokeWidth = 1f
+                    )
+
+                    when (tile.terrain) {
+                        TerrainType.PLANET -> drawPlanet(x, y, hexRadius, tile.owner)
+                        TerrainType.ASTEROIDS -> drawAsteroids(x, y, hexRadius)
+                        TerrainType.NEBULA -> drawNebula(x, y, hexRadius)
+                        TerrainType.BLACK_HOLE -> {
+                            drawCircle(color = NeonOrange.copy(alpha = 0.8f * alpha), radius = hexRadius * 0.6f, center = Offset(x, y))
+                        }
+                        else -> {}
                     }
 
-                    val strokeColor = if (tile.coord == selectedHex) NeonCyan else baseColor.copy(alpha = if (isVisible) 0.5f else 0.2f)
-                    val strokeWidth = if (tile.coord == selectedHex) 4f else 1.5f
-                    drawHexagonPath(x, y, hexRadius - strokeWidth/2, color = strokeColor, fill = false, strokeWidth = strokeWidth)
+                    val unit = gameState.units[tile.coord]
+                    if (unit != null && (isVisible || unit.faction == gameState.activeFaction)) {
+                        val unitColor = getFactionColor(unit.faction)
+                        drawCircle(
+                            color = unitColor,
+                            radius = hexRadius * 0.3f,
+                            center = Offset(x, y)
+                        )
+                        drawCircle(
+                            color = VoidBlack,
+                            radius = hexRadius * 0.2f,
+                            center = Offset(x, y)
+                        )
+                    }
 
-                    if (isVisible) {
-                        when (tile.terrain) {
-                            TerrainType.PLANET -> drawPlanet(x, y, hexRadius, tile.owner)
-                            TerrainType.ASTEROIDS -> drawAsteroids(x, y, hexRadius)
-                            TerrainType.NEBULA -> drawNebula(x, y, hexRadius)
-                            else -> {}
-                        }
+                    if (selectedHex == tile.coord) {
+                        drawHexagonPath(
+                            centerX = x, centerY = y, radius = hexRadius,
+                            color = NeonCyan, strokeWidth = 4f
+                        )
                     }
                 } else {
                     drawHexagonPath(x, y, hexRadius, color = VoidBlack, fill = true)
@@ -258,77 +265,44 @@ fun TacticalMapScreen(
                 }
             }
 
-            // Draw Ghost Path
             ghostPath?.let { path ->
-                if (path.isNotEmpty()) {
+                if (path.isNotEmpty() && dragStartHex != null) {
                     var prevPoint = Offset(
-                        centerX + hexRadius * (sqrt(3f) * dragStartHex!!.q + sqrt(3f) / 2 * dragStartHex!!.r),
-                        centerY + hexRadius * (3f / 2 * dragStartHex!!.r)
+                        centerX + horizSpacing * (dragStartHex!!.q + dragStartHex!!.r / 2f),
+                        centerY + vertSpacing * dragStartHex!!.r
                     )
                     path.forEach { coord ->
-                        val px = centerX + hexRadius * (sqrt(3f) * coord.q + sqrt(3f) / 2 * coord.r)
-                        val py = centerY + hexRadius * (3f / 2 * coord.r)
+                        val px = centerX + horizSpacing * (coord.q + coord.r / 2f)
+                        val py = centerY + vertSpacing * coord.r
                         val currentPoint = Offset(px, py)
 
-                        val isAttack = gameState.units[coord]?.faction?.let { it != gameState.activeFaction } ?: false
-                        val pathColor = if (isAttack) NeonRed else NeonCyan
-
                         drawLine(
-                            color = pathColor.copy(alpha = 0.6f),
+                            color = NeonCyan.copy(alpha = 0.6f),
                             start = prevPoint,
                             end = currentPoint,
-                            strokeWidth = 6f
+                            strokeWidth = 8f
                         )
                         prevPoint = currentPoint
                     }
-                    val dest = path.last()
-                    val dx = centerX + hexRadius * (sqrt(3f) * dest.q + sqrt(3f) / 2 * dest.r)
-                    val dy = centerY + hexRadius * (3f / 2 * dest.r)
-                    val isAttack = gameState.units[dest]?.faction?.let { it != gameState.activeFaction } ?: false
-                    drawHexagonPath(dx, dy, hexRadius, color = (if (isAttack) NeonRed else NeonCyan).copy(alpha = 0.3f), fill = true)
+                    val target = path.last()
+                    val targetUnit = gameState.units[target]
+                    val highlightColor = if (targetUnit != null && targetUnit.faction != gameState.activeFaction) NeonRed else NeonCyan
+
+                    val tx = centerX + horizSpacing * (target.q + target.r / 2f)
+                    val ty = centerY + vertSpacing * target.r
+                    drawHexagonPath(
+                        centerX = tx, centerY = ty, radius = hexRadius,
+                        color = highlightColor.copy(alpha = 0.5f), fill = true
+                    )
                 }
             }
 
-            // Draw Units
-            gameState.units.values.filter { visibleHexes.contains(it.position) }.forEach { unit ->
-                val x = centerX + hexRadius * (sqrt(3f) * unit.position.q.toFloat() + sqrt(3f) / 2 * unit.position.r.toFloat())
-                val y = centerY + hexRadius * (3f / 2 * unit.position.r.toFloat())
+            activeCombatEvent?.let { combat ->
+                val ax = centerX + horizSpacing * (combat.attackerCoord.q + combat.attackerCoord.r / 2f)
+                val ay = centerY + vertSpacing * combat.attackerCoord.r
 
-                // Hide unit if it was just destroyed and explosion is happening
-                val isDestroyedTarget = activeCombatAnim?.defenderCoord == unit.position && activeCombatAnim?.targetDestroyed == true
-                if (isDestroyedTarget && explosionScale.value > 0.5f) return@forEach
-
-                val unitColor = when(unit.faction) {
-                    Faction.DOMINION -> NeonRed
-                    Faction.TRADERS -> NeonGold
-                    Faction.SYNTH -> NeonCyan
-                    else -> Color.White
-                }
-
-                val alpha = if (unit.hasMoved) 0.5f else 1.0f
-                val path = Path()
-                path.moveTo(x, y - 25f)
-                path.lineTo(x + 18f, y + 15f)
-                path.lineTo(x, y + 5f)
-                path.lineTo(x - 18f, y + 15f)
-                path.close()
-
-                val glowBrush = Brush.radialGradient(
-                    colors = listOf(unitColor.copy(alpha = alpha * 0.8f), Color.Transparent),
-                    center = Offset(x, y),
-                    radius = 30f
-                )
-                drawPath(path, glowBrush, style = Fill)
-                drawPath(path, unitColor.copy(alpha = alpha), style = Stroke(width = 3f))
-            }
-
-            // Draw Combat Animations
-            activeCombatAnim?.let { combat ->
-                val ax = centerX + hexRadius * (sqrt(3f) * combat.attackerCoord.q.toFloat() + sqrt(3f) / 2 * combat.attackerCoord.r.toFloat())
-                val ay = centerY + hexRadius * (3f / 2 * combat.attackerCoord.r.toFloat())
-
-                val dx = centerX + hexRadius * (sqrt(3f) * combat.defenderCoord.q.toFloat() + sqrt(3f) / 2 * combat.defenderCoord.r.toFloat())
-                val dy = centerY + hexRadius * (3f / 2 * combat.defenderCoord.r.toFloat())
+                val dx = centerX + horizSpacing * (combat.defenderCoord.q + combat.defenderCoord.r / 2f)
+                val dy = centerY + vertSpacing * combat.defenderCoord.r
 
                 if (laserProgress.value > 0f && laserProgress.value < 1f) {
                     val currentEx = ax + (dx - ax) * laserProgress.value
@@ -354,95 +328,164 @@ fun TacticalMapScreen(
                 }
             }
         }
+    }
 
-        // Top HUD
-        Surface(
+    Box(modifier = modifier.fillMaxSize()) {
+        // Top Navigation Bar (HUD)
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
-                .align(Alignment.TopCenter),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
-            shape = androidx.compose.foundation.shape.CutCornerShape(8.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant)
+                .padding(horizontal = 32.dp, vertical = 16.dp)
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { /* Menu */ }) {
+                    Icon(imageVector = Icons.Default.Menu, contentDescription = "Menu", tint = NeonCyan)
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Text("NOVA CONQUEST", style = MaterialTheme.typography.headlineMedium, color = NeonCyan)
+            }
+
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(32.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "124 C",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = NeonCyan
-                )
-                Text(
-                    text = "TURN \${gameState.turn}",
-                    style = MaterialTheme.typography.headlineMedium
-                )
-                if (gameState.activeEvent != GalacticEvent.NONE) {
-                    Text(
-                        text = gameState.activeEvent.displayName.uppercase(),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = NeonOrange
-                    )
+                // Credits
+                IndustrialPanel(modifier = Modifier.padding(vertical = 4.dp), backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)) {
+                    Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Menu, contentDescription = null, tint = NeonOrange, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("145,200 C", style = MaterialTheme.typography.labelLarge)
+                    }
                 }
+
+                // Turn
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("TURN", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                    Text(gameState.turn.toString(), style = MaterialTheme.typography.headlineMedium, color = NeonCyan)
+                }
+
+                // Active Faction
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier.size(12.dp).background(NeonRed, shape = androidx.compose.foundation.shape.CircleShape))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(gameState.activeFaction.name, style = MaterialTheme.typography.labelLarge)
+                }
+
+                if (isAiThinking) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            color = NeonOrange,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "AI Thinking...",
+                            color = NeonOrange,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+
+                // Event
+                if (gameState.activeEvent != GalacticEvent.NONE) {
+                    IndustrialPanel(modifier = Modifier.padding(vertical = 4.dp), borderColor = NeonOrange.copy(alpha = 0.5f), backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)) {
+                        Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Menu, contentDescription = null, tint = NeonOrange, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(gameState.activeEvent.displayName.uppercase(), style = MaterialTheme.typography.labelLarge, color = NeonOrange)
+                        }
+                    }
+                }
+            }
+
+            IconButton(onClick = { /* Wallet */ }) {
+                Icon(imageVector = Icons.Default.Menu, contentDescription = "Wallet", tint = NeonCyan)
             }
         }
 
-        // Action Panel when hex is selected
+        // Side Contextual Action Bar
         selectedHex?.let { coord ->
             val tile = gameState.map.getTileAt(coord)
-            val unit = gameState.units[coord]
             if (tile != null && combatPreviewData == null) {
-                Surface(
+                Column(
                     modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(bottom = 100.dp, start = 16.dp)
-                        .width(220.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                    shape = androidx.compose.foundation.shape.CutCornerShape(8.dp),
-                    border = BorderStroke(1.dp, NeonCyan)
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 32.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("HEX \${coord.q}, \${coord.r}", style = MaterialTheme.typography.labelLarge, color = NeonCyan)
-                        Text("Terrain: \${tile.terrain.name}", style = MaterialTheme.typography.bodyMedium)
-
-                        if (unit != null && visibleHexes.contains(coord)) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Unit: \${unit.type.name}", style = MaterialTheme.typography.bodyLarge, color = NeonOrange)
-                            Text("Faction: \${unit.faction.name}", style = MaterialTheme.typography.bodyMedium)
-                            Text("HP: \${unit.currentHp}/\${unit.type.maxHp}", style = MaterialTheme.typography.bodyMedium)
+                    IndustrialPanel(modifier = Modifier.width(180.dp).padding(bottom = 16.dp)) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("SECTOR \${coord.q},\${coord.r}", style = MaterialTheme.typography.labelLarge, color = NeonCyan, modifier = Modifier.padding(bottom = 8.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Type", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                                Text(tile.terrain.name, style = MaterialTheme.typography.labelLarge)
+                            }
                         }
+                    }
 
-                        Spacer(modifier = Modifier.height(16.dp))
-                        IndustrialButton(text = "INFO", onClick = {})
+                    // Action Buttons
+                    IndustrialPanel(modifier = Modifier.size(48.dp)) {
+                        IconButton(onClick = { /* Move */ }, modifier = Modifier.fillMaxSize()) {
+                            Icon(Icons.Default.Menu, contentDescription = null, tint = TextSecondary)
+                        }
+                    }
+                    IndustrialPanel(modifier = Modifier.size(48.dp)) {
+                        IconButton(onClick = { /* Defend/Hold */ }, modifier = Modifier.fillMaxSize()) {
+                            Icon(Icons.Default.Menu, contentDescription = null, tint = TextSecondary)
+                        }
+                    }
+                    IndustrialPanel(modifier = Modifier.size(48.dp)) {
+                        IconButton(onClick = { /* Scout */ }, modifier = Modifier.fillMaxSize()) {
+                            Icon(Icons.Default.Menu, contentDescription = null, tint = TextSecondary)
+                        }
+                    }
+                    IndustrialPanel(modifier = Modifier.size(48.dp)) {
+                        IconButton(onClick = { onOpenSystemManagement(coord) }, modifier = Modifier.fillMaxSize()) {
+                            Icon(Icons.Default.Menu, contentDescription = null, tint = TextSecondary)
+                        }
                     }
                 }
             }
         }
 
-        // Bottom Right Actions
-        Column(
+        // Bottom Navigation / Floating Actions
+        Row(
             modifier = Modifier
-                .width(150.dp)
-                .padding(bottom = 100.dp, end = 16.dp)
-                .align(Alignment.BottomEnd),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+                .padding(32.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom
         ) {
-            IndustrialButton(
-                text = "ACADEMY",
-                onClick = onOpenAcademy,
-                color = NeonCyan
-            )
+            IndustrialPanel {
+                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Menu, contentDescription = null, tint = NeonCyan)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text("SMART FOCUS", style = MaterialTheme.typography.labelLarge)
+                        Text("3 IDLE FLEETS", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                    }
+                }
+            }
+
             IndustrialButton(
                 text = "END TURN",
                 onClick = {
-                    AudioManager.playSound(SoundType.END_TURN)
-                    onEndTurnClick()
+                    if (!isAiThinking) {
+                        AudioManager.playSound(SoundType.END_TURN)
+                        onEndTurnClick()
+                    }
                 },
-                color = NeonOrange
+                isPrimary = true,
+                color = NeonOrange,
+                icon = { Icon(Icons.Default.Menu, contentDescription = null) },
+                modifier = Modifier.width(200.dp)
             )
         }
 
@@ -468,17 +511,14 @@ fun TacticalMapScreen(
     }
 }
 
+fun pixelToHex(x: Float, y: Float, centerX: Float, centerY: Float): HexCoord {
+    val q = (sqrt(3f) / 3 * (x - centerX) - 1f / 3 * (y - centerY)) / 60f
+    val r = (2f / 3 * (y - centerY)) / 60f
+    return hexRound(q.toDouble(), r.toDouble(), -q.toDouble() - r.toDouble())
+}
+
 fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float, owner: Faction?) {
-    val planetColor = when (owner) {
-        Faction.DOMINION -> NeonRed
-        Faction.TRADERS -> NeonGold
-        Faction.SYNTH -> NeonCyan
-        Faction.NOMADS -> NeonOrange
-        Faction.KAELEN -> NeonGreen
-        Faction.XYLAR -> Color.Cyan
-        Faction.ANCIENT_NPC -> Color.Magenta
-        else -> NeonGreen // Neutral
-    }
+    val planetColor = owner?.let { getFactionColor(it) } ?: NeonGreen // Neutral
 
     drawCircle(
         brush = Brush.radialGradient(
