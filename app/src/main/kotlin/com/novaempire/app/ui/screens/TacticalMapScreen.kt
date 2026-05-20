@@ -48,6 +48,7 @@ import kotlin.math.sqrt
 
 @Composable
 fun TacticalMapScreen(
+    isAiThinking: Boolean = false,
     gameState: GameState,
     visibleHexes: Set<HexCoord>,
     onHexClick: (HexCoord) -> Unit,
@@ -374,6 +375,23 @@ fun TacticalMapScreen(
                     Text(gameState.activeFaction.name, style = MaterialTheme.typography.labelLarge)
                 }
 
+                if (isAiThinking) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            color = NeonOrange,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "AI Thinking...",
+                            color = NeonOrange,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+
                 // Event
                 if (gameState.activeEvent != GalacticEvent.NONE) {
                     IndustrialPanel(modifier = Modifier.padding(vertical = 4.dp), borderColor = NeonOrange.copy(alpha = 0.5f), backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)) {
@@ -459,8 +477,10 @@ fun TacticalMapScreen(
             IndustrialButton(
                 text = "END TURN",
                 onClick = {
-                    AudioManager.playSound(SoundType.END_TURN)
-                    onEndTurnClick()
+                    if (!isAiThinking) {
+                        AudioManager.playSound(SoundType.END_TURN)
+                        onEndTurnClick()
+                    }
                 },
                 isPrimary = true,
                 color = NeonOrange,

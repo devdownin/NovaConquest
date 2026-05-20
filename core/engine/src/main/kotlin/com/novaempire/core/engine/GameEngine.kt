@@ -11,9 +11,19 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
 class GameEngine {
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    private val _isAiThinking = MutableStateFlow(false)
+    val isAiThinking: StateFlow<Boolean> = _isAiThinking.asStateFlow()
+
     private val _state = MutableStateFlow(createInitialState(com.novaempire.core.domain.models.MapSize.MEDIUM, com.novaempire.core.domain.models.MapArchetype.STANDARD))
     val state: StateFlow<GameState> = _state.asStateFlow()
 
@@ -77,9 +87,32 @@ class GameEngine {
     }
 
     fun processIntent(intent: GameIntent) {
-        _state.update { currentState ->
-            val nextState = reduce(currentState, intent)
-            checkVictoryConditions(nextState)
+        if (intent is GameIntent.EndTurn) {
+            scope.launch {
+                _isAiThinking.value = true
+                var currentState = _state.value
+                currentState = reduce(currentState, intent)
+
+                while (currentState.activeFaction != Faction.DOMINION) {
+                    currentState = withContext(Dispatchers.Default) {
+                        UtilityEvaluator.executeAITurn(currentState, currentState.activeFaction)
+                    }
+                    currentState = updateVision(currentState)
+                    currentState = reduce(currentState, GameIntent.EndTurn)
+                }
+
+                val refreshedUnits = currentState.units.mapValues { it.value.copy(hasMoved = false, hasAttacked = false) }
+                currentState = currentState.copy(units = refreshedUnits)
+
+                val finalState = checkVictoryConditions(currentState)
+                _state.value = finalState
+                _isAiThinking.value = false
+            }
+        } else {
+            _state.update { currentState ->
+                val nextState = reduce(currentState, intent)
+                checkVictoryConditions(nextState)
+            }
         }
     }
 
@@ -144,15 +177,7 @@ class GameEngine {
                 nextState = nextState.copy(units = unitsAfterTurn, playerStates = newPlayerStates)
 
 
-                if (nextFaction != Faction.DOMINION) {
-                    nextState = UtilityEvaluator.executeAITurn(nextState, nextFaction)
-                    nextState = updateVision(nextState)
-                    return reduce(nextState, GameIntent.EndTurn)
-                } else {
-                    val refreshedUnits = nextState.units.mapValues { it.value.copy(hasMoved = false, hasAttacked = false) }
-                    nextState = nextState.copy(units = refreshedUnits)
-                    updateVision(nextState)
-                }
+                nextState
             }
             is GameIntent.SelectFaction -> {
                 state.copy(activeFaction = intent.faction)
