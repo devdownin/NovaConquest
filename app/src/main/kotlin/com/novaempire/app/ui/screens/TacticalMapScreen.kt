@@ -321,6 +321,22 @@ fun TacticalMapScreen(
                         drawHexagonPath(x, y, hexRadius, color = Color(0xFF1A1D24), fill = false, strokeWidth = 1f)
                     }
                 }
+            }
+
+            // Dynamic overlay layer — ghost path and combat FX change on every drag
+            // frame / animation tick. Keeping them in a separate Canvas means the
+            // terrain loop above is not re-executed for those high-frequency updates.
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val width = size.width
+                val height = size.height
+                val centerX = width / 2f
+                val centerY = height / 2f
+
+                val hexRadius = HEX_RADIUS
+                val hexWidth = sqrt(3f) * hexRadius
+                val hexHeight = 2f * hexRadius
+                val horizSpacing = hexWidth
+                val vertSpacing = 3f / 4f * hexHeight
 
                 ghostPath?.let { path ->
                     val start = dragStartHex
