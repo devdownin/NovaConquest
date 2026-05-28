@@ -46,10 +46,10 @@ object AudioManager {
         val soundId = soundMap[type]
         if (soundId != null) {
             soundPool?.play(soundId, 1f, 1f, 1, 0, 1f)
-            Log.d("AudioManager", "Playing sound: \$type")
+            Log.d("AudioManager", "Playing sound: $type")
         } else {
             // Log missing sound for dummy implementation
-            Log.d("AudioManager", "Mock play sound: \$type")
+            Log.d("AudioManager", "Mock play sound: $type")
         }
     }
 

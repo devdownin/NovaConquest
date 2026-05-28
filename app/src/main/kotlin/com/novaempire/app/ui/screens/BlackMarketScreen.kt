@@ -121,7 +121,7 @@ fun CosmeticCard(item: CosmeticItem) {
             }
 
             IndustrialButton(
-                text = "PURCHASE (\${item.price})",
+                text = "PURCHASE (${item.price})",
                 onClick = { },
                 color = item.color,
                 modifier = Modifier.width(140.dp)

@@ -151,6 +151,15 @@ fun GameContainer(
     onOpenAcademy: () -> Unit
 ) {
     var currentTab by remember { mutableStateOf(GameTab.MAP) }
+    var selectedCoord by remember {
+        mutableStateOf<com.novaempire.core.hex.HexCoord?>(null)
+    }
+
+    val activePlayer = gameState.playerStates[gameState.activeFaction]
+    val visibleHexes = activePlayer?.visibleHexes ?: emptySet()
+    val fallbackSystemCoord = activePlayer?.capitalCoord
+        ?: gameState.map.tiles.values.firstOrNull { it.terrain == com.novaempire.core.domain.models.TerrainType.PLANET && it.owner == gameState.activeFaction }?.coord
+        ?: gameState.map.tiles.keys.firstOrNull()
 
     Scaffold(
         bottomBar = {
@@ -194,19 +203,27 @@ fun GameContainer(
                         onAttackUnit = onAttackUnit,
                         onSiegePlanet = onSiegePlanet,
                         onCapturePlanet = onCapturePlanet,
-                        visibleHexes = emptySet(),
-                        onHexClick = { },
-                        onOpenSystemManagement = { },
-                        onClearSelection = { },
+                        visibleHexes = visibleHexes,
+                        onHexClick = { selectedCoord = it },
+                        onOpenSystemManagement = { coord ->
+                            selectedCoord = coord
+                            currentTab = GameTab.SYSTEM
+                        },
+                        onClearSelection = { selectedCoord = null },
                         onOpenAcademy = onOpenAcademy
                     )
                 }
-                GameTab.SYSTEM -> StarSystemManagementScreen(
-                    coord = gameState.map.tiles.keys.first(),
-                    onClose = { },
-                    gameState = gameState,
-                    onBuildUnit = onBuildUnit
-                )
+                GameTab.SYSTEM -> {
+                    val coordForSystem = selectedCoord ?: fallbackSystemCoord
+                    if (coordForSystem != null) {
+                        StarSystemManagementScreen(
+                            coord = coordForSystem,
+                            onClose = { currentTab = GameTab.MAP },
+                            gameState = gameState,
+                            onBuildUnit = onBuildUnit
+                        )
+                    }
+                }
                 GameTab.TECH -> TechTreeScreen(
                     gameState = gameState,
                     onResearchTech = onResearchTech

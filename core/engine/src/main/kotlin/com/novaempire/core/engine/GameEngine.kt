@@ -186,7 +186,7 @@ class GameEngine {
                 val unit = state.units[intent.from]
                 if (unit != null && unit.faction == state.activeFaction && !unit.hasMoved) {
                     val gridMap = GameGridMap(state)
-                    val path = com.novaempire.core.hex.HexPathfinder.findPath(intent.from, intent.to, gridMap, unit.type.attack)
+                    val path = com.novaempire.core.hex.HexPathfinder.findPath(intent.from, intent.to, gridMap, unit.type.movement)
 
                     if (path != null && path.isNotEmpty()) {
                         val updatedUnits = state.units.toMutableMap()

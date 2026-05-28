@@ -47,7 +47,7 @@ fun DiplomacyIntelScreen(
                 style = MaterialTheme.typography.headlineLarge
             )
             Text(
-                text = "TURN \${gameState.turn}",
+                text = "TURN ${gameState.turn}",
                 style = MaterialTheme.typography.headlineMedium,
                 color = TextSecondary
             )
@@ -75,7 +75,7 @@ fun DiplomacyIntelScreen(
                 name = faction.name,
                 status = relation.name,
                 accentColor = accentColor,
-                intel = "FLEET STRENGTH: UNKNOWN\\nCAPITAL: UNKNOWN",
+                intel = "FLEET STRENGTH: UNKNOWN\nCAPITAL: UNKNOWN",
                 onProposeAlliance = { onChangeRelation(faction, DiplomaticRelation.ALLIANCE) },
                 onDeclareWar = { onChangeRelation(faction, DiplomaticRelation.WAR) }
             )
@@ -133,7 +133,7 @@ fun FactionIntelCard(
                     color = accentColor
                 )
                 Text(
-                    text = "STATUS: \${status.uppercase()}",
+                    text = "STATUS: ${status.uppercase()}",
                     style = MaterialTheme.typography.labelLarge,
                     color = accentColor
                 )
@@ -165,7 +165,7 @@ fun ScoreRow(rank: Int, name: String, score: Int, color: androidx.compose.ui.gra
             .padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(text = "\$rank. \$name", style = MaterialTheme.typography.bodyLarge, color = color)
+        Text(text = "$rank. $name", style = MaterialTheme.typography.bodyLarge, color = color)
         Text(text = score.toString(), style = MaterialTheme.typography.bodyLarge)
     }
 }

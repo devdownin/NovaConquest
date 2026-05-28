@@ -47,9 +47,9 @@ class SaveManager(private val saveDirectory: File) {
                     return SavedGameSnapshotCodec.decode(encoded)
                 } catch (e: Exception) {
                     // Corruption detected, move to quarantine
-                    val quarantineFile = File(saveDirectory, "quarantine/\${file.name}_\${System.currentTimeMillis()}.bak")
+                    val quarantineFile = File(saveDirectory, "quarantine/${file.name}_${System.currentTimeMillis()}.bak")
                     file.renameTo(quarantineFile)
-                    println("Corrupted save detected and quarantined: \${file.name}")
+                    println("Corrupted save detected and quarantined: ${file.name}")
                 }
             }
         }

@@ -98,18 +98,18 @@ fun ArchiveCard(entry: ArchiveEntry) {
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "FACTION: \${entry.faction}",
+                    text = "FACTION: ${entry.faction}",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
-                    text = "STATUS: \${entry.status}",
+                    text = "STATUS: ${entry.status}",
                     style = MaterialTheme.typography.labelLarge,
                     color = entry.color
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "SCORE: \${entry.score}",
+                text = "SCORE: ${entry.score}",
                 style = MaterialTheme.typography.headlineMedium,
                 color = entry.color
             )

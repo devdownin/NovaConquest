@@ -85,7 +85,7 @@ fun TechTreeScreen(
                 style = MaterialTheme.typography.headlineLarge
             )
             Text(
-                text = "\$credits C",
+                text = "$credits C",
                 style = MaterialTheme.typography.headlineMedium,
                 color = NeonCyan
             )
@@ -179,7 +179,7 @@ fun TechNodeCard(node: UiTechNode, onResearchClick: () -> Unit) {
             if (node.state == TechNodeState.AVAILABLE) {
                 Spacer(modifier = Modifier.height(12.dp))
                 IndustrialButton(
-                    text = "RESEARCH (\${node.cost} C)",
+                    text = "RESEARCH (${node.cost} C)",
                     onClick = onResearchClick,
                     color = if (node.canAfford) NeonCyan else NeonRed
                 )

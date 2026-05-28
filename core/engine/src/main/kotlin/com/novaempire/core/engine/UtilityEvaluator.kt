@@ -45,7 +45,7 @@ object UtilityEvaluator {
                         start = unit.position,
                         goal = closestTarget.position,
                         gridMap = gridMap,
-                        maxCost = unit.type.attack // Using attack as mobility proxy for demo
+                        maxCost = unit.type.movement
                     )
 
                     if (path != null && path.isNotEmpty()) {
