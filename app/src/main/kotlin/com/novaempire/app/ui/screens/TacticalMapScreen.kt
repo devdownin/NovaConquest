@@ -253,6 +253,20 @@ fun TacticalMapScreen(
                     strokeWidth = 2f
                 )
 
+                // Pre-allocate paints for performance
+                val textPaintVisible = android.graphics.Paint().apply {
+                    color = android.graphics.Color.argb((0.15f * 255f).toInt(), 0, 255, 255)
+                    textSize = 12f
+                    textAlign = android.graphics.Paint.Align.CENTER
+                    typeface = android.graphics.Typeface.MONOSPACE
+                }
+                val textPaintFog = android.graphics.Paint().apply {
+                    color = android.graphics.Color.argb((0.15f * 255f * 0.4f).toInt(), 0, 255, 255)
+                    textSize = 12f
+                    textAlign = android.graphics.Paint.Align.CENTER
+                    typeface = android.graphics.Typeface.MONOSPACE
+                }
+
                 gameState.map.tiles.values.forEach { tile ->
                     val q = tile.coord.q
                     val r = tile.coord.r
@@ -289,16 +303,10 @@ fun TacticalMapScreen(
                         )
 
                         // Sector ID (Blueprint style)
-                        val textPaint = android.graphics.Paint().apply {
-                            color = android.graphics.Color.argb((0.15f * 255 * alpha).toInt(), 0, 255, 255)
-                            textSize = 12f
-                            textAlign = android.graphics.Paint.Align.CENTER
-                            typeface = android.graphics.Typeface.MONOSPACE
-                        }
                         drawContext.canvas.nativeCanvas.drawText(
                             "${tile.coord.q},${tile.coord.r}",
                             x, y + hexRadius * 0.7f,
-                            textPaint
+                            if (isVisible) textPaintVisible else textPaintFog
                         )
 
                         when (tile.terrain) {

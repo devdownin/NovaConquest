@@ -12,11 +12,17 @@ import com.novaempire.app.audio.SoundType
 import com.novaempire.core.engine.GameEffect
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.io.File
 
 class GameViewModel(application: Application) : AndroidViewModel(application) {
+    private val engine = GameEngine()
+
+    val gameState: StateFlow<GameState> = engine.state
+    val isAiThinking: StateFlow<Boolean> = engine.isAiThinking
+    val errors: SharedFlow<String> = engine.errors
+    val effects: SharedFlow<GameEffect> = engine.effects
+
     private val saveManager: SaveManager
 
     init {
@@ -47,7 +53,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                         try {
                             val type = SoundType.valueOf(effect.soundId)
                             AudioManager.playSound(type)
-                        } catch (e: IllegalArgumentException) {
+                        } catch (_: IllegalArgumentException) {
                             // Ignore or log unknown sound IDs
                         }
                     }
@@ -63,13 +69,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-    private val engine = GameEngine()
-
-
-    val gameState: StateFlow<GameState> = engine.state
-    val isAiThinking: StateFlow<Boolean> = engine.isAiThinking
-    val errors: SharedFlow<String> = engine.errors
-    val effects: SharedFlow<GameEffect> = engine.effects
 
     fun dispatch(intent: GameIntent) {
         // Play UI click for every user intent
