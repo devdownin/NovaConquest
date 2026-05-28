@@ -41,7 +41,7 @@ object HexPathfinder {
 
                 if (!costSoFar.containsKey(next) || newCost < costSoFar[next]!!) {
                     costSoFar[next] = newCost
-                    val priority = newCost + current.distanceTo(goal)
+                    val priority = newCost + next.distanceTo(goal)
                     frontier.add(next to priority)
                     cameFrom[next] = current
                 }

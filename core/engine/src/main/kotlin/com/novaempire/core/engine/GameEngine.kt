@@ -29,7 +29,8 @@ class GameEngine {
 
     private fun createInitialState(mapSize: com.novaempire.core.domain.models.MapSize, archetype: com.novaempire.core.domain.models.MapArchetype): GameState {
         val map = MapFactory.generateMap(radius = mapSize.radius, archetype = archetype)
-        val spawnPoints = map.tiles.keys.filter { map.tiles[it]?.terrain == com.novaempire.core.domain.models.TerrainType.PLANET }
+        // Use the symmetric forced spawn systems, not the first planet in iteration order.
+        val spawnPoints = MapFactory.spawnPointsFor(mapSize.radius).filter { map.tiles.containsKey(it) }
         val units = mutableMapOf<HexCoord, GameUnit>()
 
         if (spawnPoints.isNotEmpty()) {
@@ -193,15 +194,16 @@ class GameEngine {
                         updatedUnits.remove(intent.from)
                         updatedUnits[intent.to] = unit.copy(position = intent.to, hasMoved = true)
                         val nextState = state.copy(units = updatedUnits)
-                        updateVision(nextState)
+                        updateVision(nextState, setOf(unit.faction))
                     } else state
                 } else state
             }
             is GameIntent.AttackUnit -> {
                 val unit = state.units[intent.attacker]
                 if (unit != null && unit.faction == state.activeFaction && !unit.hasAttacked) {
+                    val defenderFaction = state.units[intent.defender]?.faction
                     val nextState = CombatResolver.resolveCombat(state, intent.attacker, intent.defender)
-                    updateVision(nextState)
+                    updateVision(nextState, setOfNotNull(unit.faction, defenderFaction))
                 } else state
             }
             is GameIntent.ResearchTech -> {
@@ -222,7 +224,7 @@ class GameEngine {
                     newPlayerStates[state.activeFaction] = newPlayerState
 
                     val nextState = state.copy(playerStates = newPlayerStates)
-                    updateVision(nextState)
+                    updateVision(nextState, setOf(state.activeFaction))
                 } else {
                     state
                 }
@@ -254,7 +256,7 @@ class GameEngine {
                         updatedUnits[spawnHex] = newUnit
 
                         val nextState = state.copy(playerStates = newPlayerStates, units = updatedUnits)
-                        updateVision(nextState)
+                        updateVision(nextState, setOf(state.activeFaction))
                     } else state
                 } else state
             }
@@ -345,10 +347,13 @@ class GameEngine {
         return state.copy(activeEvent = activeEvent, eventDurationRemaining = duration)
     }
 
-    private fun updateVision(state: GameState): GameState {
+    private fun updateVision(
+        state: GameState,
+        factions: Collection<Faction> = Faction.values().asList()
+    ): GameState {
         val updatedPlayers = state.playerStates.toMutableMap()
 
-        for (faction in Faction.values()) {
+        for (faction in factions) {
             val playerState = updatedPlayers[faction] ?: PlayerState(faction)
             val visibleNow = VisionSystem.calculateVisibleHexes(state, faction)
             val newlyExplored = playerState.exploredHexes + visibleNow

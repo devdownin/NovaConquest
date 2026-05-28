@@ -37,21 +37,30 @@ object UtilityEvaluator {
                 // Attack if in range
                 currentState = CombatResolver.resolveCombat(currentState, unit.position, adjacentTarget.position)
             } else if (!unit.hasMoved) {
-                // Move towards closest target if not adjacent
+                // Move towards closest target if not adjacent.
                 val closestTarget = possibleTargets.minByOrNull { it.position.distanceTo(unit.position) }
                 if (closestTarget != null) {
                     val gridMap = GameGridMap(currentState)
-                    val path = com.novaempire.core.hex.HexPathfinder.findPath(
-                        start = unit.position,
-                        goal = closestTarget.position,
-                        gridMap = gridMap,
-                        maxCost = unit.type.movement
-                    )
+                    // The enemy's own hex is impassable, so aim for the passable hex next to
+                    // it that is closest to us, then walk as far as our movement allows.
+                    val approachGoal = HexCoord.directions
+                        .map { closestTarget.position + it }
+                        .filter { gridMap.isPassable(it) }
+                        .minByOrNull { it.distanceTo(unit.position) }
 
-                    if (path != null && path.isNotEmpty()) {
-                        val destination = path.lastOrNull { currentState.units[it] == null }
-                        if (destination != null) {
-                            currentState = moveUnit(currentState, unit.position, destination)
+                    if (approachGoal != null) {
+                        val path = com.novaempire.core.hex.HexPathfinder.findPath(
+                            start = unit.position,
+                            goal = approachGoal,
+                            gridMap = gridMap
+                        )
+
+                        if (path != null && path.isNotEmpty()) {
+                            val destination = path.take(unit.type.movement)
+                                .lastOrNull { currentState.units[it] == null }
+                            if (destination != null) {
+                                currentState = moveUnit(currentState, unit.position, destination)
+                            }
                         }
                     }
                 }
