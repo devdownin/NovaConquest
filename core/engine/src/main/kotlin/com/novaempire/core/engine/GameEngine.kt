@@ -1,16 +1,17 @@
 package com.novaempire.core.engine
 
-import com.novaempire.core.domain.models.Faction
-import com.novaempire.core.domain.models.GalacticEvent
-import com.novaempire.core.domain.models.GameUnit
-import com.novaempire.core.domain.models.UnitType
+import com.novaempire.core.domain.models.*
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.domain.state.PlayerState
 import com.novaempire.core.hex.HexCoord
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -18,8 +19,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
+data class GameResult(val newState: GameState, val error: String? = null)
+
+sealed class GameEffect {
+    data class PlaySound(val soundId: String) : GameEffect()
+    data class ShowNotification(val message: String, val color: String = "CYAN") : GameEffect()
+    object ShakeCamera : GameEffect()
+}
+
 class GameEngine {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val intentChannel = Channel<GameIntent>(Channel.UNLIMITED)
 
     private val _isAiThinking = MutableStateFlow(false)
     val isAiThinking: StateFlow<Boolean> = _isAiThinking.asStateFlow()
@@ -27,60 +37,92 @@ class GameEngine {
     private val _state = MutableStateFlow(createInitialState(com.novaempire.core.domain.models.MapSize.MEDIUM, com.novaempire.core.domain.models.MapArchetype.STANDARD))
     val state: StateFlow<GameState> = _state.asStateFlow()
 
+    private val _errors = MutableSharedFlow<String>()
+    val errors: SharedFlow<String> = _errors.asSharedFlow()
+
+    private val _effects = MutableSharedFlow<GameEffect>()
+    val effects: SharedFlow<GameEffect> = _effects.asSharedFlow()
+
+    init {
+        scope.launch {
+            intentChannel.receiveAsFlow().collect { intent ->
+                handleIntent(intent)
+            }
+        }
+    }
+
     private fun createInitialState(mapSize: com.novaempire.core.domain.models.MapSize, archetype: com.novaempire.core.domain.models.MapArchetype): GameState {
         val map = MapFactory.generateMap(radius = mapSize.radius, archetype = archetype)
-        // Use the symmetric forced spawn systems, not the first planet in iteration order.
         val spawnPoints = MapFactory.spawnPointsFor(mapSize.radius).filter { map.tiles.containsKey(it) }
         val units = mutableMapOf<HexCoord, GameUnit>()
+        val playerStates = mutableMapOf<Faction, PlayerState>()
 
-        if (spawnPoints.isNotEmpty()) {
-            units[spawnPoints[0]] = GameUnit(
-                type = UnitType.CRUISER,
-                faction = Faction.DOMINION,
-                position = spawnPoints[0],
-                currentHp = UnitType.CRUISER.maxHp
+        val activeFactions = Faction.values().filter { it != Faction.ANCIENT_NPC }
+        
+        activeFactions.forEachIndexed { index, faction ->
+            val spawnPoint = if (index < spawnPoints.size) spawnPoints[index] else null
+            
+            if (spawnPoint != null) {
+                // Initial unit for each faction
+                units[spawnPoint] = GameUnit(
+                    type = if (faction == Faction.DOMINION) UnitType.CRUISER else UnitType.SCOUT,
+                    faction = faction,
+                    position = spawnPoint,
+                    currentHp = if (faction == Faction.DOMINION) UnitType.CRUISER.maxHp else UnitType.SCOUT.maxHp
+                )
+            }
+            
+            playerStates[faction] = PlayerState(
+                faction = faction,
+                capitalCoord = spawnPoint,
+                credits = 20 // Starting boost
             )
         }
-        if (spawnPoints.size > 1) {
-            units[spawnPoints[1]] = GameUnit(
-                type = UnitType.SCOUT,
-                faction = Faction.TRADERS,
-                position = spawnPoints[1],
-                currentHp = UnitType.SCOUT.maxHp
-            )
-        }
 
-        var initialState = GameState(map = map, units = units)
-
-        // Initialize player states
-        val playerStates = Faction.values().associateWith { faction ->
-            val capital = if (faction == Faction.DOMINION && spawnPoints.isNotEmpty()) spawnPoints[0]
-                          else if (faction == Faction.TRADERS && spawnPoints.size > 1) spawnPoints[1]
-                          else null
-            PlayerState(faction = faction, capitalCoord = capital)
-        }.toMutableMap()
-        initialState = initialState.copy(playerStates = playerStates)
-
-        // Calculate initial vision
+        val initialState = GameState(map = map, units = units, playerStates = playerStates)
         return updateVision(initialState)
     }
 
-    private fun checkVictoryConditions(state: GameState): GameState {
+    private suspend fun checkVictoryConditions(state: GameState): GameState {
         if (state.winner != null) return state
 
-        // Tech Victory: 6 techs unlocked
+        // 1. Tech Victory: 6 techs unlocked
         val techWinner = state.playerStates.values.find { it.techUnlocked.size >= 6 }
         if (techWinner != null) {
-            return state.copy(winner = techWinner.faction, victoryReason = "Technological Dominance")
+            val finalState = state.copy(winner = techWinner.faction, victoryReason = "Technological Dominance")
+            _effects.emit(GameEffect.ShowNotification("VICTORY: ${techWinner.faction.displayName} achieved Technological Dominance!", "GOLD"))
+            return finalState
         }
 
-        // Domination Victory: (Simplified for demo) Owns 5 planets
-        // Alternatively, since planets don't strictly have ownership yet, let's just use Turn Limit
+        // 2. Economic Victory: 500 Credits
+        val econWinner = state.playerStates.values.find { it.credits >= 500 }
+        if (econWinner != null) {
+            val finalState = state.copy(winner = econWinner.faction, victoryReason = "Economic Supremacy")
+            _effects.emit(GameEffect.ShowNotification("VICTORY: ${econWinner.faction.displayName} achieved Economic Supremacy!", "GOLD"))
+            return finalState
+        }
+
+        // 3. Territorial Victory: Control all Zodiac Nodes (if they exist)
+        if (state.map.archetype == com.novaempire.core.domain.models.MapArchetype.ZODIAC) {
+            val zodiacCoords = state.map.zodiacPlanets
+            val factionControlsAll = Faction.values().find { faction ->
+                zodiacCoords.isNotEmpty() && zodiacCoords.all { state.map.tiles[it]?.owner == faction }
+            }
+            if (factionControlsAll != null) {
+                val finalState = state.copy(winner = factionControlsAll, victoryReason = "Celestial Alignment")
+                _effects.emit(GameEffect.ShowNotification("VICTORY: ${factionControlsAll.displayName} controlled the Zodiac Nodes!", "GOLD"))
+                return finalState
+            }
+        }
+
+        // 4. Time Limit Victory: 60 Turns
         if (state.turn >= 60) {
             // Highest credits wins
             val scoreWinner = state.playerStates.values.maxByOrNull { it.credits }
             if (scoreWinner != null) {
-                return state.copy(winner = scoreWinner.faction, victoryReason = "Time Limit Reached - Score Victory")
+                val finalState = state.copy(winner = scoreWinner.faction, victoryReason = "Time Limit Reached - Score Victory")
+                _effects.emit(GameEffect.ShowNotification("TIME LIMIT: ${scoreWinner.faction.displayName} wins by score!", "GOLD"))
+                return finalState
             }
         }
 
@@ -88,46 +130,74 @@ class GameEngine {
     }
 
     fun processIntent(intent: GameIntent) {
+        intentChannel.trySend(intent)
+    }
+
+    private suspend fun handleIntent(intent: GameIntent) {
+        // Prevent player actions while AI is thinking, except for initialization/loading
+        if (_isAiThinking.value && intent !is GameIntent.LoadGame && intent !is GameIntent.StartNewGame && intent !is GameIntent.StartNewGameWithSize) {
+            _errors.emit("AI is thinking, please wait.")
+            return
+        }
+
         if (intent is GameIntent.EndTurn) {
-            scope.launch {
-                _isAiThinking.value = true
-                var currentState = _state.value
-                currentState = reduce(currentState, intent)
+            _isAiThinking.value = true
+            var currentState = _state.value
+            currentState = reduce(currentState, intent).newState
 
-                while (currentState.activeFaction != Faction.DOMINION) {
-                    currentState = withContext(Dispatchers.Default) {
-                        UtilityEvaluator.executeAITurn(currentState, currentState.activeFaction)
-                    }
-                    currentState = updateVision(currentState)
-                    currentState = reduce(currentState, GameIntent.EndTurn)
+            // AI Turn Loop
+            while (currentState.activeFaction != Faction.DOMINION) {
+                currentState = withContext(Dispatchers.Default) {
+                    UtilityEvaluator.executeAITurn(currentState, currentState.activeFaction)
                 }
-
-                val refreshedUnits = currentState.units.mapValues { it.value.copy(hasMoved = false, hasAttacked = false) }
-                currentState = currentState.copy(units = refreshedUnits)
-
-                val finalState = checkVictoryConditions(currentState)
-                _state.value = finalState
-                _isAiThinking.value = false
+                currentState = updateVision(currentState)
+                // Trigger EndTurn to move to next faction
+                currentState = reduce(currentState, GameIntent.EndTurn).newState
             }
+
+            // Global refresh after full round
+            val refreshedUnits = currentState.units.mapValues { it.value.copy(hasMoved = false, hasAttacked = false) }
+            currentState = currentState.copy(units = refreshedUnits)
+
+            val finalState = checkVictoryConditions(currentState)
+            _state.value = finalState
+            _isAiThinking.value = false
         } else {
-            _state.update { currentState ->
-                val nextState = reduce(currentState, intent)
-                checkVictoryConditions(nextState)
+            val currentState = _state.value
+            val result = reduce(currentState, intent)
+            if (result.error != null) {
+                _errors.emit(result.error)
+                _effects.emit(GameEffect.PlaySound("UI_CLICK"))
             }
+            
+            val nextState = result.newState
+            
+            // Side-effect: Camera shake and sound on combat
+            val combat = nextState.lastCombatEvent
+            if (combat != null && (currentState.lastCombatEvent == null || combat != currentState.lastCombatEvent)) {
+                _effects.emit(GameEffect.ShakeCamera)
+                if (combat.targetDestroyed) {
+                    _effects.emit(GameEffect.PlaySound("COMBAT_EXPLOSION"))
+                } else {
+                    _effects.emit(GameEffect.PlaySound("COMBAT_LASER"))
+                }
+            }
+
+            _state.value = checkVictoryConditions(nextState)
         }
     }
 
-    private fun reduce(state: GameState, intent: GameIntent): GameState {
+    private fun reduce(state: GameState, intent: GameIntent): GameResult {
         return when (intent) {
 
             is GameIntent.StartNewGame -> {
-                createInitialState(com.novaempire.core.domain.models.MapSize.MEDIUM, com.novaempire.core.domain.models.MapArchetype.STANDARD)
+                GameResult(createInitialState(com.novaempire.core.domain.models.MapSize.MEDIUM, com.novaempire.core.domain.models.MapArchetype.STANDARD))
             }
             is GameIntent.StartNewGameWithSize -> {
-                createInitialState(intent.mapSize, intent.archetype)
+                GameResult(createInitialState(intent.mapSize, intent.archetype))
             }
             is GameIntent.LoadGame -> {
-                intent.loadedState
+                GameResult(intent.loadedState)
             }
             is GameIntent.EndTurn -> {
                 val allFactions = Faction.values().filter { it != Faction.ANCIENT_NPC }
@@ -147,7 +217,7 @@ class GameEngine {
 
                 var unitsAfterTurn = nextState.units
                 if (hasNix) {
-                    unitsAfterTurn = unitsAfterTurn.mapValues { (coord, unit) ->
+                    unitsAfterTurn = unitsAfterTurn.mapValues { (_, unit) ->
                         if (unit.faction == state.activeFaction && unit.currentHp < unit.type.maxHp) {
                             unit.copy(currentHp = Math.min(unit.type.maxHp, unit.currentHp + 1))
                         } else {
@@ -170,6 +240,9 @@ class GameEngine {
                     systemIncome += 3
                 }
 
+                // Faction bonus
+                systemIncome += nextFaction.bonusCredits
+
                 val nextCredits = (nextPlayerState?.credits ?: 0) + systemIncome
                 val newPlayerStates = nextState.playerStates.toMutableMap()
                 if (nextPlayerState != null) {
@@ -178,104 +251,124 @@ class GameEngine {
                 nextState = nextState.copy(units = unitsAfterTurn, playerStates = newPlayerStates)
 
 
-                nextState
+                GameResult(nextState)
             }
             is GameIntent.SelectFaction -> {
-                state.copy(activeFaction = intent.faction)
+                GameResult(state.copy(activeFaction = intent.faction))
             }
             is GameIntent.MoveUnit -> {
                 val unit = state.units[intent.from]
-                if (unit != null && unit.faction == state.activeFaction && !unit.hasMoved) {
-                    val gridMap = GameGridMap(state)
-                    val path = com.novaempire.core.hex.HexPathfinder.findPath(intent.from, intent.to, gridMap, unit.type.movement)
+                if (unit == null) return GameResult(state, "No unit at selected position.")
+                if (unit.faction != state.activeFaction) return GameResult(state, "You cannot move another faction's unit.")
+                if (unit.hasMoved) return GameResult(state, "This unit has already moved this turn.")
 
-                    if (path != null && path.isNotEmpty()) {
-                        val updatedUnits = state.units.toMutableMap()
-                        updatedUnits.remove(intent.from)
-                        updatedUnits[intent.to] = unit.copy(position = intent.to, hasMoved = true)
-                        val nextState = state.copy(units = updatedUnits)
-                        updateVision(nextState, setOf(unit.faction))
-                    } else state
-                } else state
+                val gridMap = GameGridMap(state)
+                val totalMovement = unit.type.movement + unit.faction.bonusMovement
+                val path = com.novaempire.core.hex.HexPathfinder.findPath(intent.from, intent.to, gridMap, totalMovement)
+
+                if (path != null && path.isNotEmpty()) {
+                    val updatedUnits = state.units.toMutableMap()
+                    updatedUnits.remove(intent.from)
+                    updatedUnits[intent.to] = unit.copy(position = intent.to, hasMoved = true)
+                    val nextState = state.copy(units = updatedUnits)
+                    GameResult(updateVision(nextState, setOf(unit.faction)))
+                } else {
+                    GameResult(state, "Target position is unreachable or too far.")
+                }
             }
             is GameIntent.AttackUnit -> {
                 val unit = state.units[intent.attacker]
-                if (unit != null && unit.faction == state.activeFaction && !unit.hasAttacked) {
-                    val defenderFaction = state.units[intent.defender]?.faction
-                    val nextState = CombatResolver.resolveCombat(state, intent.attacker, intent.defender)
-                    updateVision(nextState, setOfNotNull(unit.faction, defenderFaction))
-                } else state
+                if (unit == null) return GameResult(state, "Attacker not found.")
+                if (unit.faction != state.activeFaction) return GameResult(state, "You cannot attack with another faction's unit.")
+                if (unit.hasAttacked) return GameResult(state, "This unit has already attacked this turn.")
+
+                val defender = state.units[intent.defender]
+                if (defender == null) return GameResult(state, "Target not found.")
+
+                val distance = intent.attacker.distanceTo(intent.defender)
+                if (distance > unit.type.range) return GameResult(state, "Target is out of range.")
+
+                val nextState = CombatResolver.resolveCombat(state, intent.attacker, intent.defender)
+                GameResult(updateVision(nextState, setOfNotNull(unit.faction, defender.faction)))
             }
             is GameIntent.ResearchTech -> {
-                val playerState = state.playerStates[state.activeFaction] ?: return state
+                val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
                 val hasKael = playerState.recruitedHeroes.contains("hero_kael")
-                val cost = com.novaempire.core.domain.models.TechRegistry.calculateCost(intent.techId, playerState.techUnlocked, hasKael)
+                var cost = com.novaempire.core.domain.models.TechRegistry.calculateCost(intent.techId, playerState.techUnlocked, hasKael)
+                
+                // Faction discount
+                if (state.activeFaction.bonusTechDiscount > 0f) {
+                    cost = (cost * (1f - state.activeFaction.bonusTechDiscount)).toInt()
+                }
 
-                val tech = com.novaempire.core.domain.models.TechRegistry.getTech(intent.techId) ?: return state
+                val tech = com.novaempire.core.domain.models.TechRegistry.getTech(intent.techId) ?: return GameResult(state, "Technology not found.")
                 val isAvailable = tech.requiresTechId == null || playerState.techUnlocked.contains(tech.requiresTechId)
                 val isAlreadyUnlocked = playerState.techUnlocked.contains(intent.techId)
 
-                if (isAvailable && !isAlreadyUnlocked && playerState.credits >= cost) {
-                    val newPlayerState = playerState.copy(
-                        credits = playerState.credits - cost,
-                        techUnlocked = playerState.techUnlocked + intent.techId
-                    )
-                    val newPlayerStates = state.playerStates.toMutableMap()
-                    newPlayerStates[state.activeFaction] = newPlayerState
+                if (!isAvailable) return GameResult(state, "Prerequisite technology not researched.")
+                if (isAlreadyUnlocked) return GameResult(state, "Technology already researched.")
+                if (playerState.credits < cost) return GameResult(state, "Not enough credits.")
 
-                    val nextState = state.copy(playerStates = newPlayerStates)
-                    updateVision(nextState, setOf(state.activeFaction))
-                } else {
-                    state
-                }
+                val newPlayerState = playerState.copy(
+                    credits = playerState.credits - cost,
+                    techUnlocked = playerState.techUnlocked + intent.techId
+                )
+                val newPlayerStates = state.playerStates.toMutableMap()
+                newPlayerStates[state.activeFaction] = newPlayerState
+
+                val nextState = state.copy(playerStates = newPlayerStates)
+                GameResult(updateVision(nextState, setOf(state.activeFaction)))
             }
             is GameIntent.BuildUnit -> {
-                val playerState = state.playerStates[state.activeFaction] ?: return state
+                val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
                 val cost = intent.unitType.cost
-                val spawnCenter = intent.location ?: playerState.capitalCoord ?: return state
+                val spawnCenter = intent.location ?: playerState.capitalCoord ?: return GameResult(state, "No valid spawn location.")
 
-                if (playerState.credits >= cost) {
-                    val gridMap = GameGridMap(state)
-                    val spawnCandidates = listOf(spawnCenter) + gridMap.getNeighbors(spawnCenter)
-                    val spawnHex = spawnCandidates.firstOrNull { state.units[it] == null && gridMap.isPassable(it) }
+                if (playerState.credits < cost) return GameResult(state, "Not enough credits.")
 
-                    if (spawnHex != null) {
-                        val newPlayerState = playerState.copy(credits = playerState.credits - cost)
-                        val newPlayerStates = state.playerStates.toMutableMap()
-                        newPlayerStates[state.activeFaction] = newPlayerState
+                val gridMap = GameGridMap(state)
+                val spawnCandidates = listOf(spawnCenter) + gridMap.getNeighbors(spawnCenter)
+                val spawnHex = spawnCandidates.firstOrNull { state.units[it] == null && gridMap.isPassable(it) }
 
-                        val newUnit = GameUnit(
-                            type = intent.unitType,
-                            faction = state.activeFaction,
-                            position = spawnHex,
-                            currentHp = intent.unitType.maxHp,
-                            hasMoved = true,
-                            hasAttacked = true
-                        )
-                        val updatedUnits = state.units.toMutableMap()
-                        updatedUnits[spawnHex] = newUnit
-
-                        val nextState = state.copy(playerStates = newPlayerStates, units = updatedUnits)
-                        updateVision(nextState, setOf(state.activeFaction))
-                    } else state
-                } else state
-            }
-            is GameIntent.RecruitHero -> {
-                val playerState = state.playerStates[state.activeFaction] ?: return state
-                val hero = com.novaempire.core.domain.models.HeroRegistry.getHero(intent.heroId) ?: return state
-
-                if (playerState.credits >= hero.cost && !playerState.recruitedHeroes.contains(hero.id)) {
-                    val newPlayerState = playerState.copy(
-                        credits = playerState.credits - hero.cost,
-                        recruitedHeroes = playerState.recruitedHeroes + hero.id
-                    )
+                if (spawnHex != null) {
+                    val newPlayerState = playerState.copy(credits = playerState.credits - cost)
                     val newPlayerStates = state.playerStates.toMutableMap()
                     newPlayerStates[state.activeFaction] = newPlayerState
-                    state.copy(playerStates = newPlayerStates)
-                } else state
+
+                    val newUnit = GameUnit(
+                        type = intent.unitType,
+                        faction = state.activeFaction,
+                        position = spawnHex,
+                        currentHp = intent.unitType.maxHp,
+                        hasMoved = true,
+                        hasAttacked = true
+                    )
+                    val updatedUnits = state.units.toMutableMap()
+                    updatedUnits[spawnHex] = newUnit
+
+                    val nextState = state.copy(playerStates = newPlayerStates, units = updatedUnits)
+                    GameResult(updateVision(nextState, setOf(state.activeFaction)))
+                } else {
+                    GameResult(state, "No available space to build unit.")
+                }
+            }
+            is GameIntent.RecruitHero -> {
+                val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
+                val hero = com.novaempire.core.domain.models.HeroRegistry.getHero(intent.heroId) ?: return GameResult(state, "Hero not found.")
+
+                if (playerState.credits < hero.cost) return GameResult(state, "Not enough credits.")
+                if (playerState.recruitedHeroes.contains(hero.id)) return GameResult(state, "Hero already recruited.")
+
+                val newPlayerState = playerState.copy(
+                    credits = playerState.credits - hero.cost,
+                    recruitedHeroes = playerState.recruitedHeroes + hero.id
+                )
+                val newPlayerStates = state.playerStates.toMutableMap()
+                newPlayerStates[state.activeFaction] = newPlayerState
+                GameResult(state.copy(playerStates = newPlayerStates))
             }
             is GameIntent.ChangeRelation -> {
-                val playerState = state.playerStates[state.activeFaction] ?: return state
+                val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
                 val newRelations = playerState.relations.toMutableMap()
                 newRelations[intent.targetFaction] = intent.newRelation
 
@@ -291,39 +384,53 @@ class GameEngine {
                     newPlayerStates[intent.targetFaction] = targetState.copy(relations = targetRelations)
                 }
 
-                state.copy(playerStates = newPlayerStates)
+                GameResult(state.copy(playerStates = newPlayerStates))
             }
             is GameIntent.SiegePlanet -> {
                 val unit = state.units[intent.attackerCoord]
+                if (unit == null) return GameResult(state, "Attacker not found.")
+                if (unit.faction != state.activeFaction) return GameResult(state, "You cannot use this unit.")
+                if (unit.hasAttacked) return GameResult(state, "Unit already used its action.")
+
                 val tile = state.map.tiles[intent.planetCoord]
-                if (unit != null && unit.faction == state.activeFaction && !unit.hasAttacked && tile != null && tile.terrain == com.novaempire.core.domain.models.TerrainType.PLANET && tile.owner != state.activeFaction) {
-                    val siegeDamage = if (unit.type == UnitType.BATTLESHIP) 2 else 1
-                    val newLevel = Math.max(0, tile.systemLevel - siegeDamage)
+                if (tile == null || tile.terrain != com.novaempire.core.domain.models.TerrainType.PLANET) {
+                    return GameResult(state, "Target is not a planet.")
+                }
+                if (tile.owner == state.activeFaction) return GameResult(state, "You cannot siege your own planet.")
 
-                    val updatedUnits = state.units.toMutableMap()
-                    updatedUnits[intent.attackerCoord] = unit.copy(hasAttacked = true)
+                val siegeDamage = if (unit.type == UnitType.BATTLESHIP) 2 else 1
+                val newLevel = Math.max(0, tile.systemLevel - siegeDamage)
 
-                    val newTiles = state.map.tiles.toMutableMap()
-                    newTiles[intent.planetCoord] = tile.copy(systemLevel = newLevel)
-                    val newMap = state.map.copy(tiles = newTiles)
+                val updatedUnits = state.units.toMutableMap()
+                updatedUnits[intent.attackerCoord] = unit.copy(hasAttacked = true)
 
-                    state.copy(units = updatedUnits, map = newMap)
-                } else state
+                val newTiles = state.map.tiles.toMutableMap()
+                newTiles[intent.planetCoord] = tile.copy(systemLevel = newLevel)
+                val newMap = state.map.copy(tiles = newTiles)
+
+                GameResult(state.copy(units = updatedUnits, map = newMap))
             }
             is GameIntent.CapturePlanet -> {
                 val unit = state.units[intent.unitCoord]
+                if (unit == null) return GameResult(state, "Unit not found.")
+                if (unit.faction != state.activeFaction) return GameResult(state, "You cannot use this unit.")
+                if (unit.hasAttacked) return GameResult(state, "Unit already used its action.")
+
                 val tile = state.map.tiles[intent.planetCoord]
-                // Must be adjacent or on it, level must be 0
-                if (unit != null && unit.faction == state.activeFaction && !unit.hasAttacked && tile != null && tile.terrain == com.novaempire.core.domain.models.TerrainType.PLANET && tile.systemLevel == 0 && tile.owner != state.activeFaction) {
-                    val updatedUnits = state.units.toMutableMap()
-                    updatedUnits[intent.unitCoord] = unit.copy(hasAttacked = true)
+                if (tile == null || tile.terrain != com.novaempire.core.domain.models.TerrainType.PLANET) {
+                    return GameResult(state, "Target is not a planet.")
+                }
+                if (tile.systemLevel > 0) return GameResult(state, "Planet must be at level 0 to be captured.")
+                if (tile.owner == state.activeFaction) return GameResult(state, "You already own this planet.")
 
-                    val newTiles = state.map.tiles.toMutableMap()
-                    newTiles[intent.planetCoord] = tile.copy(owner = state.activeFaction, systemLevel = 1) // Rebuild at level 1
-                    val newMap = state.map.copy(tiles = newTiles)
+                val updatedUnits = state.units.toMutableMap()
+                updatedUnits[intent.unitCoord] = unit.copy(hasAttacked = true)
 
-                    state.copy(units = updatedUnits, map = newMap)
-                } else state
+                val newTiles = state.map.tiles.toMutableMap()
+                newTiles[intent.planetCoord] = tile.copy(owner = state.activeFaction, systemLevel = 1) // Rebuild at level 1
+                val newMap = state.map.copy(tiles = newTiles)
+
+                GameResult(state.copy(units = updatedUnits, map = newMap))
             }
         }
     }

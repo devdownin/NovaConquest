@@ -19,6 +19,10 @@
 - Text should have high contrast against the dark backgrounds (white or light grey).
 
 ## Components
+- **HUD (Technical Blueprint)**: Features an animated, translucent neon cyan scanline sweeping across the map to simulate a radar or industrial command screen.
+- **Sectors**: Explored hexes display their specific cubic coordinates (`q,r`) in a faint, monospace typography.
 - **Buttons**: Angular, industrial, potentially with neon borders or glow on hover/active.
 - **Panels**: Frosted glass look, sometimes with visible mounting bolts in the corners.
+- **Units**: Detailed vector drawings using Path-based rendering. Each unit type (Dreadnought, Cruiser, Carrier, etc.) has a unique industrial silhouette with technical details like antennas, sensors, and docking bays.
+- **Planets**: Rendered with technical orbital rings, industrial nodes (cities), and faction-colored tactical borders.
 - **Icons**: Minimalist, technical, sci-fi themed.

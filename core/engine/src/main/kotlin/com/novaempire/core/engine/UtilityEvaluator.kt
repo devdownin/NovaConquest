@@ -19,10 +19,13 @@ object UtilityEvaluator {
         // 1. Economic / Tech Logic
         currentState = evaluateEconomyAndTech(currentState, aiFaction)
 
-        // 2. Production Logic
+        // 2. Hero Recruitment Logic
+        currentState = evaluateHeroes(currentState, aiFaction)
+
+        // 3. Production Logic
         currentState = evaluateProduction(currentState, aiFaction)
 
-        // 3. Tactical Logic (Move and Attack)
+        // 4. Tactical Logic (Move, Attack, Siege, Capture)
         val aiPlayerState = currentState.playerStates[aiFaction]
         val myUnits = currentState.units.values.filter { it.faction == aiFaction && (!it.hasMoved || !it.hasAttacked) }
 
@@ -31,20 +34,43 @@ object UtilityEvaluator {
                 it.faction != aiFaction &&
                 (aiPlayerState?.relations?.get(it.faction) == com.novaempire.core.domain.models.DiplomaticRelation.WAR || it.faction == Faction.ANCIENT_NPC)
             }
-            val adjacentTarget = possibleTargets.find { it.position.distanceTo(unit.position) <= unit.type.range }
+            
+            val targetPlanets = currentState.map.tiles.values.filter { 
+                it.terrain == com.novaempire.core.domain.models.TerrainType.PLANET && it.owner != aiFaction 
+            }
 
+            // A. Check for Capture/Siege if next to a planet
+            val adjacentPlanet = targetPlanets.find { it.coord.distanceTo(unit.position) <= 1 }
+            if (adjacentPlanet != null && !unit.hasAttacked) {
+                if (adjacentPlanet.systemLevel == 0) {
+                    currentState = capturePlanet(currentState, unit.position, adjacentPlanet.coord)
+                } else {
+                    currentState = siegePlanet(currentState, unit.position, adjacentPlanet.coord)
+                }
+                continue
+            }
+
+            // B. Check for Combat
+            val adjacentTarget = possibleTargets.find { it.position.distanceTo(unit.position) <= unit.type.range }
             if (adjacentTarget != null && !unit.hasAttacked) {
-                // Attack if in range
                 currentState = CombatResolver.resolveCombat(currentState, unit.position, adjacentTarget.position)
-            } else if (!unit.hasMoved) {
-                // Move towards closest target if not adjacent.
-                val closestTarget = possibleTargets.minByOrNull { it.position.distanceTo(unit.position) }
-                if (closestTarget != null) {
+            } 
+            
+            // C. Move towards closest interest (Unit or Planet)
+            else if (!unit.hasMoved && unit.type.movement > 0) {
+                val closestUnit = possibleTargets.minByOrNull { it.position.distanceTo(unit.position) }
+                val closestPlanet = targetPlanets.minByOrNull { it.coord.distanceTo(unit.position) }
+                
+                val goal = when {
+                    closestPlanet != null && (closestUnit == null || closestPlanet.coord.distanceTo(unit.position) < closestUnit.position.distanceTo(unit.position)) -> closestPlanet.coord
+                    closestUnit != null -> closestUnit.position
+                    else -> null
+                }
+
+                if (goal != null) {
                     val gridMap = GameGridMap(currentState)
-                    // The enemy's own hex is impassable, so aim for the passable hex next to
-                    // it that is closest to us, then walk as far as our movement allows.
                     val approachGoal = HexCoord.directions
-                        .map { closestTarget.position + it }
+                        .map { goal + it }
                         .filter { gridMap.isPassable(it) }
                         .minByOrNull { it.distanceTo(unit.position) }
 
@@ -56,7 +82,8 @@ object UtilityEvaluator {
                         )
 
                         if (path != null && path.isNotEmpty()) {
-                            val destination = path.take(unit.type.movement)
+                            val totalMovement = unit.type.movement + unit.faction.bonusMovement
+                            val destination = path.take(totalMovement)
                                 .lastOrNull { currentState.units[it] == null }
                             if (destination != null) {
                                 currentState = moveUnit(currentState, unit.position, destination)
@@ -73,6 +100,109 @@ object UtilityEvaluator {
             else it.value
         }
         return currentState.copy(units = refreshedUnits)
+    }
+
+    private fun evaluateHeroes(state: GameState, faction: Faction): GameState {
+        val playerState = state.playerStates[faction] ?: return state
+        
+        // AI chooses a hero based on current needs
+        val availableHeroes = com.novaempire.core.domain.models.HeroRegistry.ALL_HEROES.filter { 
+            !playerState.recruitedHeroes.contains(it.id) && playerState.credits >= it.cost 
+        }
+        
+        if (availableHeroes.isEmpty()) return state
+
+        // Priority: Kael (Tech) > Elara (Economy) > Vance (Combat) > Nix (Healing)
+        val selectedHero = availableHeroes.find { it.id == "hero_kael" }
+            ?: availableHeroes.find { it.id == "hero_elara" }
+            ?: availableHeroes.find { it.id == "hero_vance" }
+            ?: availableHeroes.find { it.id == "hero_nix" }
+
+        if (selectedHero != null) {
+            val newPlayerState = playerState.copy(
+                credits = playerState.credits - selectedHero.cost,
+                recruitedHeroes = playerState.recruitedHeroes + selectedHero.id
+            )
+            val newPlayerStates = state.playerStates.toMutableMap()
+            newPlayerStates[faction] = newPlayerState
+            return state.copy(playerStates = newPlayerStates)
+        }
+        
+        return state
+    }
+
+    private fun evaluateProduction(state: GameState, faction: Faction): GameState {
+        val playerState = state.playerStates[faction] ?: return state
+        
+        // Find all controlled planets
+        val myPlanets = state.map.tiles.values.filter { it.owner == faction }
+        if (myPlanets.isEmpty()) return state
+
+        // Simple AI: Build most expensive affordable unit at the first available planet
+        val unitOrder = listOf(UnitType.DREADNOUGHT, UnitType.CARRIER, UnitType.BATTLESHIP, UnitType.CRUISER, UnitType.DEFENSE_PLATFORM, UnitType.FIGHTER, UnitType.SCOUT)
+
+        var nextState = state
+        for (planet in myPlanets) {
+            val affordableUnit = unitOrder.find { it.cost <= (nextState.playerStates[faction]?.credits ?: 0) }
+            if (affordableUnit != null) {
+                val gridMap = GameGridMap(nextState)
+                val spawnCandidates = listOf(planet.coord) + gridMap.getNeighbors(planet.coord)
+                val spawnHex = spawnCandidates.firstOrNull { nextState.units[it] == null && gridMap.isPassable(it) }
+
+                if (spawnHex != null) {
+                    val pState = nextState.playerStates[faction]!!
+                    val newPlayerState = pState.copy(credits = pState.credits - affordableUnit.cost)
+                    val newPlayerStates = nextState.playerStates.toMutableMap()
+                    newPlayerStates[faction] = newPlayerState
+
+                    val newUnit = GameUnit(
+                        type = affordableUnit,
+                        faction = faction,
+                        position = spawnHex,
+                        currentHp = affordableUnit.maxHp,
+                        hasMoved = true,
+                        hasAttacked = true
+                    )
+                    val updatedUnits = nextState.units.toMutableMap()
+                    updatedUnits[spawnHex] = newUnit
+
+                    nextState = nextState.copy(playerStates = newPlayerStates, units = updatedUnits)
+                }
+            }
+        }
+
+        return nextState
+    }
+
+    private fun siegePlanet(state: GameState, attackerCoord: HexCoord, planetCoord: HexCoord): GameState {
+        val unit = state.units[attackerCoord] ?: return state
+        val tile = state.map.tiles[planetCoord] ?: return state
+        
+        val siegeDamage = if (unit.type == UnitType.BATTLESHIP || unit.type == UnitType.DREADNOUGHT) 2 else 1
+        val newLevel = Math.max(0, tile.systemLevel - siegeDamage)
+
+        val updatedUnits = state.units.toMutableMap()
+        updatedUnits[attackerCoord] = unit.copy(hasAttacked = true)
+
+        val newTiles = state.map.tiles.toMutableMap()
+        newTiles[planetCoord] = tile.copy(systemLevel = newLevel)
+        val newMap = state.map.copy(tiles = newTiles)
+
+        return state.copy(units = updatedUnits, map = newMap)
+    }
+
+    private fun capturePlanet(state: GameState, unitCoord: HexCoord, planetCoord: HexCoord): GameState {
+        val unit = state.units[unitCoord] ?: return state
+        val tile = state.map.tiles[planetCoord] ?: return state
+        
+        val updatedUnits = state.units.toMutableMap()
+        updatedUnits[unitCoord] = unit.copy(hasAttacked = true)
+
+        val newTiles = state.map.tiles.toMutableMap()
+        newTiles[planetCoord] = tile.copy(owner = unit.faction, systemLevel = 1)
+        val newMap = state.map.copy(tiles = newTiles)
+
+        return state.copy(units = updatedUnits, map = newMap)
     }
 
     private fun evaluateDiplomacy(state: GameState, faction: Faction): GameState {
@@ -134,13 +264,23 @@ object UtilityEvaluator {
             val isAvailable = tech.requiresTechId == null || playerState.techUnlocked.contains(tech.requiresTechId)
             val isUnlocked = playerState.techUnlocked.contains(tech.id)
             val hasKael = playerState.recruitedHeroes.contains("hero_kael")
-            val cost = TechRegistry.calculateCost(tech.id, playerState.techUnlocked, hasKael)
+            var cost = TechRegistry.calculateCost(tech.id, playerState.techUnlocked, hasKael)
+            
+            if (faction.bonusTechDiscount > 0f) {
+                cost = (cost * (1f - faction.bonusTechDiscount)).toInt()
+            }
+            
             isAvailable && !isUnlocked && playerState.credits >= cost
         }
 
         if (affordableTech != null) {
             val hasKael = playerState.recruitedHeroes.contains("hero_kael")
-            val cost = TechRegistry.calculateCost(affordableTech.id, playerState.techUnlocked, hasKael)
+            var cost = TechRegistry.calculateCost(affordableTech.id, playerState.techUnlocked, hasKael)
+            
+            if (faction.bonusTechDiscount > 0f) {
+                cost = (cost * (1f - faction.bonusTechDiscount)).toInt()
+            }
+            
             val newPlayerState = playerState.copy(
                 credits = playerState.credits - cost,
                 techUnlocked = playerState.techUnlocked + affordableTech.id
@@ -148,43 +288,6 @@ object UtilityEvaluator {
             val newPlayerStates = state.playerStates.toMutableMap()
             newPlayerStates[faction] = newPlayerState
             return state.copy(playerStates = newPlayerStates)
-        }
-
-        return state
-    }
-
-    private fun evaluateProduction(state: GameState, faction: Faction): GameState {
-        val playerState = state.playerStates[faction] ?: return state
-        val capital = playerState.capitalCoord ?: return state
-
-        // Simple AI: Always try to build a Cruiser, then Fighter, then Scout
-        val desiredUnits = listOf(UnitType.CRUISER, UnitType.FIGHTER, UnitType.SCOUT)
-
-        for (unitType in desiredUnits) {
-            if (playerState.credits >= unitType.cost) {
-                val gridMap = GameGridMap(state)
-                val spawnCandidates = listOf(capital) + gridMap.getNeighbors(capital)
-                val spawnHex = spawnCandidates.firstOrNull { state.units[it] == null && gridMap.isPassable(it) }
-
-                if (spawnHex != null) {
-                    val newPlayerState = playerState.copy(credits = playerState.credits - unitType.cost)
-                    val newPlayerStates = state.playerStates.toMutableMap()
-                    newPlayerStates[faction] = newPlayerState
-
-                    val newUnit = GameUnit(
-                        type = unitType,
-                        faction = faction,
-                        position = spawnHex,
-                        currentHp = unitType.maxHp,
-                        hasMoved = true,
-                        hasAttacked = true
-                    )
-                    val updatedUnits = state.units.toMutableMap()
-                    updatedUnits[spawnHex] = newUnit
-
-                    return state.copy(playerStates = newPlayerStates, units = updatedUnits)
-                }
-            }
         }
 
         return state

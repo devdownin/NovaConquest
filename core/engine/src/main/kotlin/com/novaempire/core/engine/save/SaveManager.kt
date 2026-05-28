@@ -19,15 +19,21 @@ class SaveManager(private val saveDirectory: File) {
         try {
             val encoded = SavedGameSnapshotCodec.encode(state)
 
-            // Shift autosaves: 2 -> 3, 1 -> 2, new -> 1
-            val file3 = File(saveDirectory, "autosave_3.json")
-            val file2 = File(saveDirectory, "autosave_2.json")
             val file1 = File(saveDirectory, "autosave_1.json")
+            val file2 = File(saveDirectory, "autosave_2.json")
+            val file3 = File(saveDirectory, "autosave_3.json")
+            val tempFile = File(saveDirectory, "autosave_1.json.tmp")
 
+            // 1. Shift existing saves
             if (file2.exists()) file2.copyTo(file3, overwrite = true)
             if (file1.exists()) file1.copyTo(file2, overwrite = true)
 
-            file1.writeText(encoded)
+            // 2. Atomic write: Write to temp file then rename
+            tempFile.writeText(encoded)
+            if (tempFile.exists()) {
+                if (file1.exists()) file1.delete()
+                tempFile.renameTo(file1)
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }

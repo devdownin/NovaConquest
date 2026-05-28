@@ -196,12 +196,12 @@ fun FactionDetailPanel(selectedFaction: Faction) {
             ) {
                 Column {
                     Text(
-                        text = selectedFaction.name.uppercase(),
+                        text = selectedFaction.displayName.uppercase(),
                         style = MaterialTheme.typography.headlineLarge,
                         color = getFactionColor(selectedFaction)
                     )
                     Text(
-                        text = "Militaristic Hegemony",
+                        text = "Galactic Faction Profile",
                         style = MaterialTheme.typography.labelLarge,
                         color = TextSecondary
                     )
@@ -216,7 +216,7 @@ fun FactionDetailPanel(selectedFaction: Faction) {
 
             Spacer(modifier = Modifier.height(24.dp))
             Text(
-                text = "A rigid, martial society focused on overwhelming firepower and fortified defenses. The Dominion believes peace is only achieved through absolute control of space.",
+                text = selectedFaction.description,
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.padding(start = 16.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)).padding(8.dp)
             )
@@ -227,16 +227,32 @@ fun FactionDetailPanel(selectedFaction: Faction) {
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
+                val bonuses = mutableListOf<String>()
+                if (selectedFaction.bonusAttack > 0) bonuses.add("+${(selectedFaction.bonusAttack * 100).toInt()}% Attack")
+                if (selectedFaction.bonusCredits > 0) bonuses.add("+${selectedFaction.bonusCredits} Credits/Turn")
+                if (selectedFaction.bonusTechDiscount > 0) bonuses.add("-${(selectedFaction.bonusTechDiscount * 100).toInt()}% Tech Cost")
+                if (selectedFaction.bonusMovement > 0) bonuses.add("+${selectedFaction.bonusMovement} Movement")
+                if (selectedFaction.bonusVision > 0) bonuses.add("+${selectedFaction.bonusVision} Vision Range")
+
                 Box(modifier = Modifier.widthIn(min = 200.dp).weight(1f, fill = false).padding(12.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
                     Column {
                         Text("FACTION BONUS", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                        Text("+15% Hull Integrity, -10% Ship Build Time", style = MaterialTheme.typography.bodyMedium)
+                        Text(bonuses.joinToString(", ").ifEmpty { "No specific bonuses" }, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
                 Box(modifier = Modifier.widthIn(min = 200.dp).weight(1f, fill = false).padding(12.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
                     Column {
-                        Text("CORE FLEET", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                        Text("Dreadnoughts, Heavy Cruisers, Flak Frigates", style = MaterialTheme.typography.bodyMedium)
+                        Text("STRATEGIC FOCUS", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                        val focus = when(selectedFaction) {
+                            Faction.DOMINION -> "Military Dominance"
+                            Faction.TRADERS -> "Economic Expansion"
+                            Faction.SYNTH -> "Scientific Progress"
+                            Faction.NOMADS -> "Deep Space Exploration"
+                            Faction.KAELEN -> "System Surveillance"
+                            Faction.XYLAR -> "Aggressive Expansion"
+                            else -> "Generic Strategy"
+                        }
+                        Text(focus, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }

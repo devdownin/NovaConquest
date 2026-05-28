@@ -17,7 +17,7 @@ object VisionSystem {
 
         // Passive Tech Bonus
         val hasDeepScanners = playerState?.techUnlocked?.contains("tech_deep_scanners") == true
-        val visionBonus = if (hasDeepScanners) 1 else 0
+        val visionBonus = (if (hasDeepScanners) 1 else 0) + faction.bonusVision
 
         for (unit in units) {
             var range = when (unit.type) {
@@ -26,6 +26,9 @@ object VisionSystem {
                 UnitType.CRUISER -> 2
                 UnitType.BATTLESHIP -> 2
                 UnitType.CARRIER -> 3
+                UnitType.DREADNOUGHT -> 3
+                UnitType.DEFENSE_PLATFORM -> 2
+                else -> 2
             }
 
             range += visionBonus

@@ -9,10 +9,14 @@ import kotlin.random.Random
 
 class MapFactory {
     companion object {
-        /** The two symmetric starting systems, on opposite edges of the map. */
+        /** The six symmetric starting systems, distributed around the map edges. */
         fun spawnPointsFor(radius: Int): List<HexCoord> = listOf(
             HexCoord(0, -radius, radius),
-            HexCoord(0, radius, -radius)
+            HexCoord(radius, -radius, 0),
+            HexCoord(radius, 0, -radius),
+            HexCoord(0, radius, -radius),
+            HexCoord(-radius, radius, 0),
+            HexCoord(-radius, 0, radius)
         )
 
         fun generateMap(radius: Int = 3, archetype: MapArchetype = MapArchetype.STANDARD, seed: Long = 42): GameMap {

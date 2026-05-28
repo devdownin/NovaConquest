@@ -26,18 +26,30 @@ object AudioManager {
             .build()
 
         soundPool = SoundPool.Builder()
-            .setMaxStreams(5)
+            .setMaxStreams(10)
             .setAudioAttributes(audioAttributes)
             .build()
 
-        // Load dummy sounds (assuming they exist in res/raw, which we don't have here, so we catch exception)
-        // soundMap[SoundType.COMBAT_LASER] = soundPool!!.load(context, R.raw.laser, 1)
-        // soundMap[SoundType.COMBAT_EXPLOSION] = soundPool!!.load(context, R.raw.explosion, 1)
-        // soundMap[SoundType.UI_CLICK] = soundPool!!.load(context, R.raw.ui_click, 1)
-        // soundMap[SoundType.END_TURN] = soundPool!!.load(context, R.raw.end_turn, 1)
+        // Dynamically load resources from res/raw if they exist
+        val soundsToLoad = mapOf(
+            SoundType.COMBAT_LASER to "laser",
+            SoundType.COMBAT_EXPLOSION to "explosion",
+            SoundType.UI_CLICK to "ui_click",
+            SoundType.END_TURN to "end_turn"
+        )
+
+        soundsToLoad.forEach { (type, fileName) ->
+            val resId = context.resources.getIdentifier(fileName, "raw", context.packageName)
+            if (resId != 0) {
+                soundMap[type] = soundPool!!.load(context, resId, 1)
+                Log.d("AudioManager", "Loaded sound resource: $fileName (ID: $resId)")
+            } else {
+                Log.w("AudioManager", "Sound resource NOT found: $fileName. Ensure it exists in res/raw/")
+            }
+        }
 
         isInitialized = true
-        Log.d("AudioManager", "Initialized SoundPool")
+        Log.d("AudioManager", "AudioManager Initialized")
     }
 
     fun playSound(type: SoundType) {

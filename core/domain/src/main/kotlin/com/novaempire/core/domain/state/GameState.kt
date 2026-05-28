@@ -16,6 +16,7 @@ data class CombatEvent(
 
 @Serializable
 data class GameState(
+    val version: Int = 1,
     val turn: Int = 1,
     val activeFaction: Faction = Faction.DOMINION,
     val playerStates: Map<Faction, PlayerState> = emptyMap(),
