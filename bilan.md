@@ -48,3 +48,33 @@
 * - minch-to-zoom n'utilise pas le centroïde — zoom ancré sur (0,0) du layout.
   - Seuls Dominion/Traders ont des spawn points ; les 4 autres factions ont un playerStates sans capitale, donc ne produisent jamais d'unité.
   - IndustrialButton force Modifier.fillMaxWidth() en interne, ce qui annule un Modifier.width(...) passé en argument.
+
+---
+
+## Audit du 2026-05-28 — Génération de cartes, mobilité des vaisseaux & performances
+
+### Corrigés
+
+  Critiques
+
+  1. `MapFactory` — aucune garantie de connexité : ~13,5 % de cases étaient des astéroïdes infranchissables placés sans contrôle, un vaisseau pouvait naître encerclé ou la carte être coupée en régions isolées. → ajout d'un parcours BFS qui creuse des couloirs (Astéroïdes → Vide) jusqu'à ce que tous les spawns et planètes forment une seule région franchissable. Garantit « un déplacement toujours possible ». Couvert par `MapFactoryTest` (50 seeds × radii 3/5/8/12 + Zodiac).
+  2. `UtilityEvaluator.kt` — l'IA ne rejoignait jamais un ennemi distant : `findPath(start, enemyPos)` ciblait une case occupée donc infranchissable → A* renvoyait toujours `null`. → l'IA vise désormais une case franchissable adjacente à l'ennemi, path sans plafond, puis tronque au budget de mouvement.
+
+  Majeurs
+
+  3. `HexPathfinder.kt:44` — heuristique A* erronée (`current.distanceTo(goal)` au lieu de `next.distanceTo(goal)`) → A* dégradé en quasi-Dijkstra, sortie anticipée potentiellement sous-optimale. Corrigé. Couvert par `HexPathfinderTest`.
+  4. `GameEngine.createInitialState` — les unités de départ apparaissaient sur les 2 premières planètes dans l'ordre d'itération de la map, rendant morte la logique de spawns symétriques de `MapFactory`. → utilise désormais `MapFactory.spawnPointsFor(radius)`.
+  5. `GameEngine.updateVision` — recalculait les 7 factions à chaque mutation (poste de coût moteur dominant). → signature `updateVision(state, factions)` ; ne recalcule que les factions concernées (active pour move/build/research, attaquant + défenseur pour un combat).
+
+  Mineurs
+
+  6. `MapFactory` — `random.nextDouble()` chaîné dans le `when` : chaque branche tirait un nouveau nombre, faussant la distribution. → tirage unique + buckets cumulatifs.
+
+  Performances UI
+
+  7. `TacticalMapScreen` — le chemin fantôme (drag) et les FX de combat partageaient le même `Canvas` que le terrain, ré-exécutant la boucle de dessin de toutes les tuiles à chaque frame de drag / tick d'animation. → scindé en deux Canvas superposés (terrain statique + overlay dynamique) dans le même `Box` transformé.
+
+### Hors scope (signalé, non corrigé)
+
+  - 4 factions sur 6 (Synth/Nomads/Kaelen/Xylar) restent inertes : pas de capitale ni d'unités instanciées — décision de design, pas un bug.
+  - Garantie de mobilité : elle porte sur le **terrain** (région connexe + spawn jamais encerclé). Un blocage *tactique* par d'autres unités reste possible et relève du gameplay.

@@ -22,11 +22,12 @@ Le jeu repose sur un pattern UDF (Unidirectional Data Flow) strict, garantissant
 
 ### 3.1 Carte Tactique & Pathfinding
 *   Génération procédurale via `MapFactory` avec support de plusieurs tailles (Small, Medium, Large, Gigantic) et d'archétypes (Standard, Zodiac).
-*   Pathfinding A* qui respecte la topologie hexagonale et les types de terrain infranchissables (ex: Astéroïdes).
-*   Rendu natif sur le `Canvas` de Jetpack Compose avec support du Pan (déplacement) et Pinch-to-Zoom.
+*   **Garantie de connexité** : après le placement du terrain, `MapFactory` lance un parcours en largeur (BFS) sur les cases franchissables et creuse des couloirs (Astéroïdes → Vide) jusqu'à ce que tous les points d'apparition et toutes les planètes appartiennent à une **unique région franchissable**. Un vaisseau peut donc toujours se déplacer et atteindre ses objectifs, quel que soit le seed. Les deux points d'apparition symétriques sont garantis Planète.
+*   Pathfinding A* qui respecte la topologie hexagonale et les types de terrain infranchissables (ex: Astéroïdes). L'heuristique utilise la distance hexagonale du nœud successeur au but (admissible et cohérente).
+*   Rendu natif sur le `Canvas` de Jetpack Compose avec support du Pan (déplacement) et Pinch-to-Zoom. Le rendu est scindé en deux couches superposées dans le même `Box` transformé : un Canvas **statique** (terrain, unités, sélection) et un Canvas **dynamique** (chemin fantôme du drag, animations de combat). Les mises à jour haute fréquence (drag, animations) n'invalident donc plus la boucle de dessin des tuiles.
 
 ### 3.2 Brouillard de Guerre & Lignes de Vue
-*   `VisionSystem` recalcule les cases visibles après chaque mouvement.
+*   `VisionSystem` recalcule les cases visibles après chaque mouvement. `GameEngine.updateVision` ne recalcule que les factions effectivement concernées par l'action (faction active pour un déplacement/production/recherche ; attaquant + défenseur pour un combat) plutôt que les sept factions à chaque mutation.
 *   L'algorithme de raycasting bloque la vision à travers certains terrains (ex: Nébuleuses). L'interface utilisateur assombrit (alpha réduit) les zones explorées mais non visibles actuellement, et rend invisibles les unités ennemies qui s'y trouvent.
 
 ### 3.3 Économie, Siège et Production
@@ -43,7 +44,7 @@ L'IA non-joueuse évalue ses priorités lors de son tour :
 1.  **Diplomatie** : Évalue la puissance économique et militaire. Propose des alliances aux empires trop puissants, déclare la guerre aux empires faibles, ou tente de faire la paix si une guerre tourne mal.
 2.  **Économie/Recherche** : Tente d'acheter la première technologie abordable dans l'arbre.
 3.  **Production** : Produit en boucle des Cruisers, Fighters ou Scouts selon son budget.
-4.  **Tactique** : Déplace ses unités en utilisant l'algorithme A* vers l'ennemi le plus proche, et l'attaque s'il est à portée.
+4.  **Tactique** : Attaque l'ennemi le plus proche s'il est à portée. Sinon, l'IA vise une case franchissable *adjacente* à l'ennemi (sa case étant occupée, donc infranchissable), calcule le chemin A* sans plafond, puis tronque le déplacement à son budget de mouvement — elle se rapproche donc réellement des cibles hors de portée.
 
 ### 3.6 Bonus Passifs (Héros & Technologies)
 L'achat d'un héros ou d'une technologie modifie *concrètement* les mathématiques du jeu :
