@@ -7,9 +7,9 @@ import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.models.GameUnit
 import com.novaempire.core.domain.models.TechRegistry
 
-object UtilityEvaluator {
+object UtilityEvaluator : AIStrategy {
 
-    suspend fun executeAITurn(state: GameState, aiFaction: Faction): GameState {
+    override suspend fun executeAITurn(state: GameState, aiFaction: Faction): GameState {
         kotlinx.coroutines.delay(500) // Simulate complex calculation
         var currentState = state
 
@@ -260,26 +260,16 @@ object UtilityEvaluator {
         val playerState = state.playerStates[faction] ?: return state
 
         // Simple AI: Buy first affordable tech
+        val hasKael = playerState.recruitedHeroes.contains("hero_kael")
         val affordableTech = TechRegistry.ALL_TECHS.find { tech ->
             val isAvailable = tech.requiresTechId == null || playerState.techUnlocked.contains(tech.requiresTechId)
             val isUnlocked = playerState.techUnlocked.contains(tech.id)
-            val hasKael = playerState.recruitedHeroes.contains("hero_kael")
-            var cost = TechRegistry.calculateCost(tech.id, playerState.techUnlocked, hasKael)
-            
-            if (faction.bonusTechDiscount > 0f) {
-                cost = (cost * (1f - faction.bonusTechDiscount)).toInt()
-            }
-            
+            val cost = CostCalculator.techCost(tech.id, playerState.techUnlocked, hasKael, faction.bonusTechDiscount)
             isAvailable && !isUnlocked && playerState.credits >= cost
         }
 
         if (affordableTech != null) {
-            val hasKael = playerState.recruitedHeroes.contains("hero_kael")
-            var cost = TechRegistry.calculateCost(affordableTech.id, playerState.techUnlocked, hasKael)
-            
-            if (faction.bonusTechDiscount > 0f) {
-                cost = (cost * (1f - faction.bonusTechDiscount)).toInt()
-            }
+            val cost = CostCalculator.techCost(affordableTech.id, playerState.techUnlocked, hasKael, faction.bonusTechDiscount)
             
             val newPlayerState = playerState.copy(
                 credits = playerState.credits - cost,

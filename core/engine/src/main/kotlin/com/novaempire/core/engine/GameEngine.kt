@@ -17,7 +17,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.random.Random
 
 data class GameResult(val newState: GameState, val error: String? = null)
 
@@ -27,7 +26,7 @@ sealed class GameEffect {
     object ShakeCamera : GameEffect()
 }
 
-class GameEngine {
+class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val intentChannel = Channel<GameIntent>(Channel.UNLIMITED)
 
@@ -84,49 +83,10 @@ class GameEngine {
     }
 
     private suspend fun checkVictoryConditions(state: GameState): GameState {
-        if (state.winner != null) return state
-
-        // 1. Tech Victory: 6 techs unlocked
-        val techWinner = state.playerStates.values.find { it.techUnlocked.size >= 6 }
-        if (techWinner != null) {
-            val finalState = state.copy(winner = techWinner.faction, victoryReason = "Technological Dominance")
-            _effects.emit(GameEffect.ShowNotification("VICTORY: ${techWinner.faction.displayName} achieved Technological Dominance!", "GOLD"))
-            return finalState
-        }
-
-        // 2. Economic Victory: 500 Credits
-        val econWinner = state.playerStates.values.find { it.credits >= 500 }
-        if (econWinner != null) {
-            val finalState = state.copy(winner = econWinner.faction, victoryReason = "Economic Supremacy")
-            _effects.emit(GameEffect.ShowNotification("VICTORY: ${econWinner.faction.displayName} achieved Economic Supremacy!", "GOLD"))
-            return finalState
-        }
-
-        // 3. Territorial Victory: Control all Zodiac Nodes (if they exist)
-        if (state.map.archetype == com.novaempire.core.domain.models.MapArchetype.ZODIAC) {
-            val zodiacCoords = state.map.zodiacPlanets
-            val factionControlsAll = Faction.values().find { faction ->
-                zodiacCoords.isNotEmpty() && zodiacCoords.all { state.map.tiles[it]?.owner == faction }
-            }
-            if (factionControlsAll != null) {
-                val finalState = state.copy(winner = factionControlsAll, victoryReason = "Celestial Alignment")
-                _effects.emit(GameEffect.ShowNotification("VICTORY: ${factionControlsAll.displayName} controlled the Zodiac Nodes!", "GOLD"))
-                return finalState
-            }
-        }
-
-        // 4. Time Limit Victory: 60 Turns
-        if (state.turn >= 60) {
-            // Highest credits wins
-            val scoreWinner = state.playerStates.values.maxByOrNull { it.credits }
-            if (scoreWinner != null) {
-                val finalState = state.copy(winner = scoreWinner.faction, victoryReason = "Time Limit Reached - Score Victory")
-                _effects.emit(GameEffect.ShowNotification("TIME LIMIT: ${scoreWinner.faction.displayName} wins by score!", "GOLD"))
-                return finalState
-            }
-        }
-
-        return state
+        val result = VictoryChecker.check(state) ?: return state
+        val finalState = state.copy(winner = result.winner, victoryReason = result.reason)
+        _effects.emit(GameEffect.ShowNotification("VICTORY: ${result.winner.displayName} — ${result.reason}", "GOLD"))
+        return finalState
     }
 
     fun processIntent(intent: GameIntent) {
@@ -148,7 +108,7 @@ class GameEngine {
             // AI Turn Loop
             while (currentState.activeFaction != Faction.DOMINION) {
                 currentState = withContext(Dispatchers.Default) {
-                    UtilityEvaluator.executeAITurn(currentState, currentState.activeFaction)
+                    aiStrategy.executeAITurn(currentState, currentState.activeFaction)
                 }
                 currentState = updateVision(currentState)
                 // Trigger EndTurn to move to next faction
@@ -200,58 +160,7 @@ class GameEngine {
                 GameResult(intent.loadedState)
             }
             is GameIntent.EndTurn -> {
-                val allFactions = Faction.values().filter { it != Faction.ANCIENT_NPC }
-                val nextFactionIndex = (allFactions.indexOf(state.activeFaction) + 1) % allFactions.size
-                var nextFaction = allFactions[nextFactionIndex]
-
-                var nextState = state.copy(activeFaction = nextFaction)
-
-                if (nextFactionIndex == 0) {
-                    nextState = nextState.copy(turn = state.turn + 1)
-                    nextState = triggerGalacticEvent(nextState)
-                }
-
-                // Apply End of Turn Bonuses for the active faction (the one that just finished)
-                val activePlayerState = state.playerStates[state.activeFaction]
-                val hasNix = activePlayerState?.recruitedHeroes?.contains("hero_nix") == true
-
-                var unitsAfterTurn = nextState.units
-                if (hasNix) {
-                    unitsAfterTurn = unitsAfterTurn.mapValues { (_, unit) ->
-                        if (unit.faction == state.activeFaction && unit.currentHp < unit.type.maxHp) {
-                            unit.copy(currentHp = Math.min(unit.type.maxHp, unit.currentHp + 1))
-                        } else {
-                            unit
-                        }
-                    }
-                }
-
-                // Add credits for the next faction starting their turn
-                val nextPlayerState = nextState.playerStates[nextFaction]
-                val hasElara = nextPlayerState?.recruitedHeroes?.contains("hero_elara") == true
-
-                var systemIncome = 10 // Base income
-                if (hasElara) {
-                    systemIncome += (systemIncome * 0.10).toInt() + 2 // +10% and flat +2 for early game impact
-                }
-
-                // Event modifiers
-                if (nextState.activeEvent == GalacticEvent.ECONOMIC_BOOM) {
-                    systemIncome += 3
-                }
-
-                // Faction bonus
-                systemIncome += nextFaction.bonusCredits
-
-                val nextCredits = (nextPlayerState?.credits ?: 0) + systemIncome
-                val newPlayerStates = nextState.playerStates.toMutableMap()
-                if (nextPlayerState != null) {
-                    newPlayerStates[nextFaction] = nextPlayerState.copy(credits = nextCredits)
-                }
-                nextState = nextState.copy(units = unitsAfterTurn, playerStates = newPlayerStates)
-
-
-                GameResult(nextState)
+                GameResult(TurnManager.advanceTurn(state))
             }
             is GameIntent.SelectFaction -> {
                 GameResult(state.copy(activeFaction = intent.faction))
@@ -293,13 +202,12 @@ class GameEngine {
             }
             is GameIntent.ResearchTech -> {
                 val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
-                val hasKael = playerState.recruitedHeroes.contains("hero_kael")
-                var cost = com.novaempire.core.domain.models.TechRegistry.calculateCost(intent.techId, playerState.techUnlocked, hasKael)
-                
-                // Faction discount
-                if (state.activeFaction.bonusTechDiscount > 0f) {
-                    cost = (cost * (1f - state.activeFaction.bonusTechDiscount)).toInt()
-                }
+                val cost = CostCalculator.techCost(
+                    intent.techId,
+                    playerState.techUnlocked,
+                    playerState.recruitedHeroes.contains("hero_kael"),
+                    state.activeFaction.bonusTechDiscount
+                )
 
                 val tech = com.novaempire.core.domain.models.TechRegistry.getTech(intent.techId) ?: return GameResult(state, "Technology not found.")
                 val isAvailable = tech.requiresTechId == null || playerState.techUnlocked.contains(tech.requiresTechId)
@@ -433,25 +341,6 @@ class GameEngine {
                 GameResult(state.copy(units = updatedUnits, map = newMap))
             }
         }
-    }
-
-    private fun triggerGalacticEvent(state: GameState): GameState {
-        // 20% chance to trigger a new event if none is active
-        var activeEvent = state.activeEvent
-        var duration = state.eventDurationRemaining
-
-        if (activeEvent != GalacticEvent.NONE) {
-            duration--
-            if (duration <= 0) {
-                activeEvent = GalacticEvent.NONE
-            }
-        } else if (Random.nextDouble() < 0.20) {
-            val events = GalacticEvent.values().filter { it != GalacticEvent.NONE }
-            activeEvent = events.random()
-            duration = Random.nextInt(2, 5) // Lasts 2 to 4 turns
-        }
-
-        return state.copy(activeEvent = activeEvent, eventDurationRemaining = duration)
     }
 
     private fun updateVision(

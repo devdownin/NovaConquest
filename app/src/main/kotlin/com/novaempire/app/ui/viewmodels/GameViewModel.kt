@@ -10,8 +10,10 @@ import com.novaempire.core.engine.save.SaveManager
 import com.novaempire.app.audio.AudioManager
 import com.novaempire.app.audio.SoundType
 import com.novaempire.core.engine.GameEffect
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -22,6 +24,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     val isAiThinking: StateFlow<Boolean> = engine.isAiThinking
     val errors: SharedFlow<String> = engine.errors
     val effects: SharedFlow<GameEffect> = engine.effects
+
+    private val _notifications = MutableSharedFlow<Pair<String, String>>()
+    val notifications: SharedFlow<Pair<String, String>> = _notifications.asSharedFlow()
 
     private val saveManager: SaveManager
 
@@ -58,12 +63,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                     is GameEffect.ShowNotification -> {
-                        // In a real app, this would trigger a Snackbar or Toast via a UI state flow
-                        // For now, we emit to the error flow so it's visible as a message
-                        engine.processIntent(GameIntent.LoadGame(gameState.value)) // Placeholder to trigger UI refresh if needed
+                        _notifications.emit(effect.message to effect.color)
                     }
                     is GameEffect.ShakeCamera -> {
-                        // Future: Trigger camera shake in the UI
+                        // UI layer collects `effects` directly for haptic / animation
                     }
                 }
             }

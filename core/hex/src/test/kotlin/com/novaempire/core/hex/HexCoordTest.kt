@@ -27,6 +27,17 @@ class HexCoordTest {
     }
 
     @Test
+    fun testRoundExact() {
+        assertEquals(HexCoord(1, -1, 0), HexCoord.round(1.0, -1.0, 0.0))
+    }
+
+    @Test
+    fun testRoundFractional() {
+        // Tie broken by largest diff component
+        assertEquals(HexCoord(1, -1, 0), HexCoord.round(0.6, -0.9, 0.3))
+    }
+
+    @Test
     fun testDistance() {
         val a = HexCoord(0, 0, 0)
         val b = HexCoord(2, -1, -1)

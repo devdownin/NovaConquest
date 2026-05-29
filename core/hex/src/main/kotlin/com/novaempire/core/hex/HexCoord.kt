@@ -24,5 +24,18 @@ data class HexCoord(val q: Int, val r: Int, val s: Int) {
             HexCoord(1, 0, -1), HexCoord(1, -1, 0), HexCoord(0, -1, 1),
             HexCoord(-1, 0, 1), HexCoord(-1, 1, 0), HexCoord(0, 1, -1)
         )
+
+        fun round(fracQ: Double, fracR: Double, fracS: Double): HexCoord {
+            var q = Math.round(fracQ).toInt()
+            var r = Math.round(fracR).toInt()
+            var s = Math.round(fracS).toInt()
+            val qDiff = Math.abs(q - fracQ)
+            val rDiff = Math.abs(r - fracR)
+            val sDiff = Math.abs(s - fracS)
+            if (qDiff > rDiff && qDiff > sDiff) q = -r - s
+            else if (rDiff > sDiff) r = -q - s
+            else s = -q - r
+            return HexCoord(q, r, s)
+        }
     }
 }
