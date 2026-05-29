@@ -1,7 +1,6 @@
 package com.novaempire.core.engine
 
 import com.novaempire.core.domain.models.Faction
-import com.novaempire.core.domain.models.GalacticEvent
 import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.hex.HexCoord
@@ -10,17 +9,18 @@ import kotlin.math.max
 
 object VisionSystem {
 
-    fun calculateVisibleHexes(state: GameState, faction: Faction): Set<HexCoord> {
+    fun calculateVisibleHexes(
+        state: GameState,
+        faction: Faction,
+        bonusProvider: VisionBonusProvider = GameStateVisionBonus(state)
+    ): Set<HexCoord> {
         val visible = mutableSetOf<HexCoord>()
         val units = state.units.values.filter { it.faction == faction }
-        val playerState = state.playerStates[faction]
-
-        // Passive Tech Bonus
-        val hasDeepScanners = playerState?.techUnlocked?.contains("tech_deep_scanners") == true
-        val visionBonus = (if (hasDeepScanners) 1 else 0) + faction.bonusVision
+        val visionBonus = bonusProvider.rangeBonus(faction)
+        val mult = bonusProvider.rangeMult()
 
         for (unit in units) {
-            var range = when (unit.type) {
+            val baseRange = when (unit.type) {
                 UnitType.SCOUT -> 3
                 UnitType.FIGHTER -> 2
                 UnitType.CRUISER -> 2
@@ -30,13 +30,7 @@ object VisionSystem {
                 UnitType.DEFENSE_PLATFORM -> 2
                 else -> 2
             }
-
-            range += visionBonus
-
-            if (state.activeEvent == GalacticEvent.SOLAR_FLARE) {
-                range = max(1, range / 2)
-            }
-
+            val range = max(1, ((baseRange + visionBonus) * mult).toInt())
             visible.addAll(getVisibleHexesFrom(state, unit.position, range))
         }
 
@@ -72,7 +66,7 @@ object VisionSystem {
             val q = a.q + (b.q - a.q) * t
             val r = a.r + (b.r - a.r) * t
             val s = a.s + (b.s - a.s) * t
-            points.add(hexRound(q, r, s))
+            points.add(HexCoord.round(q, r, s))
         }
 
         for (i in 1 until points.size - 1) {
@@ -82,24 +76,5 @@ object VisionSystem {
             }
         }
         return true
-    }
-
-    private fun hexRound(fracQ: Double, fracR: Double, fracS: Double): HexCoord {
-        var q = Math.round(fracQ).toInt()
-        var r = Math.round(fracR).toInt()
-        var s = Math.round(fracS).toInt()
-
-        val qDiff = Math.abs(q - fracQ)
-        val rDiff = Math.abs(r - fracR)
-        val sDiff = Math.abs(s - fracS)
-
-        if (qDiff > rDiff && qDiff > sDiff) {
-            q = -r - s
-        } else if (rDiff > sDiff) {
-            r = -q - s
-        } else {
-            s = -q - r
-        }
-        return HexCoord(q, r, s)
     }
 }

@@ -139,31 +139,12 @@ class MapFactory {
                 val q = from.q + (to.q - from.q) * t
                 val r = from.r + (to.r - from.r) * t
                 val s = from.s + (to.s - from.s) * t
-                val coord = hexRound(q, r, s)
+                val coord = HexCoord.round(q, r, s)
                 val tile = tiles[coord] ?: continue
                 if (!tile.terrain.isPassable) {
                     tiles[coord] = tile.copy(terrain = TerrainType.EMPTY)
                 }
             }
-        }
-
-        private fun hexRound(fracQ: Double, fracR: Double, fracS: Double): HexCoord {
-            var q = Math.round(fracQ).toInt()
-            var r = Math.round(fracR).toInt()
-            var s = Math.round(fracS).toInt()
-
-            val qDiff = Math.abs(q - fracQ)
-            val rDiff = Math.abs(r - fracR)
-            val sDiff = Math.abs(s - fracS)
-
-            if (qDiff > rDiff && qDiff > sDiff) {
-                q = -r - s
-            } else if (rDiff > sDiff) {
-                r = -q - s
-            } else {
-                s = -q - r
-            }
-            return HexCoord(q, r, s)
         }
     }
 }

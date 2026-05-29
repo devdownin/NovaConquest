@@ -34,16 +34,9 @@ object TechRegistry {
 
     fun getTech(id: String): TechDefinition? = ALL_TECHS.find { it.id == id }
 
-    fun calculateCost(techId: String, unlockedTechs: Set<String>, hasKaelHero: Boolean = false): Int {
+    fun baseCost(techId: String, unlockedTechs: Set<String>): Int {
         val tech = getTech(techId) ?: return 999
-        val unlockedInBranch = ALL_TECHS.filter { it.branch == tech.branch && unlockedTechs.contains(it.id) }.size
-        var cost = tech.baseCost + (4 * unlockedInBranch)
-
-        if (hasKaelHero) {
-            val discount = Math.max(1, (cost * 0.10).toInt())
-            cost = Math.max(1, cost - discount)
-        }
-
-        return cost
+        val unlockedInBranch = ALL_TECHS.count { it.branch == tech.branch && unlockedTechs.contains(it.id) }
+        return tech.baseCost + (4 * unlockedInBranch)
     }
 }
