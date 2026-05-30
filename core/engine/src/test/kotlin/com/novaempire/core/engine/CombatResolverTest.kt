@@ -48,8 +48,8 @@ class CombatResolverTest {
 
     @Test
     fun testCombatDefenderSurvivesAndCounters() {
-        // Attacker: Fighter (4 ATK) vs Defender: Cruiser (25 HP, 6 ATK)
-        // Cruiser survives with 21 HP, counters for 6 damage. Fighter has 12 HP -> 6 HP left.
+        // DOMINION bonusAttack=0.10f → factionBonus = max(1, floor(4*0.10)) = 1 → damage = 5
+        // Cruiser survives with 20 HP, counters for 6 damage. Fighter has 12 HP -> 6 HP left.
         val attackerCoord = HexCoord(0, 0, 0)
         val defenderCoord = HexCoord(1, -1, 0)
 
@@ -72,7 +72,7 @@ class CombatResolverTest {
 
         // Defender should survive
         val resultingDefender = resultState.units[defenderCoord]
-        assertEquals(25 - 4, resultingDefender?.currentHp)
+        assertEquals(25 - 5, resultingDefender?.currentHp) // 5 = 4 ATK + 1 DOMINION faction bonus
 
         // Attacker should survive but take counter damage
         val resultingAttacker = resultState.units[attackerCoord]
@@ -85,8 +85,8 @@ class CombatResolverTest {
 
     @Test
     fun testCombatMutualDestructionOrDefenderCountersAndKillsAttacker() {
-        // Attacker: Scout (5 HP, 2 ATK) vs Defender: Cruiser (25 HP, 6 ATK)
-        // Scout attacks for 2 (Cruiser to 23). Cruiser counters for 6 (Scout HP 5 -> -1, dead).
+        // DOMINION bonusAttack=0.10f → factionBonus = max(1, floor(2*0.10)) = 1 → damage = 3
+        // Scout attacks for 3 (Cruiser to 22). Cruiser counters for 6 (Scout HP 5 -> -1, dead).
         val attackerCoord = HexCoord(0, 0, 0)
         val defenderCoord = HexCoord(1, -1, 0)
 
@@ -111,7 +111,7 @@ class CombatResolverTest {
         assertNull(resultState.units[attackerCoord])
 
         // Defender survives
-        assertEquals(25 - 2, resultState.units[defenderCoord]?.currentHp)
+        assertEquals(25 - 3, resultState.units[defenderCoord]?.currentHp) // 3 = 2 ATK + 1 DOMINION faction bonus
 
         // Check Event
         assertEquals(false, resultState.lastCombatEvent?.targetDestroyed)

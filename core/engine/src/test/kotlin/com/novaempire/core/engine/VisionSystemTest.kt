@@ -85,18 +85,18 @@ class VisionSystemTest {
     }
 
     @Test
-    fun asteroidBlocksLineOfSight() {
+    fun nebulaBlocksLineOfSight() {
         val center = HexCoord(0, 0, 0)
         val blocker = HexCoord(1, -1, 0)
         val behind = HexCoord(2, -2, 0)
         val map = emptyMap(radius = 5)
         val tiles = map.tiles.toMutableMap()
-        tiles[blocker] = HexTile(blocker, TerrainType.ASTEROIDS)
+        tiles[blocker] = HexTile(blocker, TerrainType.NEBULA)
         val state = GameState(
             map = map.copy(tiles = tiles),
             units = mapOf(center to unitAt(center))
         )
         val visible = VisionSystem.calculateVisibleHexes(state, Faction.DOMINION)
-        assertFalse("Hex behind asteroid should be invisible", visible.contains(behind))
+        assertFalse("Hex behind nebula should be invisible", visible.contains(behind))
     }
 }

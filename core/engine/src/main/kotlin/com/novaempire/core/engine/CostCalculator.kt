@@ -18,6 +18,6 @@ object CostCalculator {
         if (factionDiscount > 0f) {
             cost = (cost * (1f - factionDiscount)).toInt()
         }
-        return cost
+        return max(1, cost)
     }
 }
