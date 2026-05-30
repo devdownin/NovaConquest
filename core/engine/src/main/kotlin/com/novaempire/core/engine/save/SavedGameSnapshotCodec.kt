@@ -11,6 +11,7 @@ object SavedGameSnapshotCodec {
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
+        allowStructuredMapKeys = true
     }
 
     fun encode(state: GameState): String {

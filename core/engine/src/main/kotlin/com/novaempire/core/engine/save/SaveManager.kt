@@ -3,62 +3,53 @@ package com.novaempire.core.engine.save
 import com.novaempire.core.domain.state.GameState
 import java.io.File
 
-class SaveManager(private val saveDirectory: File) {
+class SaveManager(private val saveDirectory: File) : SaveRepository {
 
     init {
-        if (!saveDirectory.exists()) {
-            saveDirectory.mkdirs()
-        }
-        val quarantineDir = File(saveDirectory, "quarantine")
-        if (!quarantineDir.exists()) {
-            quarantineDir.mkdirs()
-        }
+        saveDirectory.mkdirs()
+        File(saveDirectory, "quarantine").mkdirs()
     }
 
-    fun saveGame(state: GameState) {
+    override fun saveGame(state: GameState) {
         try {
             val encoded = SavedGameSnapshotCodec.encode(state)
-
             val file1 = File(saveDirectory, "autosave_1.json")
             val file2 = File(saveDirectory, "autosave_2.json")
             val file3 = File(saveDirectory, "autosave_3.json")
-            val tempFile = File(saveDirectory, "autosave_1.json.tmp")
+            val tmp  = File(saveDirectory, "autosave_1.json.tmp")
 
-            // 1. Shift existing saves
             if (file2.exists()) file2.copyTo(file3, overwrite = true)
             if (file1.exists()) file1.copyTo(file2, overwrite = true)
 
-            // 2. Atomic write: Write to temp file then rename
-            tempFile.writeText(encoded)
-            if (tempFile.exists()) {
-                if (file1.exists()) file1.delete()
-                tempFile.renameTo(file1)
+            tmp.writeText(encoded)
+            if (tmp.exists()) {
+                file1.delete()
+                tmp.renameTo(file1)
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
-    fun loadLatestGame(): GameState? {
-        val filesToTry = listOf(
+    override fun loadLatestGame(): GameState? {
+        val slots = listOf(
             File(saveDirectory, "autosave_1.json"),
             File(saveDirectory, "autosave_2.json"),
             File(saveDirectory, "autosave_3.json")
         )
-
-        for (file in filesToTry) {
-            if (file.exists()) {
-                try {
-                    val encoded = file.readText()
-                    return SavedGameSnapshotCodec.decode(encoded)
-                } catch (e: Exception) {
-                    // Corruption detected, move to quarantine
-                    val quarantineFile = File(saveDirectory, "quarantine/${file.name}_${System.currentTimeMillis()}.bak")
-                    file.renameTo(quarantineFile)
-                    println("Corrupted save detected and quarantined: ${file.name}")
-                }
+        for (file in slots) {
+            if (!file.exists()) continue
+            try {
+                return SavedGameSnapshotCodec.decode(file.readText())
+            } catch (e: Exception) {
+                val quarantine = File(saveDirectory, "quarantine/${file.name}_${System.currentTimeMillis()}.bak")
+                file.renameTo(quarantine)
+                println("Corrupted save quarantined: ${file.name}")
             }
         }
         return null
     }
+
+    override fun hasSavedGame(): Boolean =
+        File(saveDirectory, "autosave_1.json").exists()
 }

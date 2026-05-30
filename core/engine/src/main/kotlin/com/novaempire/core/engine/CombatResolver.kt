@@ -1,5 +1,7 @@
 package com.novaempire.core.engine
 
+import com.novaempire.core.domain.models.TerrainType
+import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.hex.HexCoord
 import kotlin.math.max
@@ -12,9 +14,8 @@ object CombatResolver {
 
         // Check for Hero Bonuses
         val attackerPlayer = state.playerStates[attacker.faction]
-        val defenderPlayer = state.playerStates[defender.faction]
 
-        val hasVance = attackerPlayer?.recruitedHeroes?.contains("hero_vance") == true
+        val hasVance = attackerPlayer?.recruitedHeroes?.contains(com.novaempire.core.domain.models.HeroRegistry.VANCE) == true
         val heroBonus = if (hasVance) max(1, (attacker.type.attack * 0.15).toInt()) else 0
         val factionBonus = if (attacker.faction.bonusAttack > 0) max(1, (attacker.type.attack * attacker.faction.bonusAttack).toInt()) else 0
         val totalBonus = heroBonus + factionBonus
@@ -24,12 +25,9 @@ object CombatResolver {
         val defenderRemainingHp = max(0, defender.currentHp - damageToDefender)
 
         var newUnits = state.units.toMutableMap()
-        var updatedAttacker = attacker.copy(hasAttacked = true, hasMoved = true) // Attacking consumes movement
+        var updatedAttacker = attacker.copy(hasAttacked = true, hasMoved = true)
 
         if (defenderRemainingHp <= 0) {
-            // Defender destroyed, attacker might move into the hex if it's a melee attack?
-            // In typical 4X, attacking consumes action but you stay in place unless it's an advance.
-            // Let's assume ranged/stay in place for now.
             newUnits.remove(defenderCoord)
             newUnits[attackerCoord] = updatedAttacker
         } else {
@@ -44,7 +42,6 @@ object CombatResolver {
                 newUnits[attackerCoord] = updatedAttacker
             }
 
-            // Update defender HP
             val updatedDefender = defender.copy(currentHp = defenderRemainingHp)
             newUnits[defenderCoord] = updatedDefender
         }
@@ -56,5 +53,36 @@ object CombatResolver {
         )
 
         return state.copy(units = newUnits, lastCombatEvent = combatEvent)
+    }
+
+    /** Damage a planet's system level. BATTLESHIP and DREADNOUGHT deal 2; others deal 1. */
+    fun siegePlanet(state: GameState, attackerCoord: HexCoord, planetCoord: HexCoord): GameState {
+        val unit = state.units[attackerCoord] ?: return state
+        val tile = state.map.tiles[planetCoord] ?: return state
+
+        val siegeDamage = if (unit.type == UnitType.BATTLESHIP || unit.type == UnitType.DREADNOUGHT) 2 else 1
+        val newLevel = max(0, tile.systemLevel - siegeDamage)
+
+        val updatedUnits = state.units.toMutableMap()
+        updatedUnits[attackerCoord] = unit.copy(hasAttacked = true)
+
+        val newTiles = state.map.tiles.toMutableMap()
+        newTiles[planetCoord] = tile.copy(systemLevel = newLevel)
+
+        return state.copy(units = updatedUnits, map = state.map.copy(tiles = newTiles))
+    }
+
+    /** Claim a planet at systemLevel 0 for the attacker's faction. */
+    fun capturePlanet(state: GameState, unitCoord: HexCoord, planetCoord: HexCoord): GameState {
+        val unit = state.units[unitCoord] ?: return state
+        val tile = state.map.tiles[planetCoord] ?: return state
+
+        val updatedUnits = state.units.toMutableMap()
+        updatedUnits[unitCoord] = unit.copy(hasAttacked = true)
+
+        val newTiles = state.map.tiles.toMutableMap()
+        newTiles[planetCoord] = tile.copy(owner = unit.faction, systemLevel = 1)
+
+        return state.copy(units = updatedUnits, map = state.map.copy(tiles = newTiles))
     }
 }
