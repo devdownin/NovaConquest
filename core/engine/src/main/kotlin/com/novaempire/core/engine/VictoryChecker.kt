@@ -9,7 +9,8 @@ data class VictoryResult(val winner: Faction, val reason: String)
 object VictoryChecker {
 
     fun check(state: GameState): VictoryResult? {
-        if (state.winner != null) return VictoryResult(state.winner, state.victoryReason ?: "")
+        val existing = state.winner
+        if (existing != null) return VictoryResult(existing, state.victoryReason ?: "")
 
         // 1. Tech Victory: 6 techs unlocked
         state.playerStates.values.find { it.techUnlocked.size >= 6 }?.let {
