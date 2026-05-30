@@ -7,6 +7,7 @@ import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.engine.GameEngine
 import com.novaempire.core.engine.GameIntent
 import com.novaempire.core.engine.save.SaveManager
+import com.novaempire.core.engine.save.SaveRepository
 import com.novaempire.app.audio.AudioManager
 import com.novaempire.app.audio.SoundType
 import com.novaempire.core.engine.GameEffect
@@ -28,11 +29,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val _notifications = MutableSharedFlow<Pair<String, String>>()
     val notifications: SharedFlow<Pair<String, String>> = _notifications.asSharedFlow()
 
-    private val saveManager: SaveManager
+    private val saveRepository: SaveRepository
 
     init {
         val saveDir = File(application.filesDir, "saves")
-        saveManager = SaveManager(saveDir)
+        saveRepository = SaveManager(saveDir)
         AudioManager.init(application)
 
         // Observe game state for audio events (legacy - now moving to effects)
@@ -82,7 +83,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         // Auto-save and sound on EndTurn
         if (intent is GameIntent.EndTurn) {
             AudioManager.playSound(SoundType.END_TURN)
-            saveManager.saveGame(engine.state.value)
+            saveRepository.saveGame(engine.state.value)
         }
     }
 
@@ -91,13 +92,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         AudioManager.release()
     }
 
-    fun hasSavedGame(): Boolean {
-        val saveDir = File(getApplication<Application>().filesDir, "saves")
-        return File(saveDir, "autosave_1.json").exists()
-    }
+    fun hasSavedGame(): Boolean = saveRepository.hasSavedGame()
 
     fun loadGame(): Boolean {
-        val state = saveManager.loadLatestGame()
+        val state = saveRepository.loadLatestGame()
         if (state != null) {
             engine.processIntent(GameIntent.LoadGame(state))
             return true

@@ -166,159 +166,117 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 GameResult(state.copy(activeFaction = intent.faction))
             }
             is GameIntent.MoveUnit -> {
-                val unit = state.units[intent.from]
-                if (unit == null) return GameResult(state, "No unit at selected position.")
-                if (unit.faction != state.activeFaction) return GameResult(state, "You cannot move another faction's unit.")
-                if (unit.hasMoved) return GameResult(state, "This unit has already moved this turn.")
+                val unit = state.units[intent.from] ?: return GameResult(state, "No unit at selected position.")
+                IntentValidator.ownedByActive(unit, state.activeFaction)?.let { return GameResult(state, it) }
+                IntentValidator.notMoved(unit)?.let { return GameResult(state, it) }
 
                 val gridMap = GameGridMap(state)
-                val totalMovement = unit.type.movement + unit.faction.bonusMovement
-                val path = com.novaempire.core.hex.HexPathfinder.findPath(intent.from, intent.to, gridMap, totalMovement)
-
+                val path = com.novaempire.core.hex.HexPathfinder.findPath(
+                    intent.from, intent.to, gridMap,
+                    unit.type.movement + unit.faction.bonusMovement
+                )
                 if (path != null && path.isNotEmpty()) {
                     val updatedUnits = state.units.toMutableMap()
                     updatedUnits.remove(intent.from)
                     updatedUnits[intent.to] = unit.copy(position = intent.to, hasMoved = true)
-                    val nextState = state.copy(units = updatedUnits)
-                    GameResult(updateVision(nextState, setOf(unit.faction)))
+                    GameResult(updateVision(state.copy(units = updatedUnits), setOf(unit.faction)))
                 } else {
                     GameResult(state, "Target position is unreachable or too far.")
                 }
             }
             is GameIntent.AttackUnit -> {
-                val unit = state.units[intent.attacker]
-                if (unit == null) return GameResult(state, "Attacker not found.")
-                if (unit.faction != state.activeFaction) return GameResult(state, "You cannot attack with another faction's unit.")
-                if (unit.hasAttacked) return GameResult(state, "This unit has already attacked this turn.")
-
-                val defender = state.units[intent.defender]
-                if (defender == null) return GameResult(state, "Target not found.")
-
-                val distance = intent.attacker.distanceTo(intent.defender)
-                if (distance > unit.type.range) return GameResult(state, "Target is out of range.")
-
-                val nextState = CombatResolver.resolveCombat(state, intent.attacker, intent.defender)
-                GameResult(updateVision(nextState, setOfNotNull(unit.faction, defender.faction)))
+                val unit = state.units[intent.attacker] ?: return GameResult(state, "Attacker not found.")
+                IntentValidator.ownedByActive(unit, state.activeFaction)?.let { return GameResult(state, it) }
+                IntentValidator.notAttacked(unit)?.let { return GameResult(state, it) }
+                val defender = state.units[intent.defender] ?: return GameResult(state, "Target not found.")
+                if (intent.attacker.distanceTo(intent.defender) > unit.type.range)
+                    return GameResult(state, "Target is out of range.")
+                GameResult(updateVision(
+                    CombatResolver.resolveCombat(state, intent.attacker, intent.defender),
+                    setOfNotNull(unit.faction, defender.faction)
+                ))
             }
             is GameIntent.ResearchTech -> {
                 val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
+                val tech = com.novaempire.core.domain.models.TechRegistry.getTech(intent.techId)
+                    ?: return GameResult(state, "Technology not found.")
+                if (tech.requiresTechId != null && !playerState.techUnlocked.contains(tech.requiresTechId))
+                    return GameResult(state, "Prerequisite technology not researched.")
+                if (playerState.techUnlocked.contains(intent.techId))
+                    return GameResult(state, "Technology already researched.")
                 val cost = CostCalculator.techCost(
-                    intent.techId,
-                    playerState.techUnlocked,
+                    intent.techId, playerState.techUnlocked,
                     playerState.recruitedHeroes.contains(com.novaempire.core.domain.models.HeroRegistry.KAEL),
                     state.activeFaction.bonusTechDiscount
                 )
-
-                val tech = com.novaempire.core.domain.models.TechRegistry.getTech(intent.techId) ?: return GameResult(state, "Technology not found.")
-                val isAvailable = tech.requiresTechId == null || playerState.techUnlocked.contains(tech.requiresTechId)
-                val isAlreadyUnlocked = playerState.techUnlocked.contains(intent.techId)
-
-                if (!isAvailable) return GameResult(state, "Prerequisite technology not researched.")
-                if (isAlreadyUnlocked) return GameResult(state, "Technology already researched.")
-                if (playerState.credits < cost) return GameResult(state, "Not enough credits.")
-
-                val newPlayerState = playerState.copy(
+                IntentValidator.canAfford(playerState, cost)?.let { return GameResult(state, it) }
+                val newPlayerStates = state.playerStates.toMutableMap()
+                newPlayerStates[state.activeFaction] = playerState.copy(
                     credits = playerState.credits - cost,
                     techUnlocked = playerState.techUnlocked + intent.techId
                 )
-                val newPlayerStates = state.playerStates.toMutableMap()
-                newPlayerStates[state.activeFaction] = newPlayerState
-
-                val nextState = state.copy(playerStates = newPlayerStates)
-                GameResult(updateVision(nextState, setOf(state.activeFaction)))
+                GameResult(updateVision(state.copy(playerStates = newPlayerStates), setOf(state.activeFaction)))
             }
             is GameIntent.BuildUnit -> {
                 val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
-                val cost = intent.unitType.cost
                 val spawnCenter = intent.location ?: playerState.capitalCoord ?: return GameResult(state, "No valid spawn location.")
-
-                if (playerState.credits < cost) return GameResult(state, "Not enough credits.")
-
+                IntentValidator.canAfford(playerState, intent.unitType.cost)?.let { return GameResult(state, it) }
                 val gridMap = GameGridMap(state)
-                val spawnCandidates = listOf(spawnCenter) + gridMap.getNeighbors(spawnCenter)
-                val spawnHex = spawnCandidates.firstOrNull { state.units[it] == null && gridMap.isPassable(it) }
-
-                if (spawnHex != null) {
-                    val newPlayerState = playerState.copy(credits = playerState.credits - cost)
-                    val newPlayerStates = state.playerStates.toMutableMap()
-                    newPlayerStates[state.activeFaction] = newPlayerState
-
-                    val newUnit = GameUnit(
-                        type = intent.unitType,
-                        faction = state.activeFaction,
-                        position = spawnHex,
-                        currentHp = intent.unitType.maxHp,
-                        hasMoved = true,
-                        hasAttacked = true
-                    )
-                    val updatedUnits = state.units.toMutableMap()
-                    updatedUnits[spawnHex] = newUnit
-
-                    val nextState = state.copy(playerStates = newPlayerStates, units = updatedUnits)
-                    GameResult(updateVision(nextState, setOf(state.activeFaction)))
-                } else {
-                    GameResult(state, "No available space to build unit.")
-                }
+                val spawnHex = (listOf(spawnCenter) + gridMap.getNeighbors(spawnCenter))
+                    .firstOrNull { state.units[it] == null && gridMap.isPassable(it) }
+                    ?: return GameResult(state, "No available space to build unit.")
+                val newPlayerStates = state.playerStates.toMutableMap()
+                newPlayerStates[state.activeFaction] = playerState.copy(credits = playerState.credits - intent.unitType.cost)
+                val updatedUnits = state.units.toMutableMap()
+                updatedUnits[spawnHex] = GameUnit(
+                    type = intent.unitType, faction = state.activeFaction, position = spawnHex,
+                    currentHp = intent.unitType.maxHp, hasMoved = true, hasAttacked = true
+                )
+                GameResult(updateVision(state.copy(playerStates = newPlayerStates, units = updatedUnits), setOf(state.activeFaction)))
             }
             is GameIntent.RecruitHero -> {
                 val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
                 val hero = com.novaempire.core.domain.models.HeroRegistry.getHero(intent.heroId) ?: return GameResult(state, "Hero not found.")
-
-                if (playerState.credits < hero.cost) return GameResult(state, "Not enough credits.")
+                IntentValidator.canAfford(playerState, hero.cost)?.let { return GameResult(state, it) }
                 if (playerState.recruitedHeroes.contains(hero.id)) return GameResult(state, "Hero already recruited.")
-
-                val newPlayerState = playerState.copy(
+                val newPlayerStates = state.playerStates.toMutableMap()
+                newPlayerStates[state.activeFaction] = playerState.copy(
                     credits = playerState.credits - hero.cost,
                     recruitedHeroes = playerState.recruitedHeroes + hero.id
                 )
-                val newPlayerStates = state.playerStates.toMutableMap()
-                newPlayerStates[state.activeFaction] = newPlayerState
                 GameResult(state.copy(playerStates = newPlayerStates))
             }
             is GameIntent.ChangeRelation -> {
                 val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
-                val newRelations = playerState.relations.toMutableMap()
-                newRelations[intent.targetFaction] = intent.newRelation
-
-                val newPlayerState = playerState.copy(relations = newRelations)
                 val newPlayerStates = state.playerStates.toMutableMap()
-                newPlayerStates[state.activeFaction] = newPlayerState
-
-                // Also update the target's relation to us for symmetry
+                newPlayerStates[state.activeFaction] = playerState.copy(
+                    relations = playerState.relations.toMutableMap().also { it[intent.targetFaction] = intent.newRelation }
+                )
                 val targetState = newPlayerStates[intent.targetFaction]
                 if (targetState != null) {
-                    val targetRelations = targetState.relations.toMutableMap()
-                    targetRelations[state.activeFaction] = intent.newRelation
-                    newPlayerStates[intent.targetFaction] = targetState.copy(relations = targetRelations)
+                    newPlayerStates[intent.targetFaction] = targetState.copy(
+                        relations = targetState.relations.toMutableMap().also { it[state.activeFaction] = intent.newRelation }
+                    )
                 }
-
                 GameResult(state.copy(playerStates = newPlayerStates))
             }
             is GameIntent.SiegePlanet -> {
-                val unit = state.units[intent.attackerCoord]
-                if (unit == null) return GameResult(state, "Attacker not found.")
-                if (unit.faction != state.activeFaction) return GameResult(state, "You cannot use this unit.")
-                if (unit.hasAttacked) return GameResult(state, "Unit already used its action.")
-
-                val tile = state.map.tiles[intent.planetCoord]
-                if (tile == null || tile.terrain != com.novaempire.core.domain.models.TerrainType.PLANET)
-                    return GameResult(state, "Target is not a planet.")
-                if (tile.owner == state.activeFaction) return GameResult(state, "You cannot siege your own planet.")
-
+                val unit = state.units[intent.attackerCoord] ?: return GameResult(state, "Attacker not found.")
+                IntentValidator.ownedByActive(unit, state.activeFaction)?.let { return GameResult(state, it) }
+                IntentValidator.notAttacked(unit)?.let { return GameResult(state, it) }
+                IntentValidator.isPlanet(state, intent.planetCoord)?.let { return GameResult(state, it) }
+                if (state.map.tiles[intent.planetCoord]?.owner == state.activeFaction)
+                    return GameResult(state, "You cannot siege your own planet.")
                 GameResult(CombatResolver.siegePlanet(state, intent.attackerCoord, intent.planetCoord))
             }
             is GameIntent.CapturePlanet -> {
-                val unit = state.units[intent.unitCoord]
-                if (unit == null) return GameResult(state, "Unit not found.")
-                if (unit.faction != state.activeFaction) return GameResult(state, "You cannot use this unit.")
-                if (unit.hasAttacked) return GameResult(state, "Unit already used its action.")
-
-                val tile = state.map.tiles[intent.planetCoord]
-                if (tile == null || tile.terrain != com.novaempire.core.domain.models.TerrainType.PLANET)
-                    return GameResult(state, "Target is not a planet.")
+                val unit = state.units[intent.unitCoord] ?: return GameResult(state, "Unit not found.")
+                IntentValidator.ownedByActive(unit, state.activeFaction)?.let { return GameResult(state, it) }
+                IntentValidator.notAttacked(unit)?.let { return GameResult(state, it) }
+                IntentValidator.isPlanet(state, intent.planetCoord)?.let { return GameResult(state, it) }
+                val tile = state.map.tiles[intent.planetCoord]!!
                 if (tile.systemLevel > 0) return GameResult(state, "Planet must be at level 0 to be captured.")
                 if (tile.owner == state.activeFaction) return GameResult(state, "You already own this planet.")
-
                 GameResult(CombatResolver.capturePlanet(state, intent.unitCoord, intent.planetCoord))
             }
         }
