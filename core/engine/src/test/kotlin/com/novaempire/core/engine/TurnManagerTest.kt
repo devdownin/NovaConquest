@@ -27,10 +27,13 @@ class TurnManagerTest {
 
     @Test
     fun turnCounterIncrementsAfterFullRound() {
+        val allActive = Faction.values().filter { it != Faction.ANCIENT_NPC }
         var state = baseState(Faction.DOMINION, Faction.TRADERS)
-        state = TurnManager.advanceTurn(state) // DOMINION → TRADERS
+        // Advance through all factions back to DOMINION (index 0)
+        repeat(allActive.size - 1) { state = TurnManager.advanceTurn(state) }
         assertEquals(1, state.turn)
-        state = TurnManager.advanceTurn(state) // TRADERS → DOMINION (wraps, index 0)
+        state = TurnManager.advanceTurn(state) // final advance wraps back to index 0
+        assertEquals(Faction.DOMINION, state.activeFaction)
         assertEquals(2, state.turn)
     }
 
