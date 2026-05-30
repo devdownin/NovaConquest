@@ -37,10 +37,10 @@ class GameEngineTest {
     }
 
     @Test
-    fun testSelectFactionIntent() {
+    fun testSelectFactionIntent() = runBlocking {
         val engine = GameEngine()
         engine.processIntent(GameIntent.SelectFaction(Faction.SYNTH))
-
+        delay(100)
         assertEquals(Faction.SYNTH, engine.state.value.activeFaction)
     }
 }

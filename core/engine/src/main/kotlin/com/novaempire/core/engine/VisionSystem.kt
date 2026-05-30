@@ -28,7 +28,6 @@ object VisionSystem {
                 UnitType.CARRIER -> 3
                 UnitType.DREADNOUGHT -> 3
                 UnitType.DEFENSE_PLATFORM -> 2
-                else -> 2
             }
             val range = max(1, ((baseRange + visionBonus) * mult).toInt())
             visible.addAll(getVisibleHexesFrom(state, unit.position, range))
