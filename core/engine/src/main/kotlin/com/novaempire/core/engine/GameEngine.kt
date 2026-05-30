@@ -205,7 +205,7 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 val cost = CostCalculator.techCost(
                     intent.techId,
                     playerState.techUnlocked,
-                    playerState.recruitedHeroes.contains("hero_kael"),
+                    playerState.recruitedHeroes.contains(com.novaempire.core.domain.models.HeroRegistry.KAEL),
                     state.activeFaction.bonusTechDiscount
                 )
 
@@ -301,22 +301,11 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 if (unit.hasAttacked) return GameResult(state, "Unit already used its action.")
 
                 val tile = state.map.tiles[intent.planetCoord]
-                if (tile == null || tile.terrain != com.novaempire.core.domain.models.TerrainType.PLANET) {
+                if (tile == null || tile.terrain != com.novaempire.core.domain.models.TerrainType.PLANET)
                     return GameResult(state, "Target is not a planet.")
-                }
                 if (tile.owner == state.activeFaction) return GameResult(state, "You cannot siege your own planet.")
 
-                val siegeDamage = if (unit.type == UnitType.BATTLESHIP) 2 else 1
-                val newLevel = Math.max(0, tile.systemLevel - siegeDamage)
-
-                val updatedUnits = state.units.toMutableMap()
-                updatedUnits[intent.attackerCoord] = unit.copy(hasAttacked = true)
-
-                val newTiles = state.map.tiles.toMutableMap()
-                newTiles[intent.planetCoord] = tile.copy(systemLevel = newLevel)
-                val newMap = state.map.copy(tiles = newTiles)
-
-                GameResult(state.copy(units = updatedUnits, map = newMap))
+                GameResult(CombatResolver.siegePlanet(state, intent.attackerCoord, intent.planetCoord))
             }
             is GameIntent.CapturePlanet -> {
                 val unit = state.units[intent.unitCoord]
@@ -325,20 +314,12 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 if (unit.hasAttacked) return GameResult(state, "Unit already used its action.")
 
                 val tile = state.map.tiles[intent.planetCoord]
-                if (tile == null || tile.terrain != com.novaempire.core.domain.models.TerrainType.PLANET) {
+                if (tile == null || tile.terrain != com.novaempire.core.domain.models.TerrainType.PLANET)
                     return GameResult(state, "Target is not a planet.")
-                }
                 if (tile.systemLevel > 0) return GameResult(state, "Planet must be at level 0 to be captured.")
                 if (tile.owner == state.activeFaction) return GameResult(state, "You already own this planet.")
 
-                val updatedUnits = state.units.toMutableMap()
-                updatedUnits[intent.unitCoord] = unit.copy(hasAttacked = true)
-
-                val newTiles = state.map.tiles.toMutableMap()
-                newTiles[intent.planetCoord] = tile.copy(owner = state.activeFaction, systemLevel = 1) // Rebuild at level 1
-                val newMap = state.map.copy(tiles = newTiles)
-
-                GameResult(state.copy(units = updatedUnits, map = newMap))
+                GameResult(CombatResolver.capturePlanet(state, intent.unitCoord, intent.planetCoord))
             }
         }
     }

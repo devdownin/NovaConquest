@@ -5,6 +5,7 @@ import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.hex.HexCoord
 import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.models.GameUnit
+import com.novaempire.core.domain.models.HeroRegistry
 import com.novaempire.core.domain.models.TechRegistry
 
 object UtilityEvaluator : AIStrategy {
@@ -44,9 +45,9 @@ object UtilityEvaluator : AIStrategy {
             val adjacentPlanet = targetPlanets.find { it.coord.distanceTo(unit.position) <= 1 }
             if (adjacentPlanet != null && !unit.hasAttacked) {
                 if (adjacentPlanet.systemLevel == 0) {
-                    currentState = capturePlanet(currentState, unit.position, adjacentPlanet.coord)
+                    currentState = CombatResolver.capturePlanet(currentState, unit.position, adjacentPlanet.coord)
                 } else {
-                    currentState = siegePlanet(currentState, unit.position, adjacentPlanet.coord)
+                    currentState = CombatResolver.siegePlanet(currentState, unit.position, adjacentPlanet.coord)
                 }
                 continue
             }
@@ -114,10 +115,10 @@ object UtilityEvaluator : AIStrategy {
         if (availableHeroes.isEmpty()) return state
 
         // Priority: Kael (Tech) > Elara (Economy) > Vance (Combat) > Nix (Healing)
-        val selectedHero = availableHeroes.find { it.id == "hero_kael" }
-            ?: availableHeroes.find { it.id == "hero_elara" }
-            ?: availableHeroes.find { it.id == "hero_vance" }
-            ?: availableHeroes.find { it.id == "hero_nix" }
+        val selectedHero = availableHeroes.find { it.id == HeroRegistry.KAEL }
+            ?: availableHeroes.find { it.id == HeroRegistry.ELARA }
+            ?: availableHeroes.find { it.id == HeroRegistry.VANCE }
+            ?: availableHeroes.find { it.id == HeroRegistry.NIX }
 
         if (selectedHero != null) {
             val newPlayerState = playerState.copy(
@@ -175,37 +176,6 @@ object UtilityEvaluator : AIStrategy {
         return nextState
     }
 
-    private fun siegePlanet(state: GameState, attackerCoord: HexCoord, planetCoord: HexCoord): GameState {
-        val unit = state.units[attackerCoord] ?: return state
-        val tile = state.map.tiles[planetCoord] ?: return state
-        
-        val siegeDamage = if (unit.type == UnitType.BATTLESHIP || unit.type == UnitType.DREADNOUGHT) 2 else 1
-        val newLevel = Math.max(0, tile.systemLevel - siegeDamage)
-
-        val updatedUnits = state.units.toMutableMap()
-        updatedUnits[attackerCoord] = unit.copy(hasAttacked = true)
-
-        val newTiles = state.map.tiles.toMutableMap()
-        newTiles[planetCoord] = tile.copy(systemLevel = newLevel)
-        val newMap = state.map.copy(tiles = newTiles)
-
-        return state.copy(units = updatedUnits, map = newMap)
-    }
-
-    private fun capturePlanet(state: GameState, unitCoord: HexCoord, planetCoord: HexCoord): GameState {
-        val unit = state.units[unitCoord] ?: return state
-        val tile = state.map.tiles[planetCoord] ?: return state
-        
-        val updatedUnits = state.units.toMutableMap()
-        updatedUnits[unitCoord] = unit.copy(hasAttacked = true)
-
-        val newTiles = state.map.tiles.toMutableMap()
-        newTiles[planetCoord] = tile.copy(owner = unit.faction, systemLevel = 1)
-        val newMap = state.map.copy(tiles = newTiles)
-
-        return state.copy(units = updatedUnits, map = newMap)
-    }
-
     private fun evaluateDiplomacy(state: GameState, faction: Faction): GameState {
         val aiPlayerState = state.playerStates[faction] ?: return state
         var nextState = state
@@ -261,7 +231,7 @@ object UtilityEvaluator : AIStrategy {
         val playerState = state.playerStates[faction] ?: return state
 
         // Simple AI: Buy first affordable tech
-        val hasKael = playerState.recruitedHeroes.contains("hero_kael")
+        val hasKael = playerState.recruitedHeroes.contains(HeroRegistry.KAEL)
         val affordableTech = TechRegistry.ALL_TECHS.find { tech ->
             val isAvailable = tech.requiresTechId == null || playerState.techUnlocked.contains(tech.requiresTechId)
             val isUnlocked = playerState.techUnlocked.contains(tech.id)

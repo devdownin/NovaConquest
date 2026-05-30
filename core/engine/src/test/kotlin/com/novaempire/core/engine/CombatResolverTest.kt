@@ -2,6 +2,8 @@ package com.novaempire.core.engine
 
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.GameUnit
+import com.novaempire.core.domain.models.HexTile
+import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.hex.HexCoord
@@ -115,5 +117,59 @@ class CombatResolverTest {
 
         // Check Event
         assertEquals(false, resultState.lastCombatEvent?.targetDestroyed)
+    }
+
+    // ── Siege / Capture ──────────────────────────────────────────────────
+
+    private fun stateWithPlanet(
+        unitCoord: HexCoord,
+        planetCoord: HexCoord,
+        unitType: UnitType,
+        planetLevel: Int,
+        planetOwner: Faction? = null
+    ): GameState {
+        val unit = GameUnit(type = unitType, faction = Faction.DOMINION, position = unitCoord, currentHp = unitType.maxHp)
+        val planet = HexTile(planetCoord, TerrainType.PLANET, systemLevel = planetLevel, owner = planetOwner)
+        val map = com.novaempire.core.domain.models.GameMap(tiles = mapOf(unitCoord to HexTile(unitCoord, TerrainType.EMPTY), planetCoord to planet))
+        return GameState(map = map, units = mapOf(unitCoord to unit))
+    }
+
+    @Test
+    fun siegeReducesPlanetLevelByOne() {
+        val state = stateWithPlanet(HexCoord(0,0,0), HexCoord(1,-1,0), UnitType.CRUISER, planetLevel = 3, planetOwner = Faction.TRADERS)
+        val result = CombatResolver.siegePlanet(state, HexCoord(0,0,0), HexCoord(1,-1,0))
+        assertEquals(2, result.map.tiles[HexCoord(1,-1,0)]?.systemLevel)
+        assertEquals(true, result.units[HexCoord(0,0,0)]?.hasAttacked)
+    }
+
+    @Test
+    fun battleshipSiegeDealsTwoDamage() {
+        val state = stateWithPlanet(HexCoord(0,0,0), HexCoord(1,-1,0), UnitType.BATTLESHIP, planetLevel = 3, planetOwner = Faction.TRADERS)
+        val result = CombatResolver.siegePlanet(state, HexCoord(0,0,0), HexCoord(1,-1,0))
+        assertEquals(1, result.map.tiles[HexCoord(1,-1,0)]?.systemLevel)
+    }
+
+    @Test
+    fun dreadnoughtSiegeDealsTwoDamage() {
+        val state = stateWithPlanet(HexCoord(0,0,0), HexCoord(1,-1,0), UnitType.DREADNOUGHT, planetLevel = 3, planetOwner = Faction.TRADERS)
+        val result = CombatResolver.siegePlanet(state, HexCoord(0,0,0), HexCoord(1,-1,0))
+        assertEquals(1, result.map.tiles[HexCoord(1,-1,0)]?.systemLevel)
+    }
+
+    @Test
+    fun siegeDoesNotReduceBelowZero() {
+        val state = stateWithPlanet(HexCoord(0,0,0), HexCoord(1,-1,0), UnitType.BATTLESHIP, planetLevel = 1, planetOwner = Faction.TRADERS)
+        val result = CombatResolver.siegePlanet(state, HexCoord(0,0,0), HexCoord(1,-1,0))
+        assertEquals(0, result.map.tiles[HexCoord(1,-1,0)]?.systemLevel)
+    }
+
+    @Test
+    fun captureSetsOwnerAndRebuildsAtLevel1() {
+        val state = stateWithPlanet(HexCoord(0,0,0), HexCoord(1,-1,0), UnitType.SCOUT, planetLevel = 0)
+        val result = CombatResolver.capturePlanet(state, HexCoord(0,0,0), HexCoord(1,-1,0))
+        val planet = result.map.tiles[HexCoord(1,-1,0)]!!
+        assertEquals(Faction.DOMINION, planet.owner)
+        assertEquals(1, planet.systemLevel)
+        assertEquals(true, result.units[HexCoord(0,0,0)]?.hasAttacked)
     }
 }

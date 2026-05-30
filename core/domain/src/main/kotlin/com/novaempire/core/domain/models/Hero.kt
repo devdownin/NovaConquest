@@ -9,11 +9,16 @@ data class Hero(
 )
 
 object HeroRegistry {
+    const val VANCE = "hero_vance"
+    const val ELARA = "hero_elara"
+    const val NIX   = "hero_nix"
+    const val KAEL  = "hero_kael"
+
     val ALL_HEROES = listOf(
-        Hero("hero_vance", "Commander Vance", Faction.DOMINION, 50, "+15% Fleet Attack"),
-        Hero("hero_elara", "Captain Elara", Faction.TRADERS, 40, "+10% Trade Income"),
-        Hero("hero_nix", "High Seer Nix", Faction.ANCIENT_NPC, 75, "Passive Fleet Healing"),
-        Hero("hero_kael", "Architect Kael", Faction.SYNTH, 60, "-10% Tech Cost")
+        Hero(VANCE, "Commander Vance", Faction.DOMINION, 50, "+15% Fleet Attack"),
+        Hero(ELARA, "Captain Elara", Faction.TRADERS, 40, "+10% Trade Income"),
+        Hero(NIX,   "High Seer Nix", Faction.ANCIENT_NPC, 75, "Passive Fleet Healing"),
+        Hero(KAEL,  "Architect Kael", Faction.SYNTH, 60, "-10% Tech Cost")
     )
 
     fun getHero(id: String) = ALL_HEROES.find { it.id == id }

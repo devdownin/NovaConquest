@@ -16,6 +16,8 @@ data class TechDefinition(
 )
 
 object TechRegistry {
+    const val DEEP_SCANNERS = "tech_deep_scanners"
+
     val ALL_TECHS = listOf(
         // Military Branch
         TechDefinition("tech_hull_plating", "Hull Plating", TechBranch.MILITARY, 1),

@@ -2,6 +2,7 @@ package com.novaempire.core.engine
 
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.GalacticEvent
+import com.novaempire.core.domain.models.TechRegistry
 import com.novaempire.core.domain.state.GameState
 
 interface VisionBonusProvider {
@@ -12,7 +13,7 @@ interface VisionBonusProvider {
 class GameStateVisionBonus(private val state: GameState) : VisionBonusProvider {
     override fun rangeBonus(faction: Faction): Int {
         val playerState = state.playerStates[faction]
-        val deepScanners = if (playerState?.techUnlocked?.contains("tech_deep_scanners") == true) 1 else 0
+        val deepScanners = if (playerState?.techUnlocked?.contains(TechRegistry.DEEP_SCANNERS) == true) 1 else 0
         return deepScanners + faction.bonusVision
     }
 
