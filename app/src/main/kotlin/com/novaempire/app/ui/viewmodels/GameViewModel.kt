@@ -15,7 +15,9 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class GameViewModel(application: Application) : AndroidViewModel(application) {
@@ -83,7 +85,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         // Auto-save and sound on EndTurn
         if (intent is GameIntent.EndTurn) {
             AudioManager.playSound(SoundType.END_TURN)
-            saveRepository.saveGame(engine.state.value)
+            val snapshot = engine.state.value
+            viewModelScope.launch(Dispatchers.IO) { saveRepository.saveGame(snapshot) }
         }
     }
 
@@ -94,13 +97,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun hasSavedGame(): Boolean = saveRepository.hasSavedGame()
 
-    fun loadGame(): Boolean {
-        val state = saveRepository.loadLatestGame()
-        if (state != null) {
-            engine.processIntent(GameIntent.LoadGame(state))
-            return true
+    fun loadGame(onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val state = withContext(Dispatchers.IO) { saveRepository.loadLatestGame() }
+            if (state != null) {
+                engine.processIntent(GameIntent.LoadGame(state))
+                onResult(true)
+            } else {
+                onResult(false)
+            }
         }
-        return false
     }
 
     fun startNewGame(
