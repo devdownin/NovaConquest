@@ -23,6 +23,7 @@ import com.novaempire.core.domain.models.TechBranch
 import com.novaempire.core.domain.models.TechDefinition
 import com.novaempire.core.domain.models.TechRegistry
 import com.novaempire.core.domain.state.GameState
+import com.novaempire.core.engine.CostCalculator
 
 enum class TechNodeState { UNLOCKED, AVAILABLE, LOCKED }
 
@@ -47,7 +48,7 @@ fun TechTreeScreen(
         val isUnlocked = unlockedTechs.contains(tech.id)
         val isAvailable = !isUnlocked && (tech.requiresTechId == null || unlockedTechs.contains(tech.requiresTechId))
         val hasKael = playerState?.recruitedHeroes?.contains("hero_kael") == true
-        val cost = TechRegistry.calculateCost(tech.id, unlockedTechs, hasKael)
+        val cost = CostCalculator.techCost(tech.id, unlockedTechs, hasKael)
 
         val state = when {
             isUnlocked -> TechNodeState.UNLOCKED
