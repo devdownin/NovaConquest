@@ -110,4 +110,25 @@ class InitVerificationTest {
         assertFalse(manager.hasSavedGame())
         tmpDir.deleteRecursively()
     }
+
+    @Test
+    fun saveAndLoadFullEngineState() {
+        // Regression: full GameEngine state (map + units + playerStates) must survive
+        // a save/load round-trip without error — covers the encode/decode path that runs
+        // off-main-thread in GameViewModel.dispatch.
+        val engine = GameEngine()
+        val before = engine.state.value
+
+        val tmpDir = createTempDir("nova_fullstate_test")
+        val manager = com.novaempire.core.engine.save.SaveManager(java.io.File(tmpDir, "saves"))
+        manager.saveGame(before)
+
+        val loaded = manager.loadLatestGame()
+        assertNotNull("Full engine state failed to load after save", loaded)
+        assertEquals(before.turn, loaded!!.turn)
+        assertEquals(before.activeFaction, loaded.activeFaction)
+        assertEquals(before.units.size, loaded.units.size)
+        assertEquals(before.playerStates.keys, loaded.playerStates.keys)
+        tmpDir.deleteRecursively()
+    }
 }

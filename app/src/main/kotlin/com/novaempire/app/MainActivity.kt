@@ -62,8 +62,8 @@ class MainActivity : ComponentActivity() {
                                     currentScreen = AppScreen.FACTION_SELECTION
                                 },
                                 onResumeGameClick = {
-                                    if (gameViewModel.loadGame()) {
-                                        currentScreen = AppScreen.GAME
+                                    gameViewModel.loadGame { success ->
+                                        if (success) currentScreen = AppScreen.GAME
                                     }
                                 },
                                 onSettingsClick = {}
