@@ -88,6 +88,12 @@ fun TacticalMapScreen(
     val explosionScale = remember { Animatable(0f) }
     var activeCombatEvent by remember { mutableStateOf<CombatEvent?>(null) }
 
+    // Unit movement animation
+    data class MovingUnitAnim(val id: String, val from: HexCoord, val to: HexCoord)
+    var movingUnitAnim by remember { mutableStateOf<MovingUnitAnim?>(null) }
+    val movingProgress = remember { Animatable(1f) }
+    val prevUnits = remember { mutableStateOf(gameState.units) }
+
     val haptic = LocalHapticFeedback.current
     val playerState = gameState.playerStates[gameState.activeFaction]
     val exploredHexes = playerState?.exploredHexes ?: emptySet()
@@ -128,6 +134,24 @@ fun TacticalMapScreen(
             kotlinx.coroutines.delay(200)
             activeCombatEvent = null
         }
+    }
+
+    LaunchedEffect(gameState.units) {
+        val prev = prevUnits.value
+        val curr = gameState.units
+        val prevById = prev.values.associateBy { it.id }
+        val movedUnit = curr.values.firstOrNull { unit ->
+            val prevPos = prevById[unit.id]?.position
+            prevPos != null && prevPos != unit.position
+        }
+        if (movedUnit != null) {
+            val fromCoord = prevById[movedUnit.id]!!.position
+            movingUnitAnim = MovingUnitAnim(movedUnit.id, fromCoord, movedUnit.position)
+            movingProgress.snapTo(0f)
+            movingProgress.animateTo(1f, animationSpec = tween(350, easing = FastOutSlowInEasing))
+            movingUnitAnim = null
+        }
+        prevUnits.value = curr
     }
 
     val sweepProgress = rememberInfiniteTransition().animateFloat(
@@ -406,7 +430,11 @@ fun TacticalMapScreen(
 
                         val unit = gameState.units[tile.coord]
                         if (unit != null && (isVisible || unit.faction == gameState.activeFaction)) {
-                            drawUnit(x, y, unit)
+                            // Skip the animating unit — it is drawn in the overlay canvas
+                            val anim = movingUnitAnim
+                            if (anim == null || anim.id != unit.id) {
+                                drawUnit(x, y, unit)
+                            }
                         }
 
                         if (selectedHex == tile.coord) {
@@ -508,6 +536,28 @@ fun TacticalMapScreen(
                             )
                         }
                     }
+                }
+
+                // Moving unit — drawn on top at its interpolated position
+                val anim = movingUnitAnim
+                if (anim != null) {
+                    val fromX = centerX + horizSpacing * (anim.from.q + anim.from.r / 2f)
+                    val fromY = centerY + vertSpacing * anim.from.r
+                    val toX = centerX + horizSpacing * (anim.to.q + anim.to.r / 2f)
+                    val toY = centerY + vertSpacing * anim.to.r
+                    val t = movingProgress.value
+                    val animX = fromX + (toX - fromX) * t
+                    val animY = fromY + (toY - fromY) * t
+                    if (t < 0.95f) {
+                        drawLine(
+                            color = NeonCyan.copy(alpha = 0.5f * (1f - t)),
+                            start = Offset(fromX, fromY),
+                            end = Offset(animX, animY),
+                            strokeWidth = 3f
+                        )
+                    }
+                    val animUnit = gameState.units[anim.to] ?: gameState.units[anim.from]
+                    if (animUnit != null) drawUnit(animX, animY, animUnit)
                 }
             }
         }
