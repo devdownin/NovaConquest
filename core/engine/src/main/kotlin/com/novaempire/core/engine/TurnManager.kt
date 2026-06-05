@@ -53,6 +53,24 @@ object TurnManager {
             nextState = nextState.copy(playerStates = newPlayerStates)
         }
 
+        // Tick research for the faction that just ended its turn
+        val researchingState = nextState.playerStates[state.activeFaction]
+        if (researchingState?.researchInProgress != null) {
+            val prog = researchingState.researchInProgress
+            val newTurns = prog.turnsRemaining - 1
+            val updatedResearcher = if (newTurns <= 0) {
+                researchingState.copy(
+                    techUnlocked = researchingState.techUnlocked + prog.techId,
+                    researchInProgress = null
+                )
+            } else {
+                researchingState.copy(researchInProgress = prog.copy(turnsRemaining = newTurns))
+            }
+            val newPlayerStates = nextState.playerStates.toMutableMap()
+            newPlayerStates[state.activeFaction] = updatedResearcher
+            nextState = nextState.copy(playerStates = newPlayerStates)
+        }
+
         return nextState
     }
 }

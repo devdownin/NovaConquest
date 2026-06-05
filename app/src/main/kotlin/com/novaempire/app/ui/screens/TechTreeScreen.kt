@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.theme.NeonCyan
+import com.novaempire.app.ui.theme.NeonOrange
 import com.novaempire.app.ui.theme.NeonRed
 import com.novaempire.app.ui.theme.TextSecondary
 import com.novaempire.core.domain.models.TechBranch
@@ -25,14 +26,15 @@ import com.novaempire.core.domain.models.TechRegistry
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.engine.CostCalculator
 
-enum class TechNodeState { UNLOCKED, AVAILABLE, LOCKED }
+enum class TechNodeState { UNLOCKED, RESEARCHING, AVAILABLE, LOCKED }
 
 data class UiTechNode(
     val id: String,
     val name: String,
     val cost: Int,
     val state: TechNodeState,
-    val canAfford: Boolean
+    val canAfford: Boolean,
+    val turnsRemaining: Int = 0
 )
 
 @Composable
@@ -44,14 +46,20 @@ fun TechTreeScreen(
     val credits = playerState?.credits ?: 0
     val unlockedTechs = playerState?.techUnlocked ?: emptySet()
 
+    val research = playerState?.researchInProgress
+
     fun buildUiNode(tech: TechDefinition): UiTechNode {
         val isUnlocked = unlockedTechs.contains(tech.id)
-        val isAvailable = !isUnlocked && (tech.requiresTechId == null || unlockedTechs.contains(tech.requiresTechId))
+        val isResearching = research?.techId == tech.id
+        val isAvailable = !isUnlocked && !isResearching &&
+            research == null &&
+            (tech.requiresTechId == null || unlockedTechs.contains(tech.requiresTechId))
         val hasKael = playerState?.recruitedHeroes?.contains("hero_kael") == true
         val cost = CostCalculator.techCost(tech.id, unlockedTechs, hasKael)
 
-        val state = when {
+        val nodeState = when {
             isUnlocked -> TechNodeState.UNLOCKED
+            isResearching -> TechNodeState.RESEARCHING
             isAvailable -> TechNodeState.AVAILABLE
             else -> TechNodeState.LOCKED
         }
@@ -60,8 +68,9 @@ fun TechTreeScreen(
             id = tech.id,
             name = tech.name,
             cost = cost,
-            state = state,
-            canAfford = credits >= cost
+            state = nodeState,
+            canAfford = credits >= cost,
+            turnsRemaining = if (isResearching) research!!.turnsRemaining else 0
         )
     }
 
@@ -157,6 +166,7 @@ fun TechBranchView(title: String, nodes: List<UiTechNode>, onResearchClick: (Str
 fun TechNodeCard(node: UiTechNode, onResearchClick: () -> Unit) {
     val borderColor = when (node.state) {
         TechNodeState.UNLOCKED -> Color.Transparent
+        TechNodeState.RESEARCHING -> NeonOrange
         TechNodeState.AVAILABLE -> if (node.canAfford) NeonCyan else NeonRed
         TechNodeState.LOCKED -> MaterialTheme.colorScheme.surfaceVariant
     }
@@ -177,16 +187,28 @@ fun TechNodeCard(node: UiTechNode, onResearchClick: () -> Unit) {
                 style = MaterialTheme.typography.labelLarge,
                 color = if (node.state == TechNodeState.UNLOCKED) NeonCyan else MaterialTheme.colorScheme.onSurface
             )
-            if (node.state == TechNodeState.AVAILABLE) {
-                Spacer(modifier = Modifier.height(12.dp))
-                IndustrialButton(
-                    text = "RESEARCH (${node.cost} C)",
-                    onClick = onResearchClick,
-                    color = if (node.canAfford) NeonCyan else NeonRed
-                )
-            } else if (node.state == TechNodeState.UNLOCKED) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("UNLOCKED", style = MaterialTheme.typography.bodyMedium, color = NeonCyan)
+            when (node.state) {
+                TechNodeState.AVAILABLE -> {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    IndustrialButton(
+                        text = "RESEARCH (${node.cost} C)",
+                        onClick = onResearchClick,
+                        color = if (node.canAfford) NeonCyan else NeonRed
+                    )
+                }
+                TechNodeState.RESEARCHING -> {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "RESEARCHING — ${node.turnsRemaining} TURN${if (node.turnsRemaining > 1) "S" else ""} LEFT",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = NeonOrange
+                    )
+                }
+                TechNodeState.UNLOCKED -> {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("UNLOCKED", style = MaterialTheme.typography.bodyMedium, color = NeonCyan)
+                }
+                TechNodeState.LOCKED -> {}
             }
         }
     }
