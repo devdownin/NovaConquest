@@ -62,4 +62,27 @@ object HexPathfinder {
         path.reverse()
         return path
     }
+
+    /** BFS flood-fill: all hexes reachable from [start] within [maxCost] steps. */
+    fun findReachable(start: HexCoord, gridMap: GridMap, maxCost: Int): Set<HexCoord> {
+        if (maxCost <= 0) return emptySet()
+        val reachable = mutableSetOf<HexCoord>()
+        val costSoFar = mutableMapOf(start to 0)
+        val frontier = ArrayDeque<HexCoord>()
+        frontier.add(start)
+        while (frontier.isNotEmpty()) {
+            val current = frontier.removeFirst()
+            val cost = costSoFar[current]!!
+            for (next in gridMap.getNeighbors(current)) {
+                val newCost = cost + 1
+                if (newCost > maxCost) continue
+                if (!gridMap.isPassable(next)) continue
+                if (costSoFar.getOrDefault(next, Int.MAX_VALUE) <= newCost) continue
+                costSoFar[next] = newCost
+                reachable.add(next)
+                frontier.add(next)
+            }
+        }
+        return reachable
+    }
 }

@@ -16,6 +16,7 @@ import com.novaempire.app.ui.theme.NovaEmpireTheme
 import com.novaempire.app.audio.AudioManager
 import com.novaempire.app.ui.viewmodels.GameViewModel
 import com.novaempire.core.engine.GameIntent
+import kotlinx.coroutines.launch
 
 enum class AppScreen {
     MAIN_MENU,
@@ -155,6 +156,25 @@ fun GameContainer(
         mutableStateOf<com.novaempire.core.hex.HexCoord?>(null)
     }
 
+    val gameViewModel: GameViewModel = viewModel()
+    val isAiThinking by gameViewModel.isAiThinking.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(Unit) {
+        launch {
+            gameViewModel.errors.collect { message ->
+                snackbarHostState.currentSnackbarData?.dismiss()
+                snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
+            }
+        }
+        launch {
+            gameViewModel.notifications.collect { (message, _) ->
+                snackbarHostState.currentSnackbarData?.dismiss()
+                snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
+            }
+        }
+    }
+
     val activePlayer = gameState.playerStates[gameState.activeFaction]
     val visibleHexes = activePlayer?.visibleHexes ?: emptySet()
     val fallbackSystemCoord = activePlayer?.capitalCoord
@@ -162,6 +182,7 @@ fun GameContainer(
         ?: gameState.map.tiles.keys.firstOrNull()
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface,
@@ -193,8 +214,6 @@ fun GameContainer(
         Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
             when (currentTab) {
                 GameTab.MAP -> {
-                    val gameViewModel: GameViewModel = viewModel()
-                    val isAiThinking by gameViewModel.isAiThinking.collectAsState()
                     TacticalMapScreen(
                         isAiThinking = isAiThinking,
                         gameState = gameState,

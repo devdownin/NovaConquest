@@ -11,7 +11,7 @@ import com.novaempire.core.domain.models.TechRegistry
 object UtilityEvaluator : AIStrategy {
 
     override suspend fun executeAITurn(state: GameState, faction: Faction): GameState {
-        kotlinx.coroutines.delay(500) // Simulate complex calculation
+        kotlinx.coroutines.delay(0) // yield to UI without blocking
         val aiFaction = faction
         var currentState = state
 
