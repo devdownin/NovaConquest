@@ -7,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,7 +16,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.novaempire.app.audio.AudioManager
 import com.novaempire.app.audio.SoundType
 import com.novaempire.app.ui.components.IndustrialButton
-import com.novaempire.app.ui.components.IndustrialPanel
 import com.novaempire.app.ui.screens.*
 import com.novaempire.app.ui.theme.*
 import com.novaempire.app.ui.viewmodels.GameViewModel
@@ -204,22 +202,13 @@ fun GameContainer(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IndustrialPanel {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.LocationOn, contentDescription = null, tint = NeonCyan)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text("SMART FOCUS", style = MaterialTheme.typography.labelLarge)
-                                    Text(
-                                        text = if (idleFleetCount == 1) "1 IDLE FLEET" else "$idleFleetCount IDLE FLEETS",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = if (idleFleetCount > 0) NeonOrange else TextSecondary
-                                    )
-                                }
-                            }
+                        Column {
+                            Text("SMART FOCUS", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                            Text(
+                                text = if (idleFleetCount == 1) "1 IDLE FLEET" else "$idleFleetCount IDLE FLEETS",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (idleFleetCount > 0) NeonOrange else TextSecondary
+                            )
                         }
                         IndustrialButton(
                             text = if (isAiThinking) "AI THINKING..." else "END TURN",
@@ -232,7 +221,7 @@ fun GameContainer(
                             isPrimary = true,
                             color = NeonOrange,
                             icon = { Icon(Icons.Default.Check, contentDescription = null) },
-                            modifier = Modifier.width(200.dp)
+                            modifier = Modifier.width(180.dp)
                         )
                     }
                 }
