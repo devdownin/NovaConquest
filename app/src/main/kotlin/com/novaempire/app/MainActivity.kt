@@ -27,7 +27,8 @@ enum class AppScreen {
     FACTION_SELECTION,
     GAME,
     VICTORY,
-    HERO_ACADEMY // Added screen navigation
+    HERO_ACADEMY,
+    SETTINGS
 }
 
 enum class GameTab {
@@ -71,7 +72,7 @@ class MainActivity : ComponentActivity() {
                                         if (success) currentScreen = AppScreen.GAME
                                     }
                                 },
-                                onSettingsClick = {}
+                                onSettingsClick = { currentScreen = AppScreen.SETTINGS }
                             )
                         }
                         AppScreen.FACTION_SELECTION -> {
@@ -129,6 +130,11 @@ class MainActivity : ComponentActivity() {
                             VictoryScreen(
                                 gameState = gameState,
                                 onMainMenuClick = { currentScreen = AppScreen.MAIN_MENU }
+                            )
+                        }
+                        AppScreen.SETTINGS -> {
+                            SettingsScreen(
+                                onBackClick = { currentScreen = AppScreen.MAIN_MENU }
                             )
                         }
                     }
@@ -281,7 +287,10 @@ fun GameContainer(
                             coord = coordForSystem,
                             onClose = { currentTab = GameTab.MAP },
                             gameState = gameState,
-                            onBuildUnit = onBuildUnit
+                            onBuildUnit = onBuildUnit,
+                            onUpgradeSystem = { coord ->
+                                gameViewModel.dispatch(GameIntent.UpgradeSystem(coord))
+                            }
                         )
                     }
                 }

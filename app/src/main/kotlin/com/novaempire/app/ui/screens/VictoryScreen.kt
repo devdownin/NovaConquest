@@ -78,7 +78,6 @@ fun VictoryScreen(
                 modifier = Modifier.fillMaxWidth(0.8f),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                IndustrialButton(text = "VIEW ARCHIVE", onClick = { })
                 IndustrialButton(text = "MAIN MENU", onClick = onMainMenuClick, color = TextSecondary)
             }
         }

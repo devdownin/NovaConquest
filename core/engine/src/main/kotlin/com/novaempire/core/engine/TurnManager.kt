@@ -3,6 +3,7 @@ package com.novaempire.core.engine
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.GalacticEvent
 import com.novaempire.core.domain.models.HeroRegistry
+import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.state.GameState
 import kotlin.random.Random
 
@@ -36,6 +37,11 @@ object TurnManager {
         val nextPlayerState = nextState.playerStates[nextFaction]
         if (nextPlayerState != null) {
             var income = 10
+            // Planet income: each owned planet yields credits based on its development level
+            val ownedPlanets = nextState.map.tiles.values.filter {
+                it.terrain == TerrainType.PLANET && it.owner == nextFaction
+            }
+            income += ownedPlanets.sumOf { 5 + it.systemLevel * 2 }
             if (nextPlayerState.recruitedHeroes.contains(HeroRegistry.ELARA)) {
                 income += (income * 0.10).toInt() + 2
             }
