@@ -78,6 +78,14 @@ fun TacticalMapScreen(
     var dragStartHex by remember { mutableStateOf<HexCoord?>(null) }
     var currentHoveredHex by remember { mutableStateOf<HexCoord?>(null) }
 
+    // rememberUpdatedState so the pointerInput(Unit) closures (created once, never
+    // recreated) always read the current gameState and callbacks on every gesture.
+    val currentGameState by rememberUpdatedState(gameState)
+    val currentOnMoveUnit by rememberUpdatedState(onMoveUnit)
+    val currentOnAttackUnit by rememberUpdatedState(onAttackUnit)
+    val currentOnSiegePlanet by rememberUpdatedState(onSiegePlanet)
+    val currentOnCapturePlanet by rememberUpdatedState(onCapturePlanet)
+
     val laserProgress = remember { Animatable(0f) }
     val explosionScale = remember { Animatable(0f) }
     var activeCombatEvent by remember { mutableStateOf<CombatEvent?>(null) }
@@ -140,17 +148,60 @@ fun TacticalMapScreen(
                 .pointerInput(Unit) {
                     detectTapGestures { offset ->
                         val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f)
-                        if (!gameState.map.tiles.containsKey(coord)) return@detectTapGestures
-                        if (!exploredHexes.contains(coord)) return@detectTapGestures
+                        val gs = currentGameState
+                        val explored = gs.playerStates[gs.activeFaction]?.exploredHexes ?: emptySet()
+                        if (!gs.map.tiles.containsKey(coord)) return@detectTapGestures
+                        if (!explored.contains(coord)) return@detectTapGestures
 
-                        // Tap on the same tile clears selection
-                        if (selectedHex == coord) {
-                            selectedHex = null
-                            onClearSelection()
-                        } else {
-                            selectedHex = coord
-                            onHexClick(coord)
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        val prev = selectedHex
+                        val prevUnit = prev?.let { gs.units[it] }
+                        val tappedUnit = gs.units[coord]
+                        val tappedTile = gs.map.tiles[coord]
+
+                        when {
+                            // Same tile → deselect
+                            prev == coord -> {
+                                selectedHex = null
+                                onClearSelection()
+                            }
+                            // Friendly unit selected → interpret second tap as action
+                            prev != null && prevUnit != null && prevUnit.faction == gs.activeFaction -> when {
+                                // Enemy unit in attack range → open combat preview
+                                tappedUnit != null && tappedUnit.faction != gs.activeFaction &&
+                                !prevUnit.hasAttacked && prev.distanceTo(coord) <= prevUnit.type.range -> {
+                                    combatPreviewData = Pair(prev, coord)
+                                    selectedHex = null
+                                    onClearSelection()
+                                }
+                                // Adjacent enemy planet → siege or capture
+                                tappedUnit == null && !prevUnit.hasAttacked &&
+                                tappedTile?.terrain == TerrainType.PLANET &&
+                                tappedTile.owner != null && tappedTile.owner != gs.activeFaction &&
+                                prev.distanceTo(coord) == 1 -> {
+                                    if (tappedTile.systemLevel <= 0) currentOnCapturePlanet(prev, coord)
+                                    else currentOnSiegePlanet(prev, coord)
+                                    selectedHex = null
+                                    onClearSelection()
+                                }
+                                // Empty hex and unit hasn't moved → move
+                                tappedUnit == null && !prevUnit.hasMoved -> {
+                                    currentOnMoveUnit(prev, coord)
+                                    selectedHex = null
+                                    onClearSelection()
+                                }
+                                // Any other second tap → reselect new tile
+                                else -> {
+                                    selectedHex = coord
+                                    onHexClick(coord)
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
+                            }
+                            // No friendly unit selected → select tile
+                            else -> {
+                                selectedHex = coord
+                                onHexClick(coord)
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
                         }
                     }
                 }
@@ -158,8 +209,9 @@ fun TacticalMapScreen(
                     detectDragGestures(
                         onDragStart = { offset ->
                             val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f)
-                            val unit = gameState.units[coord]
-                            if (unit != null && unit.faction == gameState.activeFaction && !unit.hasMoved) {
+                            val gs = currentGameState
+                            val unit = gs.units[coord]
+                            if (unit != null && unit.faction == gs.activeFaction && !unit.hasMoved) {
                                 dragStartHex = coord
                                 selectedHex = coord
                                 onHexClick(coord)
@@ -170,29 +222,30 @@ fun TacticalMapScreen(
                             val start = dragStartHex
                             val path = ghostPath
                             if (start != null && path != null && path.isNotEmpty()) {
-                                val unit = gameState.units[start]
+                                val gs = currentGameState
+                                val unit = gs.units[start]
                                 val targetCoord = path.last()
-                                val targetUnit = gameState.units[targetCoord]
-                                val targetTile = gameState.map.tiles[targetCoord]
+                                val targetUnit = gs.units[targetCoord]
+                                val targetTile = gs.map.tiles[targetCoord]
 
                                 when {
                                     // Enemy unit → combat preview
-                                    targetUnit != null && targetUnit.faction != gameState.activeFaction ->
+                                    targetUnit != null && targetUnit.faction != gs.activeFaction ->
                                         combatPreviewData = Pair(start, targetCoord)
-                                    // Enemy planet adjacent → siege
+                                    // Enemy planet adjacent → siege or capture
                                     unit != null && !unit.hasAttacked &&
                                         targetUnit == null &&
                                         targetTile?.terrain == TerrainType.PLANET &&
-                                        targetTile.owner != null && targetTile.owner != gameState.activeFaction &&
+                                        targetTile.owner != null && targetTile.owner != gs.activeFaction &&
                                         start.distanceTo(targetCoord) == 1 -> {
                                         if (targetTile.systemLevel <= 0) {
-                                            onCapturePlanet(start, targetCoord)
+                                            currentOnCapturePlanet(start, targetCoord)
                                         } else {
-                                            onSiegePlanet(start, targetCoord)
+                                            currentOnSiegePlanet(start, targetCoord)
                                         }
                                     }
                                     // Neutral/owned/empty hex → move
-                                    targetUnit == null -> onMoveUnit(start, targetCoord)
+                                    targetUnit == null -> currentOnMoveUnit(start, targetCoord)
                                 }
                             }
                             dragStartHex = null
@@ -206,19 +259,20 @@ fun TacticalMapScreen(
                         },
                         onDrag = { change, _ ->
                             val start = dragStartHex ?: return@detectDragGestures
-                            val unit = gameState.units[start] ?: return@detectDragGestures
+                            val gs = currentGameState
+                            val unit = gs.units[start] ?: return@detectDragGestures
                             val coord = pixelToHex(change.position.x, change.position.y, size.width / 2f, size.height / 2f)
                             if (coord == currentHoveredHex) return@detectDragGestures
                             currentHoveredHex = coord
 
-                            if (coord == start || !gameState.map.tiles.containsKey(coord)) {
+                            if (coord == start || !gs.map.tiles.containsKey(coord)) {
                                 ghostPath = null
                                 return@detectDragGestures
                             }
 
-                            val gridMap = GameGridMap(gameState)
-                            val targetUnit = gameState.units[coord]
-                            val path = if (targetUnit != null && targetUnit.faction != gameState.activeFaction) {
+                            val gridMap = GameGridMap(gs)
+                            val targetUnit = gs.units[coord]
+                            val path = if (targetUnit != null && targetUnit.faction != gs.activeFaction) {
                                 if (start.distanceTo(coord) <= unit.type.range) listOf(coord) else null
                             } else {
                                 HexPathfinder.findPath(start, coord, gridMap, maxCost = unit.type.movement + unit.faction.bonusMovement)
