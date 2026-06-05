@@ -9,10 +9,8 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
@@ -95,9 +93,6 @@ fun TacticalMapScreen(
     val exploredHexes = playerState?.exploredHexes ?: emptySet()
     val credits = playerState?.credits ?: 0
     val activeFactionColor = getFactionColor(gameState.activeFaction)
-    val idleFleetCount = gameState.units.values.count {
-        it.faction == gameState.activeFaction && !it.hasMoved && !it.hasAttacked
-    }
 
     // Hexes the selected unit can still move to (empty when no unit selected / already moved)
     val reachableHexes = remember(selectedHex, gameState) {
@@ -700,45 +695,6 @@ fun TacticalMapScreen(
                     }
                 }
             }
-        }
-
-        // Bottom Navigation / Floating Actions
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .padding(32.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Bottom
-        ) {
-            IndustrialPanel {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.LocationOn, contentDescription = null, tint = NeonCyan)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text("SMART FOCUS", style = MaterialTheme.typography.labelLarge)
-                        Text(
-                            text = if (idleFleetCount == 1) "1 IDLE FLEET" else "$idleFleetCount IDLE FLEETS",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (idleFleetCount > 0) NeonOrange else TextSecondary
-                        )
-                    }
-                }
-            }
-
-            IndustrialButton(
-                text = "END TURN",
-                onClick = {
-                    if (!isAiThinking) {
-                        AudioManager.playSound(SoundType.END_TURN)
-                        onEndTurnClick()
-                    }
-                },
-                isPrimary = true,
-                color = NeonOrange,
-                icon = { Icon(Icons.Default.Check, contentDescription = null) },
-                modifier = Modifier.width(200.dp)
-            )
         }
 
         // Combat Preview Overlay
