@@ -74,7 +74,7 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
             playerStates[faction] = PlayerState(
                 faction = faction,
                 capitalCoord = spawnPoint,
-                credits = 20 // Starting boost
+                credits = 100
             )
         }
 
@@ -283,6 +283,20 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 if (tile.owner == state.activeFaction) return GameResult(state, "You already own this planet.")
                 GameResult(CombatResolver.capturePlanet(state, intent.unitCoord, intent.planetCoord))
             }
+            is GameIntent.UpgradeSystem -> {
+                val tile = state.map.tiles[intent.coord] ?: return GameResult(state, "Tile not found.")
+                IntentValidator.isPlanet(state, intent.coord)?.let { return GameResult(state, it) }
+                if (tile.owner != state.activeFaction) return GameResult(state, "You don't own this planet.")
+                if (tile.systemLevel >= 5) return GameResult(state, "Planet already at maximum level.")
+                val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
+                val upgradeCost = (tile.systemLevel + 1) * 15
+                IntentValidator.canAfford(playerState, upgradeCost)?.let { return GameResult(state, it) }
+                val newPlayerStates = state.playerStates.toMutableMap()
+                newPlayerStates[state.activeFaction] = playerState.copy(credits = playerState.credits - upgradeCost)
+                val newTiles = state.map.tiles.toMutableMap()
+                newTiles[intent.coord] = tile.copy(systemLevel = tile.systemLevel + 1)
+                GameResult(state.copy(playerStates = newPlayerStates, map = state.map.copy(tiles = newTiles)))
+            }
         }
     }
 
@@ -323,4 +337,5 @@ sealed class GameIntent {
     data class LoadGame(val loadedState: GameState) : GameIntent()
     data class SiegePlanet(val attackerCoord: HexCoord, val planetCoord: HexCoord) : GameIntent()
     data class CapturePlanet(val unitCoord: HexCoord, val planetCoord: HexCoord) : GameIntent()
+    data class UpgradeSystem(val coord: HexCoord) : GameIntent()
 }

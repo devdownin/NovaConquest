@@ -109,13 +109,6 @@ fun MainMenuScreen(
                         )
 
                         IndustrialButton(
-                            text = "CHRONICLE ARCHIVE",
-                            onClick = {},
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            icon = { Icon(Icons.Default.Menu, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-                        )
-
-                        IndustrialButton(
                             text = "SYSTEM SETTINGS",
                             onClick = onSettingsClick,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

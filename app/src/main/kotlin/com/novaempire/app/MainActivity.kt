@@ -281,7 +281,10 @@ fun GameContainer(
                             coord = coordForSystem,
                             onClose = { currentTab = GameTab.MAP },
                             gameState = gameState,
-                            onBuildUnit = onBuildUnit
+                            onBuildUnit = onBuildUnit,
+                            onUpgradeSystem = { coord ->
+                                gameViewModel.dispatch(GameIntent.UpgradeSystem(coord))
+                            }
                         )
                     }
                 }

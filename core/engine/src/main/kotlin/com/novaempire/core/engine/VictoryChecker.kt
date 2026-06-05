@@ -2,6 +2,7 @@ package com.novaempire.core.engine
 
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.MapArchetype
+import com.novaempire.core.domain.models.TechRegistry
 import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.state.GameState
 
@@ -13,13 +14,13 @@ object VictoryChecker {
         val existing = state.winner
         if (existing != null) return VictoryResult(existing, state.victoryReason ?: "")
 
-        // 1. Tech Victory: 6 techs unlocked
-        state.playerStates.values.find { it.techUnlocked.size >= 6 }?.let {
+        // 1. Tech Victory: unlock all technologies
+        state.playerStates.values.find { it.techUnlocked.size >= TechRegistry.ALL_TECHS.size }?.let {
             return VictoryResult(it.faction, "Technological Dominance")
         }
 
-        // 2. Economic Victory: 500 Credits
-        state.playerStates.values.find { it.credits >= 500 }?.let {
+        // 2. Economic Victory: 1000 Credits
+        state.playerStates.values.find { it.credits >= 1000 }?.let {
             return VictoryResult(it.faction, "Economic Supremacy")
         }
 
@@ -43,8 +44,8 @@ object VictoryChecker {
             return VictoryResult(survivors.first(), "Military Conquest")
         }
 
-        // 5. Time Limit: 60 turns — highest credits wins
-        if (state.turn >= 60) {
+        // 5. Time Limit: 100 turns — highest credits wins
+        if (state.turn >= 100) {
             state.playerStates.values.maxByOrNull { it.credits }?.let {
                 return VictoryResult(it.faction, "Time Limit Reached - Score Victory")
             }

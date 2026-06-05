@@ -24,7 +24,6 @@ import com.novaempire.app.ui.components.NoiseOverlay
 import com.novaempire.app.ui.components.HeaderLine
 import com.novaempire.app.ui.theme.NeonCyan
 import com.novaempire.app.ui.theme.NeonOrange
-import com.novaempire.app.ui.theme.NeonRed
 import com.novaempire.app.ui.theme.TextSecondary
 import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.state.GameState
@@ -35,11 +34,17 @@ fun StarSystemManagementScreen(
     coord: HexCoord,
     gameState: GameState,
     onBuildUnit: (UnitType, HexCoord) -> Unit,
+    onUpgradeSystem: (HexCoord) -> Unit,
     onClose: () -> Unit
 ) {
     val playerState = gameState.playerStates[gameState.activeFaction]
     val credits = playerState?.credits ?: 0
-    val systemLevel = 2 // Mock value
+    val tile = gameState.map.tiles[coord]
+    val systemLevel = tile?.systemLevel ?: 0
+    val isOwnPlanet = tile?.owner == gameState.activeFaction
+    val planetIncome = 5 + systemLevel * 2
+    val upgradeCost = (systemLevel + 1) * 15
+    val canUpgrade = isOwnPlanet && systemLevel < 5 && credits >= upgradeCost
 
     Box(
         modifier = Modifier
@@ -70,12 +75,10 @@ fun StarSystemManagementScreen(
                         Text("SYSTEM MANAGEMENT", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
                     }
                 }
-                IndustrialPanel {
-                    Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("TREASURY", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("${credits} C", style = MaterialTheme.typography.headlineMedium, color = NeonCyan)
-                    }
+                Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("TREASURY", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("${credits} C", style = MaterialTheme.typography.headlineMedium, color = NeonCyan)
                 }
             }
 
@@ -89,8 +92,13 @@ fun StarSystemManagementScreen(
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        InfrastructurePanel(systemLevel)
-                        DefensePanel()
+                        InfrastructurePanel(
+                            systemLevel = systemLevel,
+                            planetIncome = planetIncome,
+                            upgradeCost = upgradeCost,
+                            canUpgrade = canUpgrade,
+                            onUpgrade = { onUpgradeSystem(coord) }
+                        )
                         ShipyardPanel(coord, onBuildUnit)
                     }
                 } else {
@@ -98,16 +106,18 @@ fun StarSystemManagementScreen(
                         modifier = Modifier.fillMaxSize(),
                         horizontalArrangement = Arrangement.spacedBy(24.dp)
                     ) {
-                        // Left Column: Infrastructure & Defense
                         Column(
                             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            InfrastructurePanel(systemLevel)
-                            DefensePanel()
+                            InfrastructurePanel(
+                                systemLevel = systemLevel,
+                                planetIncome = planetIncome,
+                                upgradeCost = upgradeCost,
+                                canUpgrade = canUpgrade,
+                                onUpgrade = { onUpgradeSystem(coord) }
+                            )
                         }
-
-                        // Right Column: Shipyard
                         Column(modifier = Modifier.weight(1.5f)) {
                             ShipyardPanel(coord, onBuildUnit)
                         }
@@ -119,7 +129,13 @@ fun StarSystemManagementScreen(
 }
 
 @Composable
-fun InfrastructurePanel(systemLevel: Int) {
+fun InfrastructurePanel(
+    systemLevel: Int,
+    planetIncome: Int,
+    upgradeCost: Int,
+    canUpgrade: Boolean,
+    onUpgrade: () -> Unit
+) {
     IndustrialPanel(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(24.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 16.dp)) {
@@ -128,65 +144,44 @@ fun InfrastructurePanel(systemLevel: Int) {
                 Text("SYSTEM INFRASTRUCTURE", style = MaterialTheme.typography.labelLarge)
             }
 
-            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Development Level", style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
-                Text("LEVEL $systemLevel", style = MaterialTheme.typography.labelLarge, color = NeonCyan)
+                Text("LEVEL $systemLevel / 5", style = MaterialTheme.typography.labelLarge, color = NeonCyan)
             }
 
-            // Progress bar
-            Row(modifier = Modifier.fillMaxWidth().height(8.dp).padding(vertical = 2.dp).background(MaterialTheme.colorScheme.surface)) {
-                Box(modifier = Modifier.fillMaxHeight().fillMaxWidth(0.6f).background(NeonCyan))
+            // Level bar
+            Row(modifier = Modifier.fillMaxWidth().height(8.dp).background(MaterialTheme.colorScheme.surface)) {
+                Box(modifier = Modifier.fillMaxHeight().fillMaxWidth(systemLevel / 5f).background(NeonCyan))
             }
-            Text("Upgrade Progress: 60%", style = MaterialTheme.typography.bodyMedium, color = TextSecondary, modifier = Modifier.padding(bottom = 16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 16.dp)) {
                 Box(modifier = Modifier.weight(1f).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)).padding(12.dp)) {
                     Column {
-                        Text("Credit Prod.", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                        Text("+340 / turn", style = MaterialTheme.typography.bodyLarge, color = NeonCyan)
+                        Text("Credit Income", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                        Text("+$planetIncome / turn", style = MaterialTheme.typography.bodyLarge, color = NeonCyan)
                     }
                 }
                 Box(modifier = Modifier.weight(1f).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)).padding(12.dp)) {
                     Column {
-                        Text("Ore Mining", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                        Text("+120 / turn", style = MaterialTheme.typography.bodyLarge, color = NeonOrange)
+                        Text("Upgrade Cost", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                        Text(
+                            text = if (systemLevel >= 5) "MAX LEVEL" else "$upgradeCost C",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = NeonOrange
+                        )
                     }
                 }
             }
 
-            IndustrialButton(
-                text = "UPGRADE SYSTEM",
-                onClick = {},
-                icon = { Icon(Icons.Default.Menu, contentDescription = null) }
-            )
-        }
-    }
-}
-
-@Composable
-fun DefensePanel() {
-    IndustrialPanel(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(24.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 16.dp)) {
-                Icon(Icons.Default.Menu, contentDescription = null, tint = NeonRed)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("PLANETARY DEFENSE", style = MaterialTheme.typography.labelLarge)
-            }
-
-            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Shield Integrity", style = MaterialTheme.typography.bodyLarge)
-                Text("85%", style = MaterialTheme.typography.labelLarge, color = NeonCyan)
-            }
-            Row(modifier = Modifier.fillMaxWidth().height(6.dp).padding(bottom = 8.dp).background(MaterialTheme.colorScheme.surface)) {
-                Box(modifier = Modifier.fillMaxHeight().fillMaxWidth(0.85f).background(NeonCyan))
-            }
-
-            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Hull Armor", style = MaterialTheme.typography.bodyLarge)
-                Text("40%", style = MaterialTheme.typography.labelLarge, color = NeonRed)
-            }
-            Row(modifier = Modifier.fillMaxWidth().height(6.dp).background(MaterialTheme.colorScheme.surface)) {
-                Box(modifier = Modifier.fillMaxHeight().fillMaxWidth(0.4f).background(NeonRed))
+            if (systemLevel < 5) {
+                IndustrialButton(
+                    text = if (canUpgrade) "UPGRADE SYSTEM" else "UPGRADE ($upgradeCost C)",
+                    onClick = onUpgrade,
+                    isPrimary = canUpgrade,
+                    color = if (canUpgrade) NeonCyan else TextSecondary,
+                    icon = { Icon(Icons.Default.Build, contentDescription = null) }
+                )
             }
         }
     }
