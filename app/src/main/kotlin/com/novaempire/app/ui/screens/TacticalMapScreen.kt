@@ -104,7 +104,8 @@ fun TacticalMapScreen(
         val sel = selectedHex ?: return@remember emptySet<HexCoord>()
         val unit = gameState.units[sel] ?: return@remember emptySet<HexCoord>()
         if (unit.faction != gameState.activeFaction || unit.hasMoved) return@remember emptySet<HexCoord>()
-        HexPathfinder.findReachable(sel, GameGridMap(gameState), unit.type.movement + unit.faction.bonusMovement)
+        val ionPenalty = if (gameState.activeEvent == GalacticEvent.ION_STORM) 1 else 0
+        HexPathfinder.findReachable(sel, GameGridMap(gameState), (unit.type.movement + unit.faction.bonusMovement - ionPenalty).coerceAtLeast(1))
     }
 
     // Enemy units the selected unit can attack this turn

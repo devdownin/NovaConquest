@@ -5,6 +5,7 @@ import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.hex.HexCoord
 import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.models.GameUnit
+import com.novaempire.core.domain.models.GalacticEvent
 import com.novaempire.core.domain.models.HeroRegistry
 import com.novaempire.core.domain.models.TechRegistry
 
@@ -77,14 +78,16 @@ object UtilityEvaluator : AIStrategy {
                         .minByOrNull { it.distanceTo(unit.position) }
 
                     if (approachGoal != null) {
+                        val ionPenalty = if (currentState.activeEvent == GalacticEvent.ION_STORM) 1 else 0
+                        val totalMovement = (unit.type.movement + unit.faction.bonusMovement - ionPenalty).coerceAtLeast(1)
                         val path = com.novaempire.core.hex.HexPathfinder.findPath(
                             start = unit.position,
                             goal = approachGoal,
-                            gridMap = gridMap
+                            gridMap = gridMap,
+                            maxCost = totalMovement
                         )
 
                         if (path != null && path.isNotEmpty()) {
-                            val totalMovement = unit.type.movement + unit.faction.bonusMovement
                             val destination = path.take(totalMovement)
                                 .lastOrNull { currentState.units[it] == null }
                             if (destination != null) {
