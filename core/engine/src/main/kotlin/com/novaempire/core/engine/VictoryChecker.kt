@@ -2,6 +2,7 @@ package com.novaempire.core.engine
 
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.MapArchetype
+import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.state.GameState
 
 data class VictoryResult(val winner: Faction, val reason: String)
@@ -32,7 +33,17 @@ object VictoryChecker {
             }
         }
 
-        // 4. Time Limit: 60 turns — highest credits wins
+        // 4. Military Conquest: only one faction still has units or planets
+        val activeFactions = Faction.values().filter { it != Faction.ANCIENT_NPC }
+        val survivors = activeFactions.filter { faction ->
+            state.units.values.any { it.faction == faction } ||
+            state.map.tiles.values.any { it.terrain == TerrainType.PLANET && it.owner == faction }
+        }
+        if (survivors.size == 1) {
+            return VictoryResult(survivors.first(), "Military Conquest")
+        }
+
+        // 5. Time Limit: 60 turns — highest credits wins
         if (state.turn >= 60) {
             state.playerStates.values.maxByOrNull { it.credits }?.let {
                 return VictoryResult(it.faction, "Time Limit Reached - Score Victory")

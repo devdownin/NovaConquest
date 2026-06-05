@@ -99,6 +99,26 @@ fun TacticalMapScreen(
         it.faction == gameState.activeFaction && !it.hasMoved && !it.hasAttacked
     }
 
+    // Hexes the selected unit can still move to (empty when no unit selected / already moved)
+    val reachableHexes = remember(selectedHex, gameState) {
+        val sel = selectedHex ?: return@remember emptySet<HexCoord>()
+        val unit = gameState.units[sel] ?: return@remember emptySet<HexCoord>()
+        if (unit.faction != gameState.activeFaction || unit.hasMoved) return@remember emptySet<HexCoord>()
+        val ionPenalty = if (gameState.activeEvent == GalacticEvent.ION_STORM) 1 else 0
+        HexPathfinder.findReachable(sel, GameGridMap(gameState), (unit.type.movement + unit.faction.bonusMovement - ionPenalty).coerceAtLeast(1))
+    }
+
+    // Enemy units the selected unit can attack this turn
+    val attackableCoords = remember(selectedHex, gameState) {
+        val sel = selectedHex ?: return@remember emptySet<HexCoord>()
+        val unit = gameState.units[sel] ?: return@remember emptySet<HexCoord>()
+        if (unit.faction != gameState.activeFaction || unit.hasAttacked) return@remember emptySet<HexCoord>()
+        gameState.units.values
+            .filter { it.faction != gameState.activeFaction && sel.distanceTo(it.position) <= unit.type.range }
+            .map { it.position }
+            .toSet()
+    }
+
     LaunchedEffect(gameState.lastCombatEvent) {
         gameState.lastCombatEvent?.let { combat ->
             activeCombatEvent = combat
@@ -355,6 +375,22 @@ fun TacticalMapScreen(
                             color = Color(0xFF8F9094).copy(alpha = 0.15f * alpha),
                             strokeWidth = 1f
                         )
+
+                        // Movement range overlay (cyan fill)
+                        if (reachableHexes.contains(tile.coord)) {
+                            drawHexagonPath(
+                                centerX = x, centerY = y, radius = hexRadius,
+                                color = NeonCyan.copy(alpha = 0.18f), fill = true
+                            )
+                        }
+
+                        // Attack range overlay (red outline on enemy units)
+                        if (attackableCoords.contains(tile.coord)) {
+                            drawHexagonPath(
+                                centerX = x, centerY = y, radius = hexRadius,
+                                color = NeonRed.copy(alpha = 0.55f), strokeWidth = 3f
+                            )
+                        }
 
                         // Sector ID (Blueprint style)
                         drawContext.canvas.nativeCanvas.drawText(

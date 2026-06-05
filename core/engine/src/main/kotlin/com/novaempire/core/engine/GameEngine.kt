@@ -172,9 +172,11 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 IntentValidator.notMoved(unit)?.let { return GameResult(state, it) }
 
                 val gridMap = GameGridMap(state)
+                val ionPenalty = if (state.activeEvent == com.novaempire.core.domain.models.GalacticEvent.ION_STORM) 1 else 0
+                val effectiveMovement = (unit.type.movement + unit.faction.bonusMovement - ionPenalty).coerceAtLeast(1)
                 val path = com.novaempire.core.hex.HexPathfinder.findPath(
                     intent.from, intent.to, gridMap,
-                    unit.type.movement + unit.faction.bonusMovement
+                    effectiveMovement
                 )
                 if (path != null && path.isNotEmpty()) {
                     val updatedUnits = state.units.toMutableMap()
@@ -205,10 +207,11 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                     return GameResult(state, "Prerequisite technology not researched.")
                 if (playerState.techUnlocked.contains(intent.techId))
                     return GameResult(state, "Technology already researched.")
+                val eventDiscount = if (state.activeEvent == com.novaempire.core.domain.models.GalacticEvent.ANCIENT_SIGNAL) 0.25f else 0f
                 val cost = CostCalculator.techCost(
                     intent.techId, playerState.techUnlocked,
                     playerState.recruitedHeroes.contains(com.novaempire.core.domain.models.HeroRegistry.KAEL),
-                    state.activeFaction.bonusTechDiscount
+                    (state.activeFaction.bonusTechDiscount + eventDiscount).coerceAtMost(0.9f)
                 )
                 IntentValidator.canAfford(playerState, cost)?.let { return GameResult(state, it) }
                 val newPlayerStates = state.playerStates.toMutableMap()
