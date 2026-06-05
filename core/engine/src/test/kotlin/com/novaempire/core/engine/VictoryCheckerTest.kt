@@ -21,8 +21,8 @@ class VictoryCheckerTest {
     }
 
     @Test
-    fun techVictoryAt6Techs() {
-        val techs = setOf("t1","t2","t3","t4","t5","t6")
+    fun techVictoryWhenAllTechsUnlocked() {
+        val techs = (1..8).map { "t$it" }.toSet()
         val state = stateWith(PlayerState(Faction.TRADERS, techUnlocked = techs))
         val result = VictoryChecker.check(state)!!
         assertEquals(Faction.TRADERS, result.winner)
@@ -30,23 +30,23 @@ class VictoryCheckerTest {
     }
 
     @Test
-    fun economicVictoryAt500Credits() {
-        val state = stateWith(PlayerState(Faction.SYNTH, credits = 500))
+    fun economicVictoryAt1000Credits() {
+        val state = stateWith(PlayerState(Faction.SYNTH, credits = 1000))
         val result = VictoryChecker.check(state)!!
         assertEquals(Faction.SYNTH, result.winner)
         assertEquals("Economic Supremacy", result.reason)
     }
 
     @Test
-    fun economicVictoryRequires500NotLess() {
-        val state = stateWith(PlayerState(Faction.SYNTH, credits = 499))
+    fun economicVictoryRequires1000NotLess() {
+        val state = stateWith(PlayerState(Faction.SYNTH, credits = 999))
         assertNull(VictoryChecker.check(state))
     }
 
     @Test
     fun timeLimitVictoryHighestCreditsWins() {
         val state = GameState(
-            turn = 60,
+            turn = 100,
             playerStates = mapOf(
                 Faction.DOMINION to PlayerState(Faction.DOMINION, credits = 100),
                 Faction.TRADERS to PlayerState(Faction.TRADERS, credits = 200)
