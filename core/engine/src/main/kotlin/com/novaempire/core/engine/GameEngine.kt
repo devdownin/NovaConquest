@@ -105,8 +105,9 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
             var currentState = _state.value
             currentState = reduce(currentState, intent).newState
 
-            // AI Turn Loop
-            while (currentState.activeFaction != Faction.DOMINION) {
+            // AI Turn Loop — runs until it's the human player's turn again
+            val humanFaction = currentState.humanFaction
+            while (currentState.activeFaction != humanFaction) {
                 currentState = withContext(Dispatchers.Default) {
                     aiStrategy.executeAITurn(currentState, currentState.activeFaction)
                 }
@@ -163,7 +164,7 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 GameResult(TurnManager.advanceTurn(state))
             }
             is GameIntent.SelectFaction -> {
-                GameResult(state.copy(activeFaction = intent.faction))
+                GameResult(state.copy(activeFaction = intent.faction, humanFaction = intent.faction))
             }
             is GameIntent.MoveUnit -> {
                 val unit = state.units[intent.from] ?: return GameResult(state, "No unit at selected position.")

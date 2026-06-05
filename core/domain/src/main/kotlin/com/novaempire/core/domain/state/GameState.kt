@@ -19,6 +19,7 @@ data class GameState(
     val version: Int = 1,
     val turn: Int = 1,
     val activeFaction: Faction = Faction.DOMINION,
+    val humanFaction: Faction = Faction.DOMINION,
     val playerStates: Map<Faction, PlayerState> = emptyMap(),
     val map: GameMap = GameMap(),
     val units: Map<HexCoord, GameUnit> = emptyMap(),
