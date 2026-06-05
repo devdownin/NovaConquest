@@ -100,6 +100,49 @@ class InitVerificationTest {
     }
 
     @Test
+    fun nonDominionFactionRetainsControlAfterEndTurn() = runBlocking {
+        // Regression: if the human player picks TRADERS, control must return to TRADERS
+        // after the AI loop, not to DOMINION.
+        val engine = GameEngine()
+        engine.processIntent(GameIntent.StartNewGameWithSize(MapSize.MEDIUM, MapArchetype.STANDARD))
+        delay(200)
+        engine.processIntent(GameIntent.SelectFaction(Faction.TRADERS))
+        delay(50)
+        assertEquals(Faction.TRADERS, engine.state.value.humanFaction)
+        engine.processIntent(GameIntent.EndTurn)
+        delay(3000) // AI loop: up to 5 factions × ~500ms
+        val stateAfter = engine.state.value
+        assertEquals(
+            "After EndTurn, activeFaction must be the human faction (TRADERS), not DOMINION",
+            Faction.TRADERS, stateAfter.activeFaction
+        )
+    }
+
+    @Test
+    fun allFactionsHaveUnitOnStart() {
+        val engine = GameEngine()
+        val state = engine.state.value
+        val activeFactions = Faction.values().filter { it != Faction.ANCIENT_NPC }
+        for (faction in activeFactions) {
+            val unit = state.units.values.find { it.faction == faction }
+            assertNotNull("No starting unit for $faction", unit)
+            assertFalse("$faction unit already moved at start", unit!!.hasMoved)
+            assertFalse("$faction unit already attacked at start", unit.hasAttacked)
+        }
+    }
+
+    @Test
+    fun allFactionsHavePositiveCredits() {
+        val engine = GameEngine()
+        val state = engine.state.value
+        val activeFactions = Faction.values().filter { it != Faction.ANCIENT_NPC }
+        for (faction in activeFactions) {
+            val credits = state.playerStates[faction]!!.credits
+            assertTrue("$faction starts with non-positive credits: $credits", credits > 0)
+        }
+    }
+
+    @Test
     fun saveManagerInitCreatesDir() {
         val tmpDir = createTempDir("nova_init_test")
         val saveDir = java.io.File(tmpDir, "saves")
