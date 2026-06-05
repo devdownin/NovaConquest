@@ -3,17 +3,23 @@ package com.novaempire.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.novaempire.app.ui.screens.*
-import com.novaempire.app.ui.theme.NovaEmpireTheme
-
 import com.novaempire.app.audio.AudioManager
+import com.novaempire.app.audio.SoundType
+import com.novaempire.app.ui.components.IndustrialButton
+import com.novaempire.app.ui.components.IndustrialPanel
+import com.novaempire.app.ui.screens.*
+import com.novaempire.app.ui.theme.*
 import com.novaempire.app.ui.viewmodels.GameViewModel
 import com.novaempire.core.engine.GameIntent
 import kotlinx.coroutines.launch
@@ -181,33 +187,80 @@ fun GameContainer(
         ?: gameState.map.tiles.values.firstOrNull { it.terrain == com.novaempire.core.domain.models.TerrainType.PLANET && it.owner == gameState.activeFaction }?.coord
         ?: gameState.map.tiles.keys.firstOrNull()
 
+    val idleFleetCount = gameState.units.values.count {
+        it.faction == gameState.activeFaction && !it.hasMoved && !it.hasAttacked
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.primary
-            ) {
-                NavigationBarItem(
-                    selected = currentTab == GameTab.MAP,
-                    onClick = { currentTab = GameTab.MAP },
-                    icon = { Text("MAP") }
-                )
-                NavigationBarItem(
-                    selected = currentTab == GameTab.SYSTEM,
-                    onClick = { currentTab = GameTab.SYSTEM },
-                    icon = { Text("SYSTEM") }
-                )
-                NavigationBarItem(
-                    selected = currentTab == GameTab.TECH,
-                    onClick = { currentTab = GameTab.TECH },
-                    icon = { Text("TECH") }
-                )
-                NavigationBarItem(
-                    selected = currentTab == GameTab.INTEL,
-                    onClick = { currentTab = GameTab.INTEL },
-                    icon = { Text("INTEL") }
-                )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (currentTab == GameTab.MAP) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surface)
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IndustrialPanel {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.LocationOn, contentDescription = null, tint = NeonCyan)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text("SMART FOCUS", style = MaterialTheme.typography.labelLarge)
+                                    Text(
+                                        text = if (idleFleetCount == 1) "1 IDLE FLEET" else "$idleFleetCount IDLE FLEETS",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (idleFleetCount > 0) NeonOrange else TextSecondary
+                                    )
+                                }
+                            }
+                        }
+                        IndustrialButton(
+                            text = if (isAiThinking) "AI THINKING..." else "END TURN",
+                            onClick = {
+                                if (!isAiThinking) {
+                                    AudioManager.playSound(SoundType.END_TURN)
+                                    onEndTurn()
+                                }
+                            },
+                            isPrimary = true,
+                            color = NeonOrange,
+                            icon = { Icon(Icons.Default.Check, contentDescription = null) },
+                            modifier = Modifier.width(200.dp)
+                        )
+                    }
+                }
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.primary
+                ) {
+                    NavigationBarItem(
+                        selected = currentTab == GameTab.MAP,
+                        onClick = { currentTab = GameTab.MAP },
+                        icon = { Text("MAP") }
+                    )
+                    NavigationBarItem(
+                        selected = currentTab == GameTab.SYSTEM,
+                        onClick = { currentTab = GameTab.SYSTEM },
+                        icon = { Text("SYSTEM") }
+                    )
+                    NavigationBarItem(
+                        selected = currentTab == GameTab.TECH,
+                        onClick = { currentTab = GameTab.TECH },
+                        icon = { Text("TECH") }
+                    )
+                    NavigationBarItem(
+                        selected = currentTab == GameTab.INTEL,
+                        onClick = { currentTab = GameTab.INTEL },
+                        icon = { Text("INTEL") }
+                    )
+                }
             }
         }
     ) { paddingValues ->
