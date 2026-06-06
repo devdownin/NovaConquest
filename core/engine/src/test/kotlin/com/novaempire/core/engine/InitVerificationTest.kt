@@ -4,6 +4,7 @@ import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.MapArchetype
 import com.novaempire.core.domain.models.MapSize
 import com.novaempire.core.domain.state.PlayerState
+import com.novaempire.core.engine.save.LoadResult
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -166,9 +167,10 @@ class InitVerificationTest {
         val manager = com.novaempire.core.engine.save.SaveManager(java.io.File(tmpDir, "saves"))
         manager.saveGame(before)
 
-        val loaded = manager.loadLatestGame()
-        assertNotNull("Full engine state failed to load after save", loaded)
-        assertEquals(before.turn, loaded!!.turn)
+        val result = manager.loadLatestGame()
+        assertTrue("Full engine state failed to load after save", result is LoadResult.Success)
+        val loaded = (result as LoadResult.Success).state
+        assertEquals(before.turn, loaded.turn)
         assertEquals(before.activeFaction, loaded.activeFaction)
         assertEquals(before.units.size, loaded.units.size)
         assertEquals(before.playerStates.keys, loaded.playerStates.keys)

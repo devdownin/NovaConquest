@@ -54,11 +54,13 @@ class VisionSystemTest {
         val baseVisible = VisionSystem.calculateVisibleHexes(state, Faction.DOMINION,
             object : VisionBonusProvider {
                 override fun rangeBonus(faction: Faction) = 0
+                override fun scoutRangeBonus(faction: Faction) = 0
                 override fun rangeMult() = 1f
             })
         val boostedVisible = VisionSystem.calculateVisibleHexes(state, Faction.DOMINION,
             object : VisionBonusProvider {
                 override fun rangeBonus(faction: Faction) = 2
+                override fun scoutRangeBonus(faction: Faction) = 0
                 override fun rangeMult() = 1f
             })
         assertTrue(boostedVisible.size > baseVisible.size)
@@ -74,11 +76,13 @@ class VisionSystemTest {
         val normal = VisionSystem.calculateVisibleHexes(state, Faction.DOMINION,
             object : VisionBonusProvider {
                 override fun rangeBonus(faction: Faction) = 0
+                override fun scoutRangeBonus(faction: Faction) = 0
                 override fun rangeMult() = 1f
             })
         val flare = VisionSystem.calculateVisibleHexes(state, Faction.DOMINION,
             object : VisionBonusProvider {
                 override fun rangeBonus(faction: Faction) = 0
+                override fun scoutRangeBonus(faction: Faction) = 0
                 override fun rangeMult() = 0.5f
             })
         assertTrue(flare.size < normal.size)

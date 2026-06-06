@@ -1,5 +1,6 @@
 package com.novaempire.core.engine
 
+import com.novaempire.core.engine.save.LoadResult
 import com.novaempire.core.engine.save.SaveManager
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.state.GameState
@@ -8,7 +9,6 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -44,9 +44,10 @@ class SaveManagerTest {
         val state = stateWithCredits(42)
         manager.saveGame(state)
         assertTrue(manager.hasSavedGame())
-        val loaded = manager.loadLatestGame()
-        assertNotNull(loaded)
-        assertEquals(42, loaded!!.playerStates[Faction.DOMINION]?.credits)
+        val result = manager.loadLatestGame()
+        assertNotNull(result)
+        val loaded = result as LoadResult.Success
+        assertEquals(42, loaded.state.playerStates[Faction.DOMINION]?.credits)
     }
 
     @Test
@@ -60,8 +61,8 @@ class SaveManagerTest {
         assertTrue(File(saveDir, "autosave_3.json").exists())
 
         // Most recent (slot 1) is credits=3
-        val loaded = manager.loadLatestGame()
-        assertEquals(3, loaded!!.playerStates[Faction.DOMINION]?.credits)
+        val loaded = (manager.loadLatestGame() as LoadResult.Success).state
+        assertEquals(3, loaded.playerStates[Faction.DOMINION]?.credits)
     }
 
     @Test
@@ -72,9 +73,10 @@ class SaveManagerTest {
         // Corrupt slot 1
         File(saveDir, "autosave_1.json").writeText("not valid json {{{{")
 
-        val loaded = manager.loadLatestGame()
-        assertNotNull(loaded)
-        assertEquals(10, loaded!!.playerStates[Faction.DOMINION]?.credits)
+        val result = manager.loadLatestGame()
+        assertNotNull(result)
+        val loaded = (result as LoadResult.Success).state
+        assertEquals(10, loaded.playerStates[Faction.DOMINION]?.credits)
 
         // Slot 1 should be quarantined
         val quarantine = File(saveDir, "quarantine")
@@ -82,16 +84,16 @@ class SaveManagerTest {
     }
 
     @Test
-    fun allCorruptedReturnsNull() {
+    fun allCorruptedReturnsFailed() {
         manager.saveGame(stateWithCredits(1))
         listOf("autosave_1.json", "autosave_2.json", "autosave_3.json").forEach {
             File(saveDir, it).writeText("corrupt")
         }
-        assertNull(manager.loadLatestGame())
+        assertTrue(manager.loadLatestGame() is LoadResult.Failed)
     }
 
     @Test
-    fun loadLatestGameReturnsNullWhenNoSaves() {
-        assertNull(manager.loadLatestGame())
+    fun loadLatestGameReturnsNoSaveWhenEmpty() {
+        assertTrue(manager.loadLatestGame() is LoadResult.NoSave)
     }
 }
