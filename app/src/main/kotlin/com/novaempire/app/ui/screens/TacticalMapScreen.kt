@@ -68,8 +68,22 @@ fun TacticalMapScreen(
     onClearSelection: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var scale by remember { mutableStateOf(1f) }
-    var pan by remember { mutableStateOf(Offset.Zero) }
+    val initScale = 0.8f
+    val initCoord = gameState.playerStates[gameState.humanFaction]?.capitalCoord
+        ?: gameState.units.values.firstOrNull { it.faction == gameState.humanFaction }?.position
+        ?: HexCoord(0, 0)
+    val horizSpacingInit = sqrt(3f) * HEX_RADIUS
+    val vertSpacingInit = 1.5f * HEX_RADIUS
+
+    var scale by remember { mutableStateOf(initScale) }
+    var pan by remember {
+        mutableStateOf(
+            Offset(
+                -horizSpacingInit * (initCoord.q + initCoord.r / 2f) * initScale,
+                -vertSpacingInit * initCoord.r * initScale
+            )
+        )
+    }
     var selectedHex by remember { mutableStateOf<HexCoord?>(null) }
     var combatPreviewData by remember { mutableStateOf<Pair<HexCoord, HexCoord>?>(null) }
     var ghostPath by remember { mutableStateOf<List<HexCoord>?>(null) }
