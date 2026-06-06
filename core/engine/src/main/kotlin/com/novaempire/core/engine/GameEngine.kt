@@ -102,18 +102,46 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
 
         if (intent is GameIntent.EndTurn) {
             _isAiThinking.value = true
-            var currentState = _state.value
+            val prevState = _state.value
+            var currentState = prevState
             currentState = reduce(currentState, intent).newState
 
-            // AI Turn Loop — runs until it's the human player's turn again
+            // Notify: human research completed this turn
             val humanFaction = currentState.humanFaction
+            val humanPrev = prevState.playerStates[humanFaction]
+            val humanNext = currentState.playerStates[humanFaction]
+            if (humanPrev?.researchInProgress != null && humanNext?.researchInProgress == null) {
+                val name = com.novaempire.core.domain.models.TechRegistry
+                    .getTech(humanPrev.researchInProgress.techId)?.name
+                    ?: humanPrev.researchInProgress.techId
+                _effects.emit(GameEffect.ShowNotification("RESEARCH COMPLETE: $name", "CYAN"))
+            }
+
+            // Notify: galactic event started (can fire on human's EndTurn if it's the end of a round)
+            if (prevState.activeEvent != currentState.activeEvent &&
+                currentState.activeEvent != com.novaempire.core.domain.models.GalacticEvent.NONE) {
+                _effects.emit(GameEffect.ShowNotification(
+                    "${currentState.activeEvent.displayName}: ${currentState.activeEvent.description}", "ORANGE"
+                ))
+            }
+
+            // AI Turn Loop — runs until it's the human player's turn again
             while (currentState.activeFaction != humanFaction) {
                 currentState = withContext(Dispatchers.Default) {
                     aiStrategy.executeAITurn(currentState, currentState.activeFaction)
                 }
                 currentState = updateVision(currentState)
+                val prevForAI = currentState
                 // Trigger EndTurn to move to next faction
                 currentState = reduce(currentState, GameIntent.EndTurn).newState
+
+                // Galactic event can also start when a new round begins mid-AI loop
+                if (prevForAI.activeEvent != currentState.activeEvent &&
+                    currentState.activeEvent != com.novaempire.core.domain.models.GalacticEvent.NONE) {
+                    _effects.emit(GameEffect.ShowNotification(
+                        "${currentState.activeEvent.displayName}: ${currentState.activeEvent.description}", "ORANGE"
+                    ))
+                }
             }
 
             // Global refresh after full round
@@ -133,10 +161,15 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
             
             val nextState = result.newState
             
-            // Side-effect: Camera shake and sound on combat
+            // Side-effect: Camera shake, sound, and combat summary notification
             val combat = nextState.lastCombatEvent
             if (combat != null && (currentState.lastCombatEvent == null || combat != currentState.lastCombatEvent)) {
                 _effects.emit(GameEffect.ShakeCamera)
+                val attackerName = currentState.units[combat.attackerCoord]?.type?.name ?: "UNIT"
+                val defenderName = currentState.units[combat.defenderCoord]?.type?.name ?: "UNIT"
+                val outcome = if (combat.targetDestroyed) "$attackerName DESTROYED $defenderName"
+                              else "$attackerName HIT $defenderName"
+                _effects.emit(GameEffect.ShowNotification(outcome, "RED"))
                 if (combat.targetDestroyed) {
                     _effects.emit(GameEffect.PlaySound("COMBAT_EXPLOSION"))
                 } else {
