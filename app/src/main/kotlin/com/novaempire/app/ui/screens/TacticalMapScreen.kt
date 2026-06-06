@@ -66,6 +66,7 @@ fun TacticalMapScreen(
     onCapturePlanet: (HexCoord, HexCoord) -> Unit,
     onOpenAcademy: () -> Unit,
     onClearSelection: () -> Unit,
+    centerRequest: Pair<HexCoord, Int>? = null,
     modifier: Modifier = Modifier
 ) {
     val initScale = 0.8f
@@ -166,6 +167,18 @@ fun TacticalMapScreen(
             movingUnitAnim = null
         }
         prevUnits.value = curr
+    }
+
+    // Center map on a coord when requested by SMART FOCUS
+    LaunchedEffect(centerRequest) {
+        centerRequest?.let { (coord, _) ->
+            val hSpacing = sqrt(3f) * HEX_RADIUS
+            val vSpacing = 1.5f * HEX_RADIUS
+            pan = Offset(
+                -hSpacing * (coord.q + coord.r / 2f) * scale,
+                -vSpacing * coord.r * scale
+            )
+        }
     }
 
     val sweepProgress = rememberInfiniteTransition().animateFloat(
@@ -707,13 +720,34 @@ fun TacticalMapScreen(
                                 }
                             }
                             if (unitOnTile != null) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                // Unit name + faction color
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("Unit", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                                    Text(
-                                        "${unitOnTile.type.name} ${unitOnTile.currentHp}/${unitOnTile.type.maxHp}",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = getFactionColor(unitOnTile.faction)
-                                    )
+                                    Text(unitOnTile.type.name, style = MaterialTheme.typography.labelLarge, color = getFactionColor(unitOnTile.faction))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        if (unitOnTile.hasMoved) Text("MOVED", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                                        if (unitOnTile.hasAttacked) Text("FIRED", style = MaterialTheme.typography.labelSmall, color = NeonRed.copy(alpha = 0.8f))
+                                    }
+                                }
+                                // HP bar
+                                val hpFraction = unitOnTile.currentHp.toFloat() / unitOnTile.type.maxHp
+                                val hpColor = when {
+                                    hpFraction > 0.6f -> NeonGreen
+                                    hpFraction > 0.3f -> NeonOrange
+                                    else -> NeonRed
+                                }
+                                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Box(modifier = Modifier.weight(1f).height(6.dp).background(MaterialTheme.colorScheme.surfaceVariant)) {
+                                        Box(modifier = Modifier.fillMaxHeight().fillMaxWidth(hpFraction).background(hpColor))
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("${unitOnTile.currentHp}/${unitOnTile.type.maxHp}", style = MaterialTheme.typography.labelSmall, color = hpColor)
+                                }
+                                // Stats row
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    StatChip("ATK", unitOnTile.type.attack.toString())
+                                    StatChip("RNG", unitOnTile.type.range.toString())
+                                    StatChip("MOV", if (unitOnTile.hasMoved) "0/${unitOnTile.type.movement}" else unitOnTile.type.movement.toString())
                                 }
                             }
                         }
@@ -1049,6 +1083,14 @@ fun DrawScope.drawHexagonPath(
     } else {
         if (brush != null) drawPath(path = path, brush = brush, style = Stroke(width = strokeWidth))
         else drawPath(path = path, color = color, style = Stroke(width = strokeWidth))
+    }
+}
+
+@Composable
+fun StatChip(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+        Text(value, style = MaterialTheme.typography.labelLarge, color = NeonCyan)
     }
 }
 
