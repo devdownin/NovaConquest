@@ -141,7 +141,7 @@ class TurnManagerTest {
         val state = GameState(
             activeFaction = Faction.DOMINION,
             map = map,
-            units = mapOf(planetCoord to GameUnit(UnitType.CRUISER, Faction.DOMINION, planetCoord, UnitType.CRUISER.maxHp)),
+            units = mapOf(planetCoord to GameUnit(type = UnitType.CRUISER, faction = Faction.DOMINION, position = planetCoord, currentHp = UnitType.CRUISER.maxHp)),
             playerStates = mapOf(
                 Faction.DOMINION to PlayerState(
                     Faction.DOMINION,
