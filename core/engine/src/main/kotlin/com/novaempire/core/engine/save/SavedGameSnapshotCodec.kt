@@ -5,6 +5,8 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString
 
+class SaveVersionException(message: String) : Exception(message)
+
 object SavedGameSnapshotCodec {
     const val CURRENT_VERSION = 1
 
@@ -21,7 +23,9 @@ object SavedGameSnapshotCodec {
     fun decode(encoded: String): GameState {
         val state = json.decodeFromString<GameState>(encoded)
         if (state.version > CURRENT_VERSION) {
-            throw Exception("Save file version (${state.version}) is newer than the current engine version ($CURRENT_VERSION). Please update the app.")
+            throw SaveVersionException(
+                "Cette sauvegarde (v${state.version}) requiert une version plus récente de l'app (v$CURRENT_VERSION installée). Mise à jour nécessaire."
+            )
         }
         return state
     }

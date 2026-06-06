@@ -115,7 +115,7 @@ fun TacticalMapScreen(
     val credits = playerState?.credits ?: 0
     val activeFactionColor = getFactionColor(gameState.activeFaction)
 
-    val incomePerTurn = remember(gameState) {
+    val incomePerTurn = remember(gameState.map.tiles, gameState.playerStates, gameState.activeFaction, gameState.activeEvent) {
         val ps = gameState.playerStates[gameState.activeFaction] ?: return@remember 0
         var income = 10
         val ownedPlanets = gameState.map.tiles.values.filter {
@@ -127,12 +127,12 @@ fun TacticalMapScreen(
         income += gameState.activeFaction.bonusCredits
         income
     }
-    val buildingPlanets = remember(gameState) {
+    val buildingPlanets = remember(gameState.playerStates, gameState.activeFaction) {
         gameState.playerStates[gameState.activeFaction]?.buildQueue?.map { it.planetCoord }?.toSet() ?: emptySet()
     }
 
     // Hexes the selected unit can still move to (empty when no unit selected / already moved)
-    val reachableHexes = remember(selectedHex, gameState) {
+    val reachableHexes = remember(selectedHex, gameState.units, gameState.activeEvent, gameState.activeFaction) {
         val sel = selectedHex ?: return@remember emptySet<HexCoord>()
         val unit = gameState.units[sel] ?: return@remember emptySet<HexCoord>()
         if (unit.faction != gameState.activeFaction || unit.hasMoved) return@remember emptySet<HexCoord>()
@@ -141,7 +141,7 @@ fun TacticalMapScreen(
     }
 
     // Enemy units the selected unit can attack this turn
-    val attackableCoords = remember(selectedHex, gameState) {
+    val attackableCoords = remember(selectedHex, gameState.units, gameState.activeFaction) {
         val sel = selectedHex ?: return@remember emptySet<HexCoord>()
         val unit = gameState.units[sel] ?: return@remember emptySet<HexCoord>()
         if (unit.faction != gameState.activeFaction || unit.hasAttacked) return@remember emptySet<HexCoord>()
@@ -380,15 +380,6 @@ fun TacticalMapScreen(
                 val horizSpacing = hexWidth
                 val vertSpacing = 3f / 4f * hexHeight
 
-                // Draw blueprint scanline
-                val scanlineY = sweepProgress.value * size.height
-                drawLine(
-                    color = NeonCyan.copy(alpha = 0.10f),
-                    start = Offset(-size.width, scanlineY - size.height / 2f),
-                    end = Offset(size.width, scanlineY - size.height / 2f),
-                    strokeWidth = 2f
-                )
-
                 // Pre-allocate paints for performance
                 val textPaintVisible = android.graphics.Paint().apply {
                     color = android.graphics.Color.argb((0.15f * 255f).toInt(), 0, 255, 255)
@@ -485,11 +476,7 @@ fun TacticalMapScreen(
 
                         val unit = gameState.units[tile.coord]
                         if (unit != null && (isVisible || unit.faction == gameState.activeFaction)) {
-                            // Skip the animating unit — it is drawn in the overlay canvas
-                            val anim = movingUnitAnim
-                            if (anim == null || anim.id != unit.id) {
-                                drawUnit(x, y, unit)
-                            }
+                            drawUnit(x, y, unit)
                         }
 
                         if (selectedHex == tile.coord) {
@@ -505,9 +492,10 @@ fun TacticalMapScreen(
                 }
             }
 
-            // Dynamic overlay layer — ghost path and combat FX change on every drag
-            // frame / animation tick. Keeping them in a separate Canvas means the
-            // terrain loop above is not re-executed for those high-frequency updates.
+            // Dynamic overlay layer — scanline, ghost path, combat FX, and movement
+            // animation. Keeping them separate from the terrain canvas means the
+            // expensive tile loop above only redraws on actual state changes, not
+            // every animation frame.
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val width = size.width
                 val height = size.height
@@ -519,6 +507,15 @@ fun TacticalMapScreen(
                 val hexHeight = 2f * hexRadius
                 val horizSpacing = hexWidth
                 val vertSpacing = 3f / 4f * hexHeight
+
+                // Blueprint scanline sweep (animation — lives here to avoid terrain redraw)
+                val scanlineY = sweepProgress.value * size.height
+                drawLine(
+                    color = NeonCyan.copy(alpha = 0.10f),
+                    start = Offset(-size.width, scanlineY - size.height / 2f),
+                    end = Offset(size.width, scanlineY - size.height / 2f),
+                    strokeWidth = 2f
+                )
 
                 ghostPath?.let { path ->
                     val start = dragStartHex

@@ -15,8 +15,11 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 data class GameResult(val newState: GameState, val error: String? = null)
 
@@ -93,6 +96,10 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
         intentChannel.trySend(intent)
     }
 
+    fun dispose() {
+        scope.cancel()
+    }
+
     private suspend fun handleIntent(intent: GameIntent) {
         // Prevent player actions while AI is thinking, except for initialization/loading
         if (_isAiThinking.value && intent !is GameIntent.LoadGame && intent !is GameIntent.StartNewGame && intent !is GameIntent.StartNewGameWithSize) {
@@ -135,8 +142,15 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
 
             // AI Turn Loop — runs until it's the human player's turn again
             while (currentState.activeFaction != humanFaction) {
-                currentState = withContext(Dispatchers.Default) {
-                    aiStrategy.executeAITurn(currentState, currentState.activeFaction)
+                currentState = try {
+                    withContext(Dispatchers.Default) {
+                        withTimeout(10_000L) {
+                            aiStrategy.executeAITurn(currentState, currentState.activeFaction)
+                        }
+                    }
+                } catch (e: TimeoutCancellationException) {
+                    _effects.emit(GameEffect.ShowNotification("IA : tour forcé (délai dépassé)", "ORANGE"))
+                    currentState
                 }
                 currentState = updateVision(currentState)
                 val prevForAI = currentState
@@ -199,7 +213,7 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 GameResult(createInitialState(intent.mapSize, intent.archetype))
             }
             is GameIntent.LoadGame -> {
-                GameResult(intent.loadedState)
+                GameResult(updateVision(intent.loadedState))
             }
             is GameIntent.EndTurn -> {
                 GameResult(updateVision(TurnManager.advanceTurn(state)))

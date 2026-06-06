@@ -53,6 +53,8 @@ class MainActivity : ComponentActivity() {
                     val gameViewModel: GameViewModel = viewModel()
                     val gameState by gameViewModel.gameState.collectAsState()
                     var currentScreen by remember { mutableStateOf(AppScreen.MAIN_MENU) }
+                    val snackbarHostState = remember { SnackbarHostState() }
+                    val coroutineScope = rememberCoroutineScope()
 
                     LaunchedEffect(gameState.winner) {
                         if (gameState.winner != null) {
@@ -60,6 +62,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    Box(modifier = Modifier.fillMaxSize()) {
                     when (currentScreen) {
                         AppScreen.MAIN_MENU -> {
                             val hasSave = gameViewModel.hasSavedGame()
@@ -69,8 +72,11 @@ class MainActivity : ComponentActivity() {
                                     currentScreen = AppScreen.FACTION_SELECTION
                                 },
                                 onResumeGameClick = {
-                                    gameViewModel.loadGame { success ->
+                                    gameViewModel.loadGame { success, error ->
                                         if (success) currentScreen = AppScreen.GAME
+                                        else if (error != null) coroutineScope.launch {
+                                            snackbarHostState.showSnackbar(error, duration = SnackbarDuration.Long)
+                                        }
                                     }
                                 },
                                 onSettingsClick = { currentScreen = AppScreen.SETTINGS }
@@ -139,6 +145,11 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
+                    SnackbarHost(
+                        hostState = snackbarHostState,
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                    )
+                    } // Box
                 }
             }
         }
