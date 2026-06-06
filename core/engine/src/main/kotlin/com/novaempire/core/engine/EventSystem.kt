@@ -11,7 +11,8 @@ object EventSystem {
         var duration = state.eventDurationRemaining
 
         if (activeEvent != GalacticEvent.NONE) {
-            duration--
+            val anomalyBonus = if (state.playerStates.values.any { it.techUnlocked.contains("tech_anomaly_analysis") }) 1 else 0
+            duration -= (1 + anomalyBonus)
             if (duration <= 0) activeEvent = GalacticEvent.NONE
         } else if (rng.nextDouble() < 0.20) {
             val events = GalacticEvent.values().filter { it != GalacticEvent.NONE }

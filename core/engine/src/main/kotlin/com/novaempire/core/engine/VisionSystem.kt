@@ -29,7 +29,8 @@ object VisionSystem {
                 UnitType.DREADNOUGHT -> 3
                 UnitType.DEFENSE_PLATFORM -> 2
             }
-            val range = max(1, ((baseRange + visionBonus) * mult).toInt())
+            val scoutBonus = if (unit.type == UnitType.SCOUT) bonusProvider.scoutRangeBonus(faction) else 0
+            val range = max(1, ((baseRange + visionBonus + scoutBonus) * mult).toInt())
             visible.addAll(getVisibleHexesFrom(state, unit.position, range))
         }
 

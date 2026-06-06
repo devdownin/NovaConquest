@@ -336,6 +336,18 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 newTiles[intent.coord] = tile.copy(systemLevel = tile.systemLevel + 1)
                 GameResult(state.copy(playerStates = newPlayerStates, map = state.map.copy(tiles = newTiles)))
             }
+            is GameIntent.CancelBuild -> {
+                val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
+                val order = playerState.buildQueue.firstOrNull { it.planetCoord == intent.planetCoord }
+                    ?: return GameResult(state, "No build order at this location.")
+                val refund = order.unitType.cost / 2
+                val newPlayerStates = state.playerStates.toMutableMap()
+                newPlayerStates[state.activeFaction] = playerState.copy(
+                    credits = playerState.credits + refund,
+                    buildQueue = playerState.buildQueue.filter { it.planetCoord != intent.planetCoord }
+                )
+                GameResult(state.copy(playerStates = newPlayerStates))
+            }
         }
     }
 
@@ -383,4 +395,5 @@ sealed class GameIntent {
     data class SiegePlanet(val attackerCoord: HexCoord, val planetCoord: HexCoord) : GameIntent()
     data class CapturePlanet(val unitCoord: HexCoord, val planetCoord: HexCoord) : GameIntent()
     data class UpgradeSystem(val coord: HexCoord) : GameIntent()
+    data class CancelBuild(val planetCoord: HexCoord) : GameIntent()
 }

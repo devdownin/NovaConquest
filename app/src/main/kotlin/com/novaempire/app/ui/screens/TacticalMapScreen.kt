@@ -115,6 +115,22 @@ fun TacticalMapScreen(
     val credits = playerState?.credits ?: 0
     val activeFactionColor = getFactionColor(gameState.activeFaction)
 
+    val incomePerTurn = remember(gameState) {
+        val ps = gameState.playerStates[gameState.activeFaction] ?: return@remember 0
+        var income = 10
+        val ownedPlanets = gameState.map.tiles.values.filter {
+            it.terrain == TerrainType.PLANET && it.owner == gameState.activeFaction
+        }
+        income += ownedPlanets.sumOf { 5 + it.systemLevel * 2 }
+        if (ps.recruitedHeroes.contains(HeroRegistry.ELARA)) income += (income * 0.10).toInt() + 2
+        if (gameState.activeEvent == GalacticEvent.ECONOMIC_BOOM) income += 3
+        income += gameState.activeFaction.bonusCredits
+        income
+    }
+    val buildingPlanets = remember(gameState) {
+        gameState.playerStates[gameState.activeFaction]?.buildQueue?.map { it.planetCoord }?.toSet() ?: emptySet()
+    }
+
     // Hexes the selected unit can still move to (empty when no unit selected / already moved)
     val reachableHexes = remember(selectedHex, gameState) {
         val sel = selectedHex ?: return@remember emptySet<HexCoord>()
@@ -455,6 +471,18 @@ fun TacticalMapScreen(
                             else -> {}
                         }
 
+                        // Production indicator: small orange square on planet with active build order
+                        if (tile.terrain == TerrainType.PLANET && buildingPlanets.contains(tile.coord)) {
+                            val iconSize = hexRadius * 0.22f
+                            val iconX = x + hexRadius * 0.45f
+                            val iconY = y - hexRadius * 0.55f
+                            drawRect(
+                                color = NeonOrange.copy(alpha = 0.9f),
+                                topLeft = Offset(iconX - iconSize / 2f, iconY - iconSize / 2f),
+                                size = Size(iconSize, iconSize)
+                            )
+                        }
+
                         val unit = gameState.units[tile.coord]
                         if (unit != null && (isVisible || unit.faction == gameState.activeFaction)) {
                             // Skip the animating unit — it is drawn in the overlay canvas
@@ -613,12 +641,15 @@ fun TacticalMapScreen(
                 horizontalArrangement = Arrangement.spacedBy(32.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Credits (real value)
+                // Credits + income preview
                 IndustrialPanel(modifier = Modifier.padding(vertical = 4.dp), backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)) {
                     Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Star, contentDescription = null, tint = NeonOrange, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("$credits C", style = MaterialTheme.typography.labelLarge)
+                        Column {
+                            Text("$credits C", style = MaterialTheme.typography.labelLarge)
+                            Text("+$incomePerTurn C/turn", style = MaterialTheme.typography.labelSmall, color = NeonGreen)
+                        }
                     }
                 }
 

@@ -312,6 +312,9 @@ fun GameContainer(
                             onBuildUnit = onBuildUnit,
                             onUpgradeSystem = { coord ->
                                 gameViewModel.dispatch(GameIntent.UpgradeSystem(coord))
+                            },
+                            onCancelBuild = { coord ->
+                                gameViewModel.dispatch(GameIntent.CancelBuild(coord))
                             }
                         )
                     }

@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.theme.NeonCyan
@@ -31,6 +32,7 @@ enum class TechNodeState { UNLOCKED, RESEARCHING, AVAILABLE, LOCKED }
 data class UiTechNode(
     val id: String,
     val name: String,
+    val description: String = "",
     val cost: Int,
     val state: TechNodeState,
     val canAfford: Boolean,
@@ -67,6 +69,7 @@ fun TechTreeScreen(
         return UiTechNode(
             id = tech.id,
             name = tech.name,
+            description = tech.description,
             cost = cost,
             state = nodeState,
             canAfford = credits >= cost,
@@ -187,6 +190,15 @@ fun TechNodeCard(node: UiTechNode, onResearchClick: () -> Unit) {
                 style = MaterialTheme.typography.labelLarge,
                 color = if (node.state == TechNodeState.UNLOCKED) NeonCyan else MaterialTheme.colorScheme.onSurface
             )
+            if (node.description.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = node.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center
+                )
+            }
             when (node.state) {
                 TechNodeState.AVAILABLE -> {
                     Spacer(modifier = Modifier.height(12.dp))
