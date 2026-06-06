@@ -38,14 +38,15 @@ class IntentReducerTest {
     // ── ResearchTech ──────────────────────────────────────────────────────────
 
     @Test
-    fun researchTechUnlocksAndDeductsCredits() = runBlocking {
+    fun researchTechQueuesAndDeductsCredits() = runBlocking {
         val e = engine()
         val creditsBefore = e.state.value.playerStates[Faction.DOMINION]!!.credits
         // tech_hull_plating: tier-1 military, no prerequisite, base cost 4
         e.processIntent(GameIntent.ResearchTech("tech_hull_plating"))
         delay(100)
         val player = e.state.value.playerStates[Faction.DOMINION]!!
-        assertTrue(player.techUnlocked.contains("tech_hull_plating"))
+        // ResearchTech queues the tech into researchInProgress; credits are deducted immediately
+        assertEquals("tech_hull_plating", player.researchInProgress?.techId)
         assertEquals(creditsBefore - 4, player.credits)
     }
 
@@ -61,15 +62,17 @@ class IntentReducerTest {
     // ── BuildUnit ─────────────────────────────────────────────────────────────
 
     @Test
-    fun buildUnitSpawnsAndDeductsCredits() = runBlocking {
+    fun buildUnitQueuesAndDeductsCredits() = runBlocking {
         val e = engine()
         val before = e.state.value
         val creditsBefore = before.playerStates[Faction.DOMINION]!!.credits
-        val unitsBefore = before.units.size
         e.processIntent(GameIntent.BuildUnit(UnitType.SCOUT, null))
         delay(100)
         val after = e.state.value
-        assertEquals(unitsBefore + 1, after.units.size)
+        // BuildUnit enqueues the order; credits are deducted immediately
+        val queue = after.playerStates[Faction.DOMINION]!!.buildQueue
+        assertEquals(1, queue.size)
+        assertEquals(UnitType.SCOUT, queue.first().unitType)
         assertEquals(creditsBefore - UnitType.SCOUT.cost, after.playerStates[Faction.DOMINION]!!.credits)
     }
 
@@ -83,10 +86,10 @@ class IntentReducerTest {
         }
         e.processIntent(GameIntent.LoadGame(broke))
         delay(50)
-        val unitsBefore = e.state.value.units.size
         e.processIntent(GameIntent.BuildUnit(UnitType.SCOUT, null))
         delay(100)
-        assertEquals(unitsBefore, e.state.value.units.size)
+        // Rejected: buildQueue must stay empty when credits are insufficient
+        assertTrue(e.state.value.playerStates[Faction.DOMINION]!!.buildQueue.isEmpty())
     }
 
     // ── ChangeRelation ────────────────────────────────────────────────────────
