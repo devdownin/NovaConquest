@@ -1354,8 +1354,9 @@ fun TerrainTooltipOverlay(
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Text("Niveau ${tile.systemLevel}", style = MaterialTheme.typography.labelSmall, color = NeonOrange)
                         Text("+$income C/tour", style = MaterialTheme.typography.labelSmall, color = NeonGreen)
-                        if (tile.owner != null) {
-                            Text(tile.owner.name, style = MaterialTheme.typography.labelSmall, color = getFactionColor(tile.owner))
+                        val owner = tile.owner
+                        if (owner != null) {
+                            Text(owner.name, style = MaterialTheme.typography.labelSmall, color = getFactionColor(owner))
                         } else {
                             Text("NEUTRE", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                         }
