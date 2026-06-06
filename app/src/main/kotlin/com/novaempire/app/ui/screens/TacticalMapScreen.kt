@@ -3,6 +3,7 @@ package com.novaempire.app.ui.screens
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -13,6 +14,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -67,6 +69,7 @@ fun TacticalMapScreen(
     onOpenAcademy: () -> Unit,
     onClearSelection: () -> Unit,
     centerRequest: Pair<HexCoord, Int>? = null,
+    initialSelectedHex: HexCoord? = null,
     modifier: Modifier = Modifier
 ) {
     val initScale = 0.8f
@@ -85,8 +88,10 @@ fun TacticalMapScreen(
             )
         )
     }
-    var selectedHex by remember { mutableStateOf<HexCoord?>(null) }
+    var selectedHex by remember { mutableStateOf(initialSelectedHex) }
     var combatPreviewData by remember { mutableStateOf<Pair<HexCoord, HexCoord>?>(null) }
+    var siegePreviewData by remember { mutableStateOf<Triple<HexCoord, HexCoord, Boolean>?>(null) }
+    var terrainTooltipCoord by remember { mutableStateOf<HexCoord?>(null) }
     var ghostPath by remember { mutableStateOf<List<HexCoord>?>(null) }
     var dragStartHex by remember { mutableStateOf<HexCoord?>(null) }
     var currentHoveredHex by remember { mutableStateOf<HexCoord?>(null) }
@@ -197,7 +202,7 @@ fun TacticalMapScreen(
         }
     }
 
-    val sweepProgress = rememberInfiniteTransition().animateFloat(
+    val sweepProgress = rememberInfiniteTransition(label = "Scanline").animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -205,6 +210,15 @@ fun TacticalMapScreen(
             repeatMode = RepeatMode.Restart
         ),
         label = "ScanlineSweep"
+    )
+    val pulseProgress = rememberInfiniteTransition(label = "UnitPulse").animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "UnitPulse"
     )
 
     Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -228,7 +242,18 @@ fun TacticalMapScreen(
                     translationY = pan.y
                 }
                 .pointerInput(Unit) {
-                    detectTapGestures { offset ->
+                    detectTapGestures(
+                        onLongPress = { offset ->
+                            val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f)
+                            val gs = currentGameState
+                            val explored = gs.playerStates[gs.activeFaction]?.exploredHexes ?: emptySet()
+                            if (gs.map.tiles.containsKey(coord) && explored.contains(coord)) {
+                                terrainTooltipCoord = coord
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            }
+                        }
+                    ) { offset ->
+                        terrainTooltipCoord = null
                         val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f)
                         val gs = currentGameState
                         val explored = gs.playerStates[gs.activeFaction]?.exploredHexes ?: emptySet()
@@ -255,13 +280,12 @@ fun TacticalMapScreen(
                                     selectedHex = null
                                     onClearSelection()
                                 }
-                                // Adjacent enemy planet → siege or capture
+                                // Adjacent enemy planet → show siege/capture confirmation
                                 tappedUnit == null && !prevUnit.hasAttacked &&
                                 tappedTile?.terrain == TerrainType.PLANET &&
                                 tappedTile.owner != null && tappedTile.owner != gs.activeFaction &&
                                 prev.distanceTo(coord) == 1 -> {
-                                    if (tappedTile.systemLevel <= 0) currentOnCapturePlanet(prev, coord)
-                                    else currentOnSiegePlanet(prev, coord)
+                                    siegePreviewData = Triple(prev, coord, tappedTile.systemLevel <= 0)
                                     selectedHex = null
                                     onClearSelection()
                                 }
@@ -314,17 +338,13 @@ fun TacticalMapScreen(
                                     // Enemy unit → combat preview
                                     targetUnit != null && targetUnit.faction != gs.activeFaction ->
                                         combatPreviewData = Pair(start, targetCoord)
-                                    // Enemy planet adjacent → siege or capture
+                                    // Enemy planet adjacent → show siege/capture confirmation
                                     unit != null && !unit.hasAttacked &&
                                         targetUnit == null &&
                                         targetTile?.terrain == TerrainType.PLANET &&
                                         targetTile.owner != null && targetTile.owner != gs.activeFaction &&
                                         start.distanceTo(targetCoord) == 1 -> {
-                                        if (targetTile.systemLevel <= 0) {
-                                            currentOnCapturePlanet(start, targetCoord)
-                                        } else {
-                                            currentOnSiegePlanet(start, targetCoord)
-                                        }
+                                        siegePreviewData = Triple(start, targetCoord, targetTile.systemLevel <= 0)
                                     }
                                     // Neutral/owned/empty hex → move
                                     targetUnit == null -> currentOnMoveUnit(start, targetCoord)
@@ -517,6 +537,22 @@ fun TacticalMapScreen(
                     strokeWidth = 2f
                 )
 
+                // Pulsing halo on units that still have actions available this turn
+                val pulseAlpha = 0.25f + pulseProgress.value * 0.45f
+                val pulseStroke = 2f + pulseProgress.value * 2.5f
+                gameState.units.values.forEach { unit ->
+                    if (unit.faction == gameState.activeFaction && !unit.hasMoved && !unit.hasAttacked) {
+                        val ux = centerX + horizSpacing * (unit.position.q + unit.position.r / 2f)
+                        val uy = centerY + vertSpacing * unit.position.r
+                        drawCircle(
+                            color = NeonGreen.copy(alpha = pulseAlpha),
+                            radius = hexRadius * 0.44f,
+                            center = Offset(ux, uy),
+                            style = Stroke(width = pulseStroke)
+                        )
+                    }
+                }
+
                 ghostPath?.let { path ->
                     val start = dragStartHex
                     if (path.isNotEmpty() && start != null) {
@@ -629,6 +665,15 @@ fun TacticalMapScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onOpenAcademy) {
                     Icon(imageVector = Icons.Default.Star, contentDescription = "Hero Academy", tint = NeonCyan)
+                }
+                IconButton(onClick = {
+                    scale = initScale
+                    pan = Offset(
+                        -horizSpacingInit * (initCoord.q + initCoord.r / 2f) * initScale,
+                        -vertSpacingInit * initCoord.r * initScale
+                    )
+                }) {
+                    Icon(imageVector = Icons.Default.Refresh, contentDescription = "Reset view", tint = NeonCyan)
                 }
                 Spacer(modifier = Modifier.width(16.dp))
                 Text("NOVA CONQUEST", style = MaterialTheme.typography.headlineMedium, color = NeonCyan)
@@ -807,7 +852,7 @@ fun TacticalMapScreen(
                             if (enemyPlanet.systemLevel > 0) {
                                 IndustrialPanel(modifier = Modifier.size(48.dp)) {
                                     IconButton(
-                                        onClick = { onSiegePlanet(coord, enemyPlanet.coord) },
+                                        onClick = { siegePreviewData = Triple(coord, enemyPlanet.coord, false) },
                                         modifier = Modifier.fillMaxSize()
                                     ) {
                                         Icon(Icons.Default.PlayArrow, contentDescription = "Siege Planet", tint = NeonOrange)
@@ -816,7 +861,7 @@ fun TacticalMapScreen(
                             } else {
                                 IndustrialPanel(modifier = Modifier.size(48.dp)) {
                                     IconButton(
-                                        onClick = { onCapturePlanet(coord, enemyPlanet.coord) },
+                                        onClick = { siegePreviewData = Triple(coord, enemyPlanet.coord, true) },
                                         modifier = Modifier.fillMaxSize()
                                     ) {
                                         Icon(Icons.Default.CheckCircle, contentDescription = "Capture Planet", tint = NeonGreen)
@@ -849,6 +894,132 @@ fun TacticalMapScreen(
             } else {
                 // Stale preview (unit removed by AI between preview and confirm) — close it
                 combatPreviewData = null
+            }
+        }
+
+        // Terrain tooltip (long-press)
+        terrainTooltipCoord?.let { coord ->
+            val tile = gameState.map.tiles[coord]
+            if (tile != null) {
+                TerrainTooltipOverlay(
+                    coord = coord,
+                    tile = tile,
+                    onDismiss = { terrainTooltipCoord = null }
+                )
+            } else {
+                terrainTooltipCoord = null
+            }
+        }
+
+        // Siege / Capture confirmation overlay
+        siegePreviewData?.let { (attackerCoord, planetCoord, isCapture) ->
+            val attacker = gameState.units[attackerCoord]
+            val tile = gameState.map.tiles[planetCoord]
+            if (attacker != null && tile != null) {
+                val hasSiegeProtocols = playerState?.techUnlocked?.contains("tech_siege_protocols") == true
+                val hasTerraforming = playerState?.techUnlocked?.contains("tech_terraforming") == true
+                SiegePreviewOverlay(
+                    attackerType = attacker.type,
+                    attackerHp = attacker.currentHp,
+                    planetLevel = tile.systemLevel,
+                    isCapture = isCapture,
+                    hasSiegeProtocols = hasSiegeProtocols,
+                    hasTerraforming = hasTerraforming,
+                    onConfirm = {
+                        if (isCapture) onCapturePlanet(attackerCoord, planetCoord)
+                        else onSiegePlanet(attackerCoord, planetCoord)
+                        siegePreviewData = null
+                    },
+                    onCancel = { siegePreviewData = null }
+                )
+            } else {
+                siegePreviewData = null
+            }
+        }
+    }
+}
+
+@Composable
+fun SiegePreviewOverlay(
+    attackerType: UnitType,
+    attackerHp: Int,
+    planetLevel: Int,
+    isCapture: Boolean,
+    hasSiegeProtocols: Boolean,
+    hasTerraforming: Boolean,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val siegeDamage = (if (attackerType == UnitType.BATTLESHIP || attackerType == UnitType.DREADNOUGHT) 2 else 1) +
+        (if (hasSiegeProtocols) 1 else 0)
+    val retaliation = planetLevel * 2
+    val hpAfter = maxOf(0, attackerHp - retaliation)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.72f)),
+        contentAlignment = Alignment.Center
+    ) {
+        IndustrialPanel(modifier = Modifier.width(320.dp)) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text(
+                    text = if (isCapture) "CAPTURE PLANÉTAIRE" else "ASSAUT ORBITAL",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = if (isCapture) NeonGreen else NeonOrange
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                if (isCapture) {
+                    Text(
+                        "Planète sans défense (niveau 0). Elle rejoint votre empire.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Niveau de départ", style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
+                        Text("${if (hasTerraforming) 2 else 1}", style = MaterialTheme.typography.bodyLarge, color = NeonCyan)
+                    }
+                } else {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Dégâts à la planète", style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
+                        Text("-$siegeDamage niveaux", style = MaterialTheme.typography.bodyLarge, color = NeonOrange)
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Représailles orbitales", style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
+                        Text("-$retaliation PV", style = MaterialTheme.typography.bodyLarge, color = NeonRed)
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("PV de votre vaisseau", style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
+                        Text(
+                            "$attackerHp → $hpAfter",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (hpAfter <= 0) NeonRed else NeonCyan
+                        )
+                    }
+                    if (hpAfter <= 0) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("⚠ Vaisseau détruit par les défenses", style = MaterialTheme.typography.bodySmall, color = NeonRed)
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    IndustrialButton(
+                        text = "ANNULER",
+                        onClick = onCancel,
+                        modifier = Modifier.weight(1f),
+                        color = TextSecondary
+                    )
+                    IndustrialButton(
+                        text = "CONFIRMER",
+                        onClick = onConfirm,
+                        modifier = Modifier.weight(1f),
+                        isPrimary = true,
+                        color = if (isCapture) NeonGreen else NeonOrange
+                    )
+                }
             }
         }
     }
@@ -1125,6 +1296,75 @@ fun StatChip(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
         Text(value, style = MaterialTheme.typography.labelLarge, color = NeonCyan)
+    }
+}
+
+@Composable
+fun TerrainTooltipOverlay(
+    coord: HexCoord,
+    tile: HexTile,
+    onDismiss: () -> Unit
+) {
+    val description = when (tile.terrain) {
+        TerrainType.EMPTY -> "Espace vide. Aucun effet spécial."
+        TerrainType.PLANET -> "Planète habitée. Génère des crédits. Peut être capturée ou assiégée."
+        TerrainType.ASTEROIDS -> "Champ d'astéroïdes. Impassable."
+        TerrainType.NEBULA -> "Nébuleuse. Bloque la vision. Les flottes peuvent la traverser."
+        TerrainType.BLACK_HOLE -> "Trou noir. Danger extrême — les vaisseaux subissent des dommages."
+        TerrainType.WORMHOLE -> "Ver de l'espace. Permet des déplacements longue distance."
+        TerrainType.PLASMA_CLOUD -> "Nuage de plasma. Bloque la vision et ralentit les déplacements."
+        TerrainType.ION_STORM -> "Tempête ionique. Réduit la portée de déplacement de 1."
+        TerrainType.ANOMALY -> "Anomalie galactique. Effets imprévisibles chaque tour."
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        IndustrialPanel(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 32.dp)
+                .clickable(enabled = false, onClick = {})
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        tile.terrain.name.replace('_', ' '),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = NeonCyan
+                    )
+                    Text(
+                        "SECTEUR ${coord.q},${coord.r}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(description, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+                if (tile.terrain == TerrainType.PLANET) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    val income = 5 + tile.systemLevel * 2
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Text("Niveau ${tile.systemLevel}", style = MaterialTheme.typography.labelSmall, color = NeonOrange)
+                        Text("+$income C/tour", style = MaterialTheme.typography.labelSmall, color = NeonGreen)
+                        if (tile.owner != null) {
+                            Text(tile.owner.name, style = MaterialTheme.typography.labelSmall, color = getFactionColor(tile.owner))
+                        } else {
+                            Text("NEUTRE", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Appuyez pour fermer", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+            }
+        }
     }
 }
 
