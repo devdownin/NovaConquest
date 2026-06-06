@@ -117,10 +117,11 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
             val humanFaction = currentState.humanFaction
             val humanPrev = prevState.playerStates[humanFaction]
             val humanNext = currentState.playerStates[humanFaction]
-            if (humanPrev?.researchInProgress != null && humanNext?.researchInProgress == null) {
+            val prevResearch = humanPrev?.researchInProgress
+            if (prevResearch != null && humanNext?.researchInProgress == null) {
                 val name = com.novaempire.core.domain.models.TechRegistry
-                    .getTech(humanPrev.researchInProgress.techId)?.name
-                    ?: humanPrev.researchInProgress.techId
+                    .getTech(prevResearch.techId)?.name
+                    ?: prevResearch.techId
                 _effects.emit(GameEffect.ShowNotification("RESEARCH COMPLETE: $name", "CYAN"))
             }
 

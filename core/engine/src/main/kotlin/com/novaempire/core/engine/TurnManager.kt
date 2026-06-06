@@ -91,8 +91,7 @@ object TurnManager {
 
         // Tick research for the faction that just ended its turn
         val researchingState = nextState.playerStates[state.activeFaction]
-        if (researchingState?.researchInProgress != null) {
-            val prog = researchingState.researchInProgress
+        researchingState?.researchInProgress?.let { prog ->
             val newTurns = prog.turnsRemaining - 1
             val updatedResearcher = if (newTurns <= 0) {
                 researchingState.copy(
