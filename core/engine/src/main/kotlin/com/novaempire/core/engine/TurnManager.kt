@@ -67,11 +67,12 @@ object TurnManager {
                     val candidates = listOf(order.planetCoord) + gridMap.getNeighbors(order.planetCoord)
                     val spawnHex = candidates.firstOrNull { stateAfterBuilds.units[it] == null && gridMap.isPassable(it) }
                     if (spawnHex != null) {
-                        val newUnit = GameUnit(
+                        val hasHullPlating = stateAfterBuilds.playerStates[state.activeFaction]?.techUnlocked?.contains("tech_hull_plating") == true
+                    val newUnit = GameUnit(
                             type = order.unitType,
                             faction = state.activeFaction,
                             position = spawnHex,
-                            currentHp = order.unitType.maxHp
+                            currentHp = order.unitType.maxHp + if (hasHullPlating) 3 else 0
                         )
                         val updatedUnits = stateAfterBuilds.units.toMutableMap()
                         updatedUnits[spawnHex] = newUnit

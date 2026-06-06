@@ -18,7 +18,8 @@ object CombatResolver {
         val hasVance = attackerPlayer?.recruitedHeroes?.contains(com.novaempire.core.domain.models.HeroRegistry.VANCE) == true
         val heroBonus = if (hasVance) max(1, (attacker.type.attack * 0.15).toInt()) else 0
         val factionBonus = if (attacker.faction.bonusAttack > 0) max(1, (attacker.type.attack * attacker.faction.bonusAttack).toInt()) else 0
-        val totalBonus = heroBonus + factionBonus
+        val plasmaBonus = if (attackerPlayer?.techUnlocked?.contains("tech_plasma_weapons") == true) 2 else 0
+        val totalBonus = heroBonus + factionBonus + plasmaBonus
 
         // 1. Attacker deals damage
         val damageToDefender = attacker.type.attack + totalBonus
@@ -61,7 +62,8 @@ object CombatResolver {
         val unit = state.units[attackerCoord] ?: return state
         val tile = state.map.tiles[planetCoord] ?: return state
 
-        val siegeDamage = if (unit.type == UnitType.BATTLESHIP || unit.type == UnitType.DREADNOUGHT) 2 else 1
+        val hasSiegeProtocols = state.playerStates[unit.faction]?.techUnlocked?.contains("tech_siege_protocols") == true
+        val siegeDamage = (if (unit.type == UnitType.BATTLESHIP || unit.type == UnitType.DREADNOUGHT) 2 else 1) + (if (hasSiegeProtocols) 1 else 0)
         val newLevel = max(0, tile.systemLevel - siegeDamage)
 
         val updatedUnits = state.units.toMutableMap()
@@ -89,8 +91,11 @@ object CombatResolver {
         val updatedUnits = state.units.toMutableMap()
         updatedUnits[unitCoord] = unit.copy(hasAttacked = true)
 
+        val hasTerraforming = state.playerStates[unit.faction]?.techUnlocked?.contains("tech_terraforming") == true
+        val startLevel = if (hasTerraforming) 2 else 1
+
         val newTiles = state.map.tiles.toMutableMap()
-        newTiles[planetCoord] = tile.copy(owner = unit.faction, systemLevel = 1)
+        newTiles[planetCoord] = tile.copy(owner = unit.faction, systemLevel = startLevel)
 
         return state.copy(units = updatedUnits, map = state.map.copy(tiles = newTiles))
     }

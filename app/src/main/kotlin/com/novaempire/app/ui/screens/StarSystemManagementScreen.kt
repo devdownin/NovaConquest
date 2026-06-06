@@ -36,6 +36,7 @@ fun StarSystemManagementScreen(
     gameState: GameState,
     onBuildUnit: (UnitType, HexCoord) -> Unit,
     onUpgradeSystem: (HexCoord) -> Unit,
+    onCancelBuild: (HexCoord) -> Unit = {},
     onClose: () -> Unit
 ) {
     val playerState = gameState.playerStates[gameState.activeFaction]
@@ -100,7 +101,7 @@ fun StarSystemManagementScreen(
                             canUpgrade = canUpgrade,
                             onUpgrade = { onUpgradeSystem(coord) }
                         )
-                        ShipyardPanel(coord, playerState?.buildQueue ?: emptyList(), onBuildUnit)
+                        ShipyardPanel(coord, playerState?.buildQueue ?: emptyList(), onBuildUnit, onCancelBuild)
                     }
                 } else {
                     Row(
@@ -120,7 +121,7 @@ fun StarSystemManagementScreen(
                             )
                         }
                         Column(modifier = Modifier.weight(1.5f)) {
-                            ShipyardPanel(coord, playerState?.buildQueue ?: emptyList(), onBuildUnit)
+                            ShipyardPanel(coord, playerState?.buildQueue ?: emptyList(), onBuildUnit, onCancelBuild)
                         }
                     }
                 }
@@ -190,7 +191,7 @@ fun InfrastructurePanel(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ShipyardPanel(coord: HexCoord, buildQueue: List<BuildOrder>, onBuildUnit: (UnitType, HexCoord) -> Unit) {
+fun ShipyardPanel(coord: HexCoord, buildQueue: List<BuildOrder>, onBuildUnit: (UnitType, HexCoord) -> Unit, onCancelBuild: (HexCoord) -> Unit = {}) {
     val activeOrder = buildQueue.firstOrNull { it.planetCoord == coord }
     IndustrialPanel(modifier = Modifier.fillMaxHeight()) {
         Column(modifier = Modifier.padding(24.dp).fillMaxHeight()) {
@@ -220,6 +221,13 @@ fun ShipyardPanel(coord: HexCoord, buildQueue: List<BuildOrder>, onBuildUnit: (U
                         }
                     }
                 }
+                Spacer(modifier = Modifier.height(12.dp))
+                IndustrialButton(
+                    text = "CANCEL (${activeOrder.unitType.cost / 2} C REFUND)",
+                    onClick = { onCancelBuild(coord) },
+                    color = com.novaempire.app.ui.theme.NeonRed,
+                    isPrimary = false
+                )
             } else {
                 Text("AVAILABLE BLUEPRINTS", style = MaterialTheme.typography.labelLarge, color = TextSecondary, modifier = Modifier.padding(bottom = 16.dp))
 
