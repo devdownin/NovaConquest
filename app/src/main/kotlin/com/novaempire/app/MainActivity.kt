@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -12,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.novaempire.app.audio.AudioManager
@@ -291,7 +293,30 @@ fun GameContainer(
             }
         }
     ) { paddingValues ->
-        Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+        val tabs = GameTab.values()
+        Box(
+            modifier = Modifier
+                .padding(paddingValues)
+                .fillMaxSize()
+                .then(
+                    // Swipe left/right to change tabs on non-map screens; on the map
+                    // screen the map's own pan gesture takes precedence.
+                    if (currentTab != GameTab.MAP) Modifier.pointerInput(currentTab) {
+                        var accumulated = 0f
+                        detectHorizontalDragGestures(
+                            onDragEnd = {
+                                val idx = tabs.indexOf(currentTab)
+                                when {
+                                    accumulated < -80f && idx < tabs.size - 1 -> currentTab = tabs[idx + 1]
+                                    accumulated > 80f && idx > 0 -> currentTab = tabs[idx - 1]
+                                }
+                                accumulated = 0f
+                            },
+                            onDragCancel = { accumulated = 0f }
+                        ) { _, dragAmount -> accumulated += dragAmount }
+                    } else Modifier
+                )
+        ) {
             when (currentTab) {
                 GameTab.MAP -> {
                     TacticalMapScreen(
