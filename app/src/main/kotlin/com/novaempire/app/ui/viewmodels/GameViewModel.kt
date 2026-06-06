@@ -92,6 +92,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
+        engine.dispose()
         AudioManager.release()
     }
 

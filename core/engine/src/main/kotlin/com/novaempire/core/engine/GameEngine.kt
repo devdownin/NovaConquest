@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -91,6 +92,10 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
 
     fun processIntent(intent: GameIntent) {
         intentChannel.trySend(intent)
+    }
+
+    fun dispose() {
+        scope.cancel()
     }
 
     private suspend fun handleIntent(intent: GameIntent) {
@@ -199,7 +204,7 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 GameResult(createInitialState(intent.mapSize, intent.archetype))
             }
             is GameIntent.LoadGame -> {
-                GameResult(intent.loadedState)
+                GameResult(updateVision(intent.loadedState))
             }
             is GameIntent.EndTurn -> {
                 GameResult(updateVision(TurnManager.advanceTurn(state)))

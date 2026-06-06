@@ -1,5 +1,6 @@
 package com.novaempire.core.domain.state
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.GalacticEvent
@@ -28,7 +29,7 @@ data class GameState(
     val eventDurationRemaining: Int = 0,
     val winner: Faction? = null,
     val victoryReason: String? = null,
-    val lastCombatEvent: CombatEvent? = null
+    @Transient val lastCombatEvent: CombatEvent? = null
 )
 
 @Serializable
@@ -45,7 +46,7 @@ data class PlayerState(
     val researchInProgress: ResearchProgress? = null,
     val buildQueue: List<BuildOrder> = emptyList(),
     val exploredHexes: Set<HexCoord> = emptySet(),
-    val visibleHexes: Set<HexCoord> = emptySet(),
+    @Transient val visibleHexes: Set<HexCoord> = emptySet(),
     val capitalCoord: HexCoord? = null,
     val recruitedHeroes: Set<String> = emptySet(),
     val relations: Map<Faction, com.novaempire.core.domain.models.DiplomaticRelation> = emptyMap()
