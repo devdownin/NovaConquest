@@ -75,7 +75,7 @@ fun TacticalMapScreen(
     val initScale = 0.8f
     val initCoord = gameState.playerStates[gameState.humanFaction]?.capitalCoord
         ?: gameState.units.values.firstOrNull { it.faction == gameState.humanFaction }?.position
-        ?: HexCoord(0, 0)
+        ?: HexCoord(0, 0, 0)
     val horizSpacingInit = sqrt(3f) * HEX_RADIUS
     val vertSpacingInit = 1.5f * HEX_RADIUS
 
