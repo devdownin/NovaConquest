@@ -11,6 +11,7 @@ import com.novaempire.core.engine.save.SaveRepository
 import com.novaempire.app.audio.AudioManager
 import com.novaempire.app.audio.SoundType
 import com.novaempire.core.engine.GameEffect
+import com.novaempire.core.engine.save.LoadResult
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -98,14 +99,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun hasSavedGame(): Boolean = saveRepository.hasSavedGame()
 
-    fun loadGame(onResult: (Boolean) -> Unit) {
+    fun loadGame(onResult: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
-            val state = withContext(Dispatchers.IO) { saveRepository.loadLatestGame() }
-            if (state != null) {
-                engine.processIntent(GameIntent.LoadGame(state))
-                onResult(true)
-            } else {
-                onResult(false)
+            when (val result = withContext(Dispatchers.IO) { saveRepository.loadLatestGame() }) {
+                is LoadResult.Success -> {
+                    engine.processIntent(GameIntent.LoadGame(result.state))
+                    onResult(true, null)
+                }
+                is LoadResult.Failed -> onResult(false, result.reason)
+                is LoadResult.NoSave -> onResult(false, null)
             }
         }
     }
