@@ -117,6 +117,14 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 _effects.emit(GameEffect.ShowNotification("RESEARCH COMPLETE: $name", "CYAN"))
             }
 
+            // Notify: human build order completed
+            val prevBuildQueue = prevState.playerStates[humanFaction]?.buildQueue ?: emptyList()
+            val nextBuildQueue = currentState.playerStates[humanFaction]?.buildQueue ?: emptyList()
+            if (prevBuildQueue.size > nextBuildQueue.size) {
+                val count = prevBuildQueue.size - nextBuildQueue.size
+                _effects.emit(GameEffect.ShowNotification("$count UNIT${if (count > 1) "S" else ""} READY FOR DEPLOYMENT", "CYAN"))
+            }
+
             // Notify: galactic event started (can fire on human's EndTurn if it's the end of a round)
             if (prevState.activeEvent != currentState.activeEvent &&
                 currentState.activeEvent != com.novaempire.core.domain.models.GalacticEvent.NONE) {
@@ -257,20 +265,17 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
             }
             is GameIntent.BuildUnit -> {
                 val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
-                val spawnCenter = intent.location ?: playerState.capitalCoord ?: return GameResult(state, "No valid spawn location.")
+                val planetCoord = intent.location ?: playerState.capitalCoord ?: return GameResult(state, "No valid spawn location.")
                 IntentValidator.canAfford(playerState, intent.unitType.cost)?.let { return GameResult(state, it) }
-                val gridMap = GameGridMap(state)
-                val spawnHex = (listOf(spawnCenter) + gridMap.getNeighbors(spawnCenter))
-                    .firstOrNull { state.units[it] == null && gridMap.isPassable(it) }
-                    ?: return GameResult(state, "No available space to build unit.")
+                if (playerState.buildQueue.any { it.planetCoord == planetCoord })
+                    return GameResult(state, "Already producing a unit at this location.")
+                val turns = buildTurns(intent.unitType)
                 val newPlayerStates = state.playerStates.toMutableMap()
-                newPlayerStates[state.activeFaction] = playerState.copy(credits = playerState.credits - intent.unitType.cost)
-                val updatedUnits = state.units.toMutableMap()
-                updatedUnits[spawnHex] = GameUnit(
-                    type = intent.unitType, faction = state.activeFaction, position = spawnHex,
-                    currentHp = intent.unitType.maxHp, hasMoved = true, hasAttacked = true
+                newPlayerStates[state.activeFaction] = playerState.copy(
+                    credits = playerState.credits - intent.unitType.cost,
+                    buildQueue = playerState.buildQueue + com.novaempire.core.domain.state.BuildOrder(intent.unitType, planetCoord, turns)
                 )
-                GameResult(updateVision(state.copy(playerStates = newPlayerStates, units = updatedUnits), setOf(state.activeFaction)))
+                GameResult(state.copy(playerStates = newPlayerStates))
             }
             is GameIntent.RecruitHero -> {
                 val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
@@ -351,6 +356,12 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
         }
 
         return state.copy(playerStates = updatedPlayers)
+    }
+
+    private fun buildTurns(unitType: UnitType): Int = when (unitType) {
+        UnitType.SCOUT, UnitType.FIGHTER -> 1
+        UnitType.CRUISER, UnitType.BATTLESHIP, UnitType.CARRIER, UnitType.DEFENSE_PLATFORM -> 2
+        UnitType.DREADNOUGHT -> 3
     }
 }
 

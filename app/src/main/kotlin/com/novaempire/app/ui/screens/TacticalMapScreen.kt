@@ -718,6 +718,12 @@ fun TacticalMapScreen(
                                     Text("Level", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
                                     Text(tile.systemLevel.toString(), style = MaterialTheme.typography.labelLarge)
                                 }
+                                if (tile.systemLevel > 0) {
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text("Defense", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                                        Text("${tile.systemLevel * 2} dmg/siege", style = MaterialTheme.typography.labelLarge, color = NeonOrange)
+                                    }
+                                }
                             }
                             if (unitOnTile != null) {
                                 Spacer(modifier = Modifier.height(8.dp))

@@ -38,8 +38,10 @@ object UtilityEvaluator : AIStrategy {
                 (aiPlayerState?.relations?.get(it.faction) == com.novaempire.core.domain.models.DiplomaticRelation.WAR || it.faction == Faction.ANCIENT_NPC)
             }
             
-            val targetPlanets = currentState.map.tiles.values.filter { 
-                it.terrain == com.novaempire.core.domain.models.TerrainType.PLANET && it.owner != aiFaction 
+            val targetPlanets = currentState.map.tiles.values.filter {
+                it.terrain == com.novaempire.core.domain.models.TerrainType.PLANET &&
+                it.owner != aiFaction &&
+                (it.owner == null || aiPlayerState?.relations?.get(it.owner) != com.novaempire.core.domain.models.DiplomaticRelation.ALLIANCE)
             }
 
             // A. Check for Capture/Siege if next to a planet
@@ -137,46 +139,32 @@ object UtilityEvaluator : AIStrategy {
     }
 
     private fun evaluateProduction(state: GameState, faction: Faction): GameState {
-        val playerState = state.playerStates[faction] ?: return state
-        
-        // Find all controlled planets
         val myPlanets = state.map.tiles.values.filter { it.owner == faction }
         if (myPlanets.isEmpty()) return state
 
-        // Simple AI: Build most expensive affordable unit at the first available planet
         val unitOrder = listOf(UnitType.DREADNOUGHT, UnitType.CARRIER, UnitType.BATTLESHIP, UnitType.CRUISER, UnitType.DEFENSE_PLATFORM, UnitType.FIGHTER, UnitType.SCOUT)
 
         var nextState = state
         for (planet in myPlanets) {
-            val affordableUnit = unitOrder.find { it.cost <= (nextState.playerStates[faction]?.credits ?: 0) }
-            if (affordableUnit != null) {
-                val gridMap = GameGridMap(nextState)
-                val spawnCandidates = listOf(planet.coord) + gridMap.getNeighbors(planet.coord)
-                val spawnHex = spawnCandidates.firstOrNull { nextState.units[it] == null && gridMap.isPassable(it) }
-
-                if (spawnHex != null) {
-                    val pState = nextState.playerStates[faction]!!
-                    val newPlayerState = pState.copy(credits = pState.credits - affordableUnit.cost)
-                    val newPlayerStates = nextState.playerStates.toMutableMap()
-                    newPlayerStates[faction] = newPlayerState
-
-                    val newUnit = GameUnit(
-                        type = affordableUnit,
-                        faction = faction,
-                        position = spawnHex,
-                        currentHp = affordableUnit.maxHp,
-                        hasMoved = true,
-                        hasAttacked = true
-                    )
-                    val updatedUnits = nextState.units.toMutableMap()
-                    updatedUnits[spawnHex] = newUnit
-
-                    nextState = nextState.copy(playerStates = newPlayerStates, units = updatedUnits)
-                }
-            }
+            val pState = nextState.playerStates[faction] ?: continue
+            if (pState.buildQueue.any { it.planetCoord == planet.coord }) continue
+            val affordableUnit = unitOrder.find { it.cost <= pState.credits } ?: continue
+            val turns = aiBuildTurns(affordableUnit)
+            val newPlayerStates = nextState.playerStates.toMutableMap()
+            newPlayerStates[faction] = pState.copy(
+                credits = pState.credits - affordableUnit.cost,
+                buildQueue = pState.buildQueue + com.novaempire.core.domain.state.BuildOrder(affordableUnit, planet.coord, turns)
+            )
+            nextState = nextState.copy(playerStates = newPlayerStates)
         }
 
         return nextState
+    }
+
+    private fun aiBuildTurns(unitType: UnitType): Int = when (unitType) {
+        UnitType.SCOUT, UnitType.FIGHTER -> 1
+        UnitType.CRUISER, UnitType.BATTLESHIP, UnitType.CARRIER, UnitType.DEFENSE_PLATFORM -> 2
+        UnitType.DREADNOUGHT -> 3
     }
 
     private fun evaluateDiplomacy(state: GameState, faction: Faction): GameState {

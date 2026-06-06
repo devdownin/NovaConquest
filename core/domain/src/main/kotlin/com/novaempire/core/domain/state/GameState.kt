@@ -5,6 +5,7 @@ import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.GalacticEvent
 import com.novaempire.core.domain.models.GameMap
 import com.novaempire.core.domain.models.GameUnit
+import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.hex.HexCoord
 
 @Serializable
@@ -34,11 +35,15 @@ data class GameState(
 data class ResearchProgress(val techId: String, val turnsRemaining: Int)
 
 @Serializable
+data class BuildOrder(val unitType: UnitType, val planetCoord: HexCoord, val turnsRemaining: Int)
+
+@Serializable
 data class PlayerState(
     val faction: Faction,
     val credits: Int = 10,
     val techUnlocked: Set<String> = emptySet(),
     val researchInProgress: ResearchProgress? = null,
+    val buildQueue: List<BuildOrder> = emptyList(),
     val exploredHexes: Set<HexCoord> = emptySet(),
     val visibleHexes: Set<HexCoord> = emptySet(),
     val capitalCoord: HexCoord? = null,

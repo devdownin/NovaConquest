@@ -26,6 +26,7 @@ import com.novaempire.app.ui.theme.NeonCyan
 import com.novaempire.app.ui.theme.NeonOrange
 import com.novaempire.app.ui.theme.TextSecondary
 import com.novaempire.core.domain.models.UnitType
+import com.novaempire.core.domain.state.BuildOrder
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.hex.HexCoord
 
@@ -99,7 +100,7 @@ fun StarSystemManagementScreen(
                             canUpgrade = canUpgrade,
                             onUpgrade = { onUpgradeSystem(coord) }
                         )
-                        ShipyardPanel(coord, onBuildUnit)
+                        ShipyardPanel(coord, playerState?.buildQueue ?: emptyList(), onBuildUnit)
                     }
                 } else {
                     Row(
@@ -119,7 +120,7 @@ fun StarSystemManagementScreen(
                             )
                         }
                         Column(modifier = Modifier.weight(1.5f)) {
-                            ShipyardPanel(coord, onBuildUnit)
+                            ShipyardPanel(coord, playerState?.buildQueue ?: emptyList(), onBuildUnit)
                         }
                     }
                 }
@@ -189,7 +190,8 @@ fun InfrastructurePanel(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ShipyardPanel(coord: HexCoord, onBuildUnit: (UnitType, HexCoord) -> Unit) {
+fun ShipyardPanel(coord: HexCoord, buildQueue: List<BuildOrder>, onBuildUnit: (UnitType, HexCoord) -> Unit) {
+    val activeOrder = buildQueue.firstOrNull { it.planetCoord == coord }
     IndustrialPanel(modifier = Modifier.fillMaxHeight()) {
         Column(modifier = Modifier.padding(24.dp).fillMaxHeight()) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
@@ -199,37 +201,58 @@ fun ShipyardPanel(coord: HexCoord, onBuildUnit: (UnitType, HexCoord) -> Unit) {
             }
             HeaderLine(modifier = Modifier.padding(bottom = 16.dp))
 
-            Text("AVAILABLE BLUEPRINTS", style = MaterialTheme.typography.labelLarge, color = TextSecondary, modifier = Modifier.padding(bottom = 16.dp))
+            if (activeOrder != null) {
+                // Show active production order
+                androidx.compose.material3.Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("IN PRODUCTION", style = MaterialTheme.typography.labelLarge, color = NeonOrange)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(activeOrder.unitType.name, style = MaterialTheme.typography.headlineMedium)
+                            Text(
+                                "${activeOrder.turnsRemaining} TURN${if (activeOrder.turnsRemaining > 1) "S" else ""} LEFT",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = NeonOrange
+                            )
+                        }
+                    }
+                }
+            } else {
+                Text("AVAILABLE BLUEPRINTS", style = MaterialTheme.typography.labelLarge, color = TextSecondary, modifier = Modifier.padding(bottom = 16.dp))
 
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                BlueprintCard(
-                    name = "Scout",
-                    cost = UnitType.SCOUT.cost,
-                    level = "LVL 1",
-                    icon = Icons.Default.Menu,
-                    onClick = { onBuildUnit(UnitType.SCOUT, coord) },
-                    modifier = Modifier.widthIn(min = 160.dp).weight(1f, fill = false)
-                )
-                BlueprintCard(
-                    name = "Fighter",
-                    cost = UnitType.FIGHTER.cost,
-                    level = "LVL 2",
-                    icon = Icons.Default.Menu,
-                    onClick = { onBuildUnit(UnitType.FIGHTER, coord) },
-                    modifier = Modifier.widthIn(min = 160.dp).weight(1f, fill = false)
-                )
-                BlueprintCard(
-                    name = "Cruiser",
-                    cost = UnitType.CRUISER.cost,
-                    level = "LVL 4",
-                    icon = Icons.Default.Menu,
-                    onClick = { onBuildUnit(UnitType.CRUISER, coord) },
-                    modifier = Modifier.widthIn(min = 160.dp).weight(1f, fill = false)
-                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    BlueprintCard(
+                        name = "Scout",
+                        cost = UnitType.SCOUT.cost,
+                        level = "LVL 1",
+                        icon = Icons.Default.Menu,
+                        onClick = { onBuildUnit(UnitType.SCOUT, coord) },
+                        modifier = Modifier.widthIn(min = 160.dp).weight(1f, fill = false)
+                    )
+                    BlueprintCard(
+                        name = "Fighter",
+                        cost = UnitType.FIGHTER.cost,
+                        level = "LVL 2",
+                        icon = Icons.Default.Menu,
+                        onClick = { onBuildUnit(UnitType.FIGHTER, coord) },
+                        modifier = Modifier.widthIn(min = 160.dp).weight(1f, fill = false)
+                    )
+                    BlueprintCard(
+                        name = "Cruiser",
+                        cost = UnitType.CRUISER.cost,
+                        level = "LVL 4",
+                        icon = Icons.Default.Menu,
+                        onClick = { onBuildUnit(UnitType.CRUISER, coord) },
+                        modifier = Modifier.widthIn(min = 160.dp).weight(1f, fill = false)
+                    )
+                }
             }
         }
     }

@@ -2,6 +2,7 @@ package com.novaempire.core.engine
 
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.GalacticEvent
+import com.novaempire.core.domain.models.GameUnit
 import com.novaempire.core.domain.models.HeroRegistry
 import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.state.GameState
@@ -51,6 +52,40 @@ object TurnManager {
             val newPlayerStates = nextState.playerStates.toMutableMap()
             newPlayerStates[nextFaction] = nextPlayerState.copy(credits = nextPlayerState.credits + income)
             nextState = nextState.copy(playerStates = newPlayerStates)
+        }
+
+        // Tick build queue for the faction ending its turn
+        val buildingFactionState = nextState.playerStates[state.activeFaction]
+        if (buildingFactionState != null && buildingFactionState.buildQueue.isNotEmpty()) {
+            val remainingOrders = mutableListOf<com.novaempire.core.domain.state.BuildOrder>()
+            var stateAfterBuilds = nextState
+
+            for (order in buildingFactionState.buildQueue) {
+                val newTurns = order.turnsRemaining - 1
+                if (newTurns <= 0) {
+                    val gridMap = GameGridMap(stateAfterBuilds)
+                    val candidates = listOf(order.planetCoord) + gridMap.getNeighbors(order.planetCoord)
+                    val spawnHex = candidates.firstOrNull { stateAfterBuilds.units[it] == null && gridMap.isPassable(it) }
+                    if (spawnHex != null) {
+                        val newUnit = GameUnit(
+                            type = order.unitType,
+                            faction = state.activeFaction,
+                            position = spawnHex,
+                            currentHp = order.unitType.maxHp
+                        )
+                        val updatedUnits = stateAfterBuilds.units.toMutableMap()
+                        updatedUnits[spawnHex] = newUnit
+                        stateAfterBuilds = stateAfterBuilds.copy(units = updatedUnits)
+                    }
+                } else {
+                    remainingOrders.add(order.copy(turnsRemaining = newTurns))
+                }
+            }
+
+            val newPlayerStates = stateAfterBuilds.playerStates.toMutableMap()
+            newPlayerStates[state.activeFaction] = stateAfterBuilds.playerStates[state.activeFaction]!!
+                .copy(buildQueue = remainingOrders)
+            nextState = stateAfterBuilds.copy(playerStates = newPlayerStates)
         }
 
         // Tick research for the faction that just ended its turn

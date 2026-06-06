@@ -55,7 +55,8 @@ object CombatResolver {
         return state.copy(units = newUnits, lastCombatEvent = combatEvent)
     }
 
-    /** Damage a planet's system level. BATTLESHIP and DREADNOUGHT deal 2; others deal 1. */
+    /** Damage a planet's system level. BATTLESHIP and DREADNOUGHT deal 2; others deal 1.
+     *  Orbital defenses retaliate: level * 2 damage to the attacker. */
     fun siegePlanet(state: GameState, attackerCoord: HexCoord, planetCoord: HexCoord): GameState {
         val unit = state.units[attackerCoord] ?: return state
         val tile = state.map.tiles[planetCoord] ?: return state
@@ -64,7 +65,15 @@ object CombatResolver {
         val newLevel = max(0, tile.systemLevel - siegeDamage)
 
         val updatedUnits = state.units.toMutableMap()
-        updatedUnits[attackerCoord] = unit.copy(hasAttacked = true)
+
+        // Orbital defense retaliation: level * 2 damage back to attacker
+        val defenseRetaliation = tile.systemLevel * 2
+        val attackerHpAfterSiege = max(0, unit.currentHp - defenseRetaliation)
+        if (attackerHpAfterSiege <= 0) {
+            updatedUnits.remove(attackerCoord)
+        } else {
+            updatedUnits[attackerCoord] = unit.copy(hasAttacked = true, currentHp = attackerHpAfterSiege)
+        }
 
         val newTiles = state.map.tiles.toMutableMap()
         newTiles[planetCoord] = tile.copy(systemLevel = newLevel)
