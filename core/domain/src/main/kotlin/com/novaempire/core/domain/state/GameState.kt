@@ -31,10 +31,14 @@ data class GameState(
 )
 
 @Serializable
+data class ResearchProgress(val techId: String, val turnsRemaining: Int)
+
+@Serializable
 data class PlayerState(
     val faction: Faction,
     val credits: Int = 10,
     val techUnlocked: Set<String> = emptySet(),
+    val researchInProgress: ResearchProgress? = null,
     val exploredHexes: Set<HexCoord> = emptySet(),
     val visibleHexes: Set<HexCoord> = emptySet(),
     val capitalCoord: HexCoord? = null,

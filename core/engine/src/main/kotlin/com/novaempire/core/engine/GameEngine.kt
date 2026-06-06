@@ -161,7 +161,7 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 GameResult(intent.loadedState)
             }
             is GameIntent.EndTurn -> {
-                GameResult(TurnManager.advanceTurn(state))
+                GameResult(updateVision(TurnManager.advanceTurn(state)))
             }
             is GameIntent.SelectFaction -> {
                 GameResult(state.copy(activeFaction = intent.faction, humanFaction = intent.faction))
@@ -201,6 +201,7 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
             }
             is GameIntent.ResearchTech -> {
                 val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
+                if (playerState.researchInProgress != null) return GameResult(state, "Research already in progress.")
                 val tech = com.novaempire.core.domain.models.TechRegistry.getTech(intent.techId)
                     ?: return GameResult(state, "Technology not found.")
                 if (tech.requiresTechId != null && !playerState.techUnlocked.contains(tech.requiresTechId))
@@ -217,9 +218,9 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 val newPlayerStates = state.playerStates.toMutableMap()
                 newPlayerStates[state.activeFaction] = playerState.copy(
                     credits = playerState.credits - cost,
-                    techUnlocked = playerState.techUnlocked + intent.techId
+                    researchInProgress = com.novaempire.core.domain.state.ResearchProgress(intent.techId, tech.tier + 1)
                 )
-                GameResult(updateVision(state.copy(playerStates = newPlayerStates), setOf(state.activeFaction)))
+                GameResult(state.copy(playerStates = newPlayerStates))
             }
             is GameIntent.BuildUnit -> {
                 val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
