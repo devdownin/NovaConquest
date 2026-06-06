@@ -2,10 +2,20 @@ package com.novaempire.core.engine
 
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.GalacticEvent
+import com.novaempire.core.domain.models.GameMap
+import com.novaempire.core.domain.models.GameUnit
+import com.novaempire.core.domain.models.HexTile
+import com.novaempire.core.domain.models.TerrainType
+import com.novaempire.core.domain.models.UnitType
+import com.novaempire.core.domain.state.BuildOrder
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.domain.state.PlayerState
+import com.novaempire.core.domain.state.ResearchProgress
+import com.novaempire.core.hex.HexCoord
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.random.Random
@@ -80,5 +90,68 @@ class TurnManagerTest {
         }
         // At 20% chance per seed, most seeds should not trigger; at least half should be NONE
         assertTrue("Expected most seeds to leave event NONE", noneCount > 10)
+    }
+
+    @Test
+    fun researchTickDecrementsTurnsRemaining() {
+        // Research with 2 turns left — after DOMINION ends its turn it should be 1
+        val state = GameState(
+            activeFaction = Faction.DOMINION,
+            playerStates = mapOf(
+                Faction.DOMINION to PlayerState(
+                    Faction.DOMINION,
+                    researchInProgress = ResearchProgress("tech_hull_plating", 2)
+                ),
+                Faction.TRADERS to PlayerState(Faction.TRADERS)
+            )
+        )
+        val after = TurnManager.advanceTurn(state)
+        val prog = after.playerStates[Faction.DOMINION]!!.researchInProgress
+        assertNotNull("Research should still be in progress", prog)
+        assertEquals(1, prog!!.turnsRemaining)
+    }
+
+    @Test
+    fun researchCompletesWhenTurnsReachZero() {
+        // Research with 1 turn left — DOMINION ends its turn → tech unlocked, queue cleared
+        val state = GameState(
+            activeFaction = Faction.DOMINION,
+            playerStates = mapOf(
+                Faction.DOMINION to PlayerState(
+                    Faction.DOMINION,
+                    researchInProgress = ResearchProgress("tech_hull_plating", 1)
+                ),
+                Faction.TRADERS to PlayerState(Faction.TRADERS)
+            )
+        )
+        val after = TurnManager.advanceTurn(state)
+        val dominion = after.playerStates[Faction.DOMINION]!!
+        assertNull("Research queue should be cleared on completion", dominion.researchInProgress)
+        assertTrue("Tech should be in techUnlocked", dominion.techUnlocked.contains("tech_hull_plating"))
+    }
+
+    @Test
+    fun buildOrderSpawnsUnitAfterOneTurn() {
+        // Scout has turnsRemaining=1; after DOMINION ends its turn a Scout should spawn
+        val planetCoord = HexCoord(0, 0, 0)
+        val spawnCoord = HexCoord(1, -1, 0)
+        val tile = HexTile(planetCoord, TerrainType.PLANET, systemLevel = 1, owner = Faction.DOMINION)
+        val emptyTile = HexTile(spawnCoord, TerrainType.EMPTY)
+        val map = GameMap(tiles = mapOf(planetCoord to tile, spawnCoord to emptyTile))
+        val state = GameState(
+            activeFaction = Faction.DOMINION,
+            map = map,
+            units = mapOf(planetCoord to GameUnit(UnitType.CRUISER, Faction.DOMINION, planetCoord, UnitType.CRUISER.maxHp)),
+            playerStates = mapOf(
+                Faction.DOMINION to PlayerState(
+                    Faction.DOMINION,
+                    buildQueue = listOf(BuildOrder(UnitType.SCOUT, planetCoord, turnsRemaining = 1))
+                ),
+                Faction.TRADERS to PlayerState(Faction.TRADERS)
+            )
+        )
+        val next = TurnManager.advanceTurn(state)
+        assertTrue("Build queue should be empty after spawn", next.playerStates[Faction.DOMINION]!!.buildQueue.isEmpty())
+        assertTrue("Scout should have spawned", next.units.values.any { it.type == UnitType.SCOUT && it.faction == Faction.DOMINION })
     }
 }
