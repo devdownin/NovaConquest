@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -194,6 +195,12 @@ fun GameContainer(
     val idleFleetCount = gameState.units.values.count {
         it.faction == gameState.activeFaction && !it.hasMoved && !it.hasAttacked
     }
+    val idleFleets = gameState.units.values
+        .filter { it.faction == gameState.activeFaction && !it.hasMoved && !it.hasAttacked }
+        .sortedBy { it.id }
+    var smartFocusIdx by remember { mutableStateOf(0) }
+    var centerRequestCounter by remember { mutableStateOf(0) }
+    var centerRequest by remember { mutableStateOf<Pair<com.novaempire.core.hex.HexCoord, Int>?>(null) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -208,13 +215,27 @@ fun GameContainer(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            Text("SMART FOCUS", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                        // SMART FOCUS — cycles to next idle fleet when tapped
+                        Column(
+                            modifier = if (idleFleets.isNotEmpty()) Modifier.clickable {
+                                val idx = smartFocusIdx % idleFleets.size
+                                val coord = idleFleets[idx].position
+                                centerRequestCounter++
+                                centerRequest = Pair(coord, centerRequestCounter)
+                                smartFocusIdx = (smartFocusIdx + 1) % idleFleets.size
+                            } else Modifier
+                        ) {
+                            Text("SMART FOCUS", style = MaterialTheme.typography.labelSmall, color = if (idleFleets.isNotEmpty()) NeonCyan else TextSecondary)
                             Text(
                                 text = if (idleFleetCount == 1) "1 IDLE FLEET" else "$idleFleetCount IDLE FLEETS",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (idleFleetCount > 0) NeonOrange else TextSecondary
                             )
+                        }
+                        // Turn indicator
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("TURN", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                            Text(gameState.turn.toString(), style = MaterialTheme.typography.labelLarge, color = NeonCyan)
                         }
                         IndustrialButton(
                             text = if (isAiThinking) "AI THINKING..." else "END TURN",
@@ -277,7 +298,8 @@ fun GameContainer(
                             currentTab = GameTab.SYSTEM
                         },
                         onClearSelection = { selectedCoord = null },
-                        onOpenAcademy = onOpenAcademy
+                        onOpenAcademy = onOpenAcademy,
+                        centerRequest = centerRequest
                     )
                 }
                 GameTab.SYSTEM -> {
