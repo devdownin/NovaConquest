@@ -19,11 +19,55 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.novaempire.app.audio.AudioManager
 import com.novaempire.app.audio.SoundType
 import com.novaempire.app.ui.components.IndustrialButton
+import com.novaempire.app.ui.components.IndustrialPanel
 import com.novaempire.app.ui.screens.*
 import com.novaempire.app.ui.theme.*
 import com.novaempire.app.ui.viewmodels.GameViewModel
+import com.novaempire.core.domain.models.GalacticEvent
+import com.novaempire.core.domain.models.HeroRegistry
+import com.novaempire.core.domain.models.TerrainType
+import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.engine.GameIntent
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+data class EndTurnSummary(
+    val turn: Int,
+    val incomeGained: Int,
+    val completedBuilds: List<String>,
+    val techInProgress: String?,
+    val idleFleets: Int
+)
+
+fun computeEndTurnSummary(state: GameState): EndTurnSummary {
+    val ps = state.playerStates[state.activeFaction]
+    var income = 10 + state.activeFaction.bonusCredits
+    val ownedPlanets = state.map.tiles.values.filter {
+        it.terrain == TerrainType.PLANET && it.owner == state.activeFaction
+    }
+    income += ownedPlanets.sumOf { 5 + it.systemLevel * 2 }
+    if (ps?.recruitedHeroes?.contains(HeroRegistry.ELARA) == true) income += (income * 0.10).toInt() + 2
+    if (state.activeEvent == GalacticEvent.ECONOMIC_BOOM) income += 3
+
+    val completedBuilds = ps?.buildQueue
+        ?.filter { it.turnsRemaining <= 1 }
+        ?.map { it.unitType.name }
+        ?: emptyList()
+
+    val techInProgress = ps?.researchInProgress?.techId
+
+    val idleFleets = state.units.values.count {
+        it.faction == state.activeFaction && !it.hasMoved && !it.hasAttacked
+    }
+
+    return EndTurnSummary(
+        turn = state.turn,
+        incomeGained = income,
+        completedBuilds = completedBuilds,
+        techInProgress = techInProgress,
+        idleFleets = idleFleets
+    )
+}
 
 enum class AppScreen {
     MAIN_MENU,
@@ -214,6 +258,15 @@ fun GameContainer(
     var smartFocusIdx by remember { mutableStateOf(0) }
     var centerRequestCounter by remember { mutableStateOf(0) }
     var centerRequest by remember { mutableStateOf<Pair<com.novaempire.core.hex.HexCoord, Int>?>(null) }
+    var endTurnSummary by remember { mutableStateOf<EndTurnSummary?>(null) }
+    val currentOnEndTurn by rememberUpdatedState(onEndTurn)
+    LaunchedEffect(endTurnSummary) {
+        if (endTurnSummary != null) {
+            delay(2500)
+            currentOnEndTurn()
+            endTurnSummary = null
+        }
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -251,11 +304,14 @@ fun GameContainer(
                             Text(gameState.turn.toString(), style = MaterialTheme.typography.labelLarge, color = NeonCyan)
                         }
                         IndustrialButton(
-                            text = if (isAiThinking) "AI THINKING..." else "END TURN",
+                            text = when {
+                                isAiThinking -> "AI THINKING..."
+                                endTurnSummary != null -> "ENDING TURN..."
+                                else -> "END TURN"
+                            },
                             onClick = {
-                                if (!isAiThinking) {
-                                    AudioManager.playSound(SoundType.END_TURN)
-                                    onEndTurn()
+                                if (!isAiThinking && endTurnSummary == null) {
+                                    endTurnSummary = computeEndTurnSummary(gameState)
                                 }
                             },
                             isPrimary = true,
@@ -335,7 +391,8 @@ fun GameContainer(
                         },
                         onClearSelection = { selectedCoord = null },
                         onOpenAcademy = onOpenAcademy,
-                        centerRequest = centerRequest
+                        centerRequest = centerRequest,
+                        initialSelectedHex = selectedCoord
                     )
                 }
                 GameTab.SYSTEM -> {
@@ -362,6 +419,85 @@ fun GameContainer(
                 GameTab.INTEL -> DiplomacyIntelScreen(
                     gameState = gameState,
                     onChangeRelation = onChangeRelation
+                )
+            }
+
+            endTurnSummary?.let { summary ->
+                EndTurnSummaryOverlay(summary = summary)
+            }
+        }
+    }
+}
+
+@Composable
+fun EndTurnSummaryOverlay(summary: EndTurnSummary) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.55f)),
+        contentAlignment = Alignment.Center
+    ) {
+        IndustrialPanel(modifier = Modifier.width(340.dp)) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text(
+                    "FIN DU TOUR ${summary.turn}",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = NeonCyan
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Revenus perçus", style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
+                    Text("+${summary.incomeGained} C", style = MaterialTheme.typography.bodyLarge, color = NeonGreen)
+                }
+
+                if (summary.completedBuilds.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Production terminée", style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
+                        Text(summary.completedBuilds.joinToString(", "), style = MaterialTheme.typography.bodyLarge, color = NeonOrange)
+                    }
+                }
+
+                if (summary.techInProgress != null) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Recherche en cours", style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
+                        Text(summary.techInProgress, style = MaterialTheme.typography.bodyLarge, color = NeonCyan)
+                    }
+                }
+
+                if (summary.idleFleets > 0) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Flottes inactives", style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
+                        Text("${summary.idleFleets}", style = MaterialTheme.typography.bodyLarge, color = NeonOrange)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                androidx.compose.material3.LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = NeonCyan,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Passage au tour suivant...",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary
                 )
             }
         }

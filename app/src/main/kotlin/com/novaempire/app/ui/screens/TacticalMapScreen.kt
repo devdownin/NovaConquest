@@ -3,6 +3,7 @@ package com.novaempire.app.ui.screens
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -68,6 +69,7 @@ fun TacticalMapScreen(
     onOpenAcademy: () -> Unit,
     onClearSelection: () -> Unit,
     centerRequest: Pair<HexCoord, Int>? = null,
+    initialSelectedHex: HexCoord? = null,
     modifier: Modifier = Modifier
 ) {
     val initScale = 0.8f
@@ -86,9 +88,10 @@ fun TacticalMapScreen(
             )
         )
     }
-    var selectedHex by remember { mutableStateOf<HexCoord?>(null) }
+    var selectedHex by remember { mutableStateOf(initialSelectedHex) }
     var combatPreviewData by remember { mutableStateOf<Pair<HexCoord, HexCoord>?>(null) }
     var siegePreviewData by remember { mutableStateOf<Triple<HexCoord, HexCoord, Boolean>?>(null) }
+    var terrainTooltipCoord by remember { mutableStateOf<HexCoord?>(null) }
     var ghostPath by remember { mutableStateOf<List<HexCoord>?>(null) }
     var dragStartHex by remember { mutableStateOf<HexCoord?>(null) }
     var currentHoveredHex by remember { mutableStateOf<HexCoord?>(null) }
@@ -239,7 +242,18 @@ fun TacticalMapScreen(
                     translationY = pan.y
                 }
                 .pointerInput(Unit) {
-                    detectTapGestures { offset ->
+                    detectTapGestures(
+                        onLongPress = { offset ->
+                            val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f)
+                            val gs = currentGameState
+                            val explored = gs.playerStates[gs.activeFaction]?.exploredHexes ?: emptySet()
+                            if (gs.map.tiles.containsKey(coord) && explored.contains(coord)) {
+                                terrainTooltipCoord = coord
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            }
+                        }
+                    ) { offset ->
+                        terrainTooltipCoord = null
                         val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f)
                         val gs = currentGameState
                         val explored = gs.playerStates[gs.activeFaction]?.exploredHexes ?: emptySet()
@@ -883,6 +897,20 @@ fun TacticalMapScreen(
             }
         }
 
+        // Terrain tooltip (long-press)
+        terrainTooltipCoord?.let { coord ->
+            val tile = gameState.map.tiles[coord]
+            if (tile != null) {
+                TerrainTooltipOverlay(
+                    coord = coord,
+                    tile = tile,
+                    onDismiss = { terrainTooltipCoord = null }
+                )
+            } else {
+                terrainTooltipCoord = null
+            }
+        }
+
         // Siege / Capture confirmation overlay
         siegePreviewData?.let { (attackerCoord, planetCoord, isCapture) ->
             val attacker = gameState.units[attackerCoord]
@@ -1268,6 +1296,75 @@ fun StatChip(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
         Text(value, style = MaterialTheme.typography.labelLarge, color = NeonCyan)
+    }
+}
+
+@Composable
+fun TerrainTooltipOverlay(
+    coord: HexCoord,
+    tile: HexTile,
+    onDismiss: () -> Unit
+) {
+    val description = when (tile.terrain) {
+        TerrainType.EMPTY -> "Espace vide. Aucun effet spécial."
+        TerrainType.PLANET -> "Planète habitée. Génère des crédits. Peut être capturée ou assiégée."
+        TerrainType.ASTEROIDS -> "Champ d'astéroïdes. Impassable."
+        TerrainType.NEBULA -> "Nébuleuse. Bloque la vision. Les flottes peuvent la traverser."
+        TerrainType.BLACK_HOLE -> "Trou noir. Danger extrême — les vaisseaux subissent des dommages."
+        TerrainType.WORMHOLE -> "Ver de l'espace. Permet des déplacements longue distance."
+        TerrainType.PLASMA_CLOUD -> "Nuage de plasma. Bloque la vision et ralentit les déplacements."
+        TerrainType.ION_STORM -> "Tempête ionique. Réduit la portée de déplacement de 1."
+        TerrainType.ANOMALY -> "Anomalie galactique. Effets imprévisibles chaque tour."
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        IndustrialPanel(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 32.dp)
+                .clickable(enabled = false, onClick = {})
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        tile.terrain.name.replace('_', ' '),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = NeonCyan
+                    )
+                    Text(
+                        "SECTEUR ${coord.q},${coord.r}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(description, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+                if (tile.terrain == TerrainType.PLANET) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    val income = 5 + tile.systemLevel * 2
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Text("Niveau ${tile.systemLevel}", style = MaterialTheme.typography.labelSmall, color = NeonOrange)
+                        Text("+$income C/tour", style = MaterialTheme.typography.labelSmall, color = NeonGreen)
+                        if (tile.owner != null) {
+                            Text(tile.owner.name, style = MaterialTheme.typography.labelSmall, color = getFactionColor(tile.owner))
+                        } else {
+                            Text("NEUTRE", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Appuyez pour fermer", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+            }
+        }
     }
 }
 

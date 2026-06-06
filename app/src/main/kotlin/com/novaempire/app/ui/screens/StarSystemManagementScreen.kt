@@ -24,6 +24,7 @@ import com.novaempire.app.ui.components.NoiseOverlay
 import com.novaempire.app.ui.components.HeaderLine
 import com.novaempire.app.ui.theme.NeonCyan
 import com.novaempire.app.ui.theme.NeonOrange
+import com.novaempire.app.ui.theme.NeonRed
 import com.novaempire.app.ui.theme.TextSecondary
 import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.state.BuildOrder
@@ -47,6 +48,12 @@ fun StarSystemManagementScreen(
     val planetIncome = 5 + systemLevel * 2
     val upgradeCost = (systemLevel + 1) * 15
     val canUpgrade = isOwnPlanet && systemLevel < 5 && credits >= upgradeCost
+    val upgradeDisabledReason: String? = when {
+        !isOwnPlanet -> "Planète non contrôlée"
+        systemLevel >= 5 -> null
+        credits < upgradeCost -> "Crédits insuffisants (besoin : $upgradeCost C, disponible : $credits C)"
+        else -> null
+    }
 
     Box(
         modifier = Modifier
@@ -99,9 +106,10 @@ fun StarSystemManagementScreen(
                             planetIncome = planetIncome,
                             upgradeCost = upgradeCost,
                             canUpgrade = canUpgrade,
+                            disabledReason = upgradeDisabledReason,
                             onUpgrade = { onUpgradeSystem(coord) }
                         )
-                        ShipyardPanel(coord, playerState?.buildQueue ?: emptyList(), onBuildUnit, onCancelBuild)
+                        ShipyardPanel(coord, credits, playerState?.buildQueue ?: emptyList(), onBuildUnit, onCancelBuild)
                     }
                 } else {
                     Row(
@@ -117,11 +125,12 @@ fun StarSystemManagementScreen(
                                 planetIncome = planetIncome,
                                 upgradeCost = upgradeCost,
                                 canUpgrade = canUpgrade,
+                                disabledReason = upgradeDisabledReason,
                                 onUpgrade = { onUpgradeSystem(coord) }
                             )
                         }
                         Column(modifier = Modifier.weight(1.5f)) {
-                            ShipyardPanel(coord, playerState?.buildQueue ?: emptyList(), onBuildUnit, onCancelBuild)
+                            ShipyardPanel(coord, credits, playerState?.buildQueue ?: emptyList(), onBuildUnit, onCancelBuild)
                         }
                     }
                 }
@@ -136,6 +145,7 @@ fun InfrastructurePanel(
     planetIncome: Int,
     upgradeCost: Int,
     canUpgrade: Boolean,
+    disabledReason: String? = null,
     onUpgrade: () -> Unit
 ) {
     IndustrialPanel(modifier = Modifier.fillMaxWidth()) {
@@ -184,6 +194,14 @@ fun InfrastructurePanel(
                     color = if (canUpgrade) NeonCyan else TextSecondary,
                     icon = { Icon(Icons.Default.Build, contentDescription = null) }
                 )
+                if (!canUpgrade && disabledReason != null) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = disabledReason,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = NeonRed.copy(alpha = 0.8f)
+                    )
+                }
             }
         }
     }
@@ -191,7 +209,7 @@ fun InfrastructurePanel(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ShipyardPanel(coord: HexCoord, buildQueue: List<BuildOrder>, onBuildUnit: (UnitType, HexCoord) -> Unit, onCancelBuild: (HexCoord) -> Unit = {}) {
+fun ShipyardPanel(coord: HexCoord, credits: Int, buildQueue: List<BuildOrder>, onBuildUnit: (UnitType, HexCoord) -> Unit, onCancelBuild: (HexCoord) -> Unit = {}) {
     val activeOrder = buildQueue.firstOrNull { it.planetCoord == coord }
     IndustrialPanel(modifier = Modifier.fillMaxHeight()) {
         Column(modifier = Modifier.padding(24.dp).fillMaxHeight()) {
@@ -241,6 +259,7 @@ fun ShipyardPanel(coord: HexCoord, buildQueue: List<BuildOrder>, onBuildUnit: (U
                         cost = UnitType.SCOUT.cost,
                         level = "LVL 1",
                         icon = Icons.Default.Menu,
+                        canAfford = credits >= UnitType.SCOUT.cost,
                         onClick = { onBuildUnit(UnitType.SCOUT, coord) },
                         modifier = Modifier.widthIn(min = 160.dp).weight(1f, fill = false)
                     )
@@ -249,6 +268,7 @@ fun ShipyardPanel(coord: HexCoord, buildQueue: List<BuildOrder>, onBuildUnit: (U
                         cost = UnitType.FIGHTER.cost,
                         level = "LVL 2",
                         icon = Icons.Default.Menu,
+                        canAfford = credits >= UnitType.FIGHTER.cost,
                         onClick = { onBuildUnit(UnitType.FIGHTER, coord) },
                         modifier = Modifier.widthIn(min = 160.dp).weight(1f, fill = false)
                     )
@@ -257,6 +277,7 @@ fun ShipyardPanel(coord: HexCoord, buildQueue: List<BuildOrder>, onBuildUnit: (U
                         cost = UnitType.CRUISER.cost,
                         level = "LVL 4",
                         icon = Icons.Default.Menu,
+                        canAfford = credits >= UnitType.CRUISER.cost,
                         onClick = { onBuildUnit(UnitType.CRUISER, coord) },
                         modifier = Modifier.widthIn(min = 160.dp).weight(1f, fill = false)
                     )
@@ -272,6 +293,7 @@ fun BlueprintCard(
     cost: Int,
     level: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
+    canAfford: Boolean = true,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -301,10 +323,18 @@ fun BlueprintCard(
             IndustrialButton(
                 text = "PRODUCE",
                 onClick = onClick,
-                color = NeonCyan,
-                isPrimary = true,
+                color = if (canAfford) NeonCyan else TextSecondary,
+                isPrimary = canAfford,
                 icon = { Icon(Icons.Default.Menu, contentDescription = null) }
             )
+            if (!canAfford) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Crédits insuffisants ($cost C)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = NeonRed.copy(alpha = 0.8f)
+                )
+            }
         }
     }
 }
