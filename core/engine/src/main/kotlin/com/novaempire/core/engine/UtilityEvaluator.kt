@@ -44,6 +44,32 @@ object UtilityEvaluator : AIStrategy {
                 (it.owner == null || aiPlayerState?.relations?.get(it.owner) != com.novaempire.core.domain.models.DiplomaticRelation.ALLIANCE)
             }
 
+            // Retreat: HP < 30% and enemy within 2 hexes → flee to nearest owned planet
+            val hpCritical = unit.currentHp.toFloat() / unit.type.maxHp < 0.30f
+            val threatNearby = possibleTargets.any { it.position.distanceTo(unit.position) <= 2 }
+            if (hpCritical && !unit.hasMoved && threatNearby && unit.type.movement > 0) {
+                val ownedPlanets = currentState.map.tiles.values.filter { it.owner == aiFaction }
+                val retreatTarget = ownedPlanets.minByOrNull { it.coord.distanceTo(unit.position) }
+                if (retreatTarget != null && retreatTarget.coord != unit.position) {
+                    val gridMap = GameGridMap(currentState, aiFaction)
+                    val ionPenalty = if (currentState.activeEvent == GalacticEvent.ION_STORM) 1 else 0
+                    val totalMovement = (unit.type.movement + unit.faction.bonusMovement - ionPenalty).coerceAtLeast(1)
+                    val path = com.novaempire.core.hex.HexPathfinder.findPath(
+                        start = unit.position,
+                        goal = retreatTarget.coord,
+                        gridMap = gridMap,
+                        maxCost = totalMovement
+                    )
+                    if (path != null && path.isNotEmpty()) {
+                        val destination = path.take(totalMovement).lastOrNull { currentState.units[it] == null }
+                        if (destination != null) {
+                            currentState = moveUnit(currentState, unit.position, destination)
+                            continue
+                        }
+                    }
+                }
+            }
+
             // A. Check for Capture/Siege if next to a planet
             val adjacentPlanet = targetPlanets.find { it.coord.distanceTo(unit.position) <= 1 }
             if (adjacentPlanet != null && !unit.hasAttacked) {

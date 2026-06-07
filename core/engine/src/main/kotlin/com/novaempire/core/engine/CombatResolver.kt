@@ -22,9 +22,15 @@ object CombatResolver {
         val plasmaBonus = if (attackerPlayer?.techUnlocked?.contains("tech_plasma_weapons") == true) 2 else 0
         val totalBonus = heroBonus + factionBonus + plasmaBonus
 
-        // 1. Attacker deals damage (±20% variance)
+        // Terrain modifiers: attacker on BLACK_HOLE → -25% attack; defender in NEBULA → -20% damage taken
+        val attackerTerrain = state.map.tiles[attackerCoord]?.terrain
+        val defenderTerrain = state.map.tiles[defenderCoord]?.terrain
+        val terrainAttackMult = if (attackerTerrain == TerrainType.BLACK_HOLE) 0.75f else 1.0f
+        val terrainDefenseMult = if (defenderTerrain == TerrainType.NEBULA) 0.8f else 1.0f
+
+        // 1. Attacker deals damage (±20% variance, terrain modifiers)
         val attackVariance = 0.8f + rng.nextFloat() * 0.4f
-        val damageToDefender = max(1, ((attacker.type.attack + totalBonus) * attackVariance).toInt())
+        val damageToDefender = max(1, ((attacker.type.attack + totalBonus) * terrainAttackMult * attackVariance * terrainDefenseMult).toInt())
         val defenderRemainingHp = max(0, defender.currentHp - damageToDefender)
 
         var newUnits = state.units.toMutableMap()

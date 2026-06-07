@@ -7,5 +7,7 @@ enum class GalacticEvent(val displayName: String, val description: String) {
     ION_STORM("Ion Storm", "Global movement -1. Shields do not regenerate."),
     ECONOMIC_BOOM("Economic Boom", "+3 Credits per system owned."),
     SOLAR_FLARE("Solar Flare", "Vision range divided by 2."),
-    ANCIENT_SIGNAL("Ancient Signal", "Tech costs reduced by 25%. Wormholes unstable.")
+    ANCIENT_SIGNAL("Ancient Signal", "Tech costs reduced by 25%. Wormholes unstable."),
+    PIRATE_RAID("Pirate Raid", "Pirates raid trade routes. -5 Credits income per turn."),
+    TECH_RUSH("Tech Rush", "Technological surge. Research advances twice as fast.")
 }
