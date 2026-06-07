@@ -4,9 +4,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
@@ -229,17 +227,17 @@ fun TacticalMapScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTransformGestures { _, panChange, zoom, _ ->
-                        scale = (scale * zoom).coerceIn(0.5f, 3f)
-                        pan += panChange
-                    }
-                }
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale
                     translationX = pan.x
                     translationY = pan.y
+                }
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, panChange, zoom, _ ->
+                        scale = (scale * zoom).coerceIn(0.5f, 3f)
+                        pan += panChange
+                    }
                 }
                 .pointerInput(Unit) {
                     detectTapGestures(
@@ -312,7 +310,7 @@ fun TacticalMapScreen(
                     }
                 }
                 .pointerInput(Unit) {
-                    detectDragGestures(
+                    detectDragGesturesAfterLongPress(
                         onDragStart = { offset ->
                             val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f)
                             val gs = currentGameState
@@ -360,16 +358,16 @@ fun TacticalMapScreen(
                             currentHoveredHex = null
                         },
                         onDrag = { change, _ ->
-                            val start = dragStartHex ?: return@detectDragGestures
+                            val start = dragStartHex ?: return@detectDragGesturesAfterLongPress
                             val gs = currentGameState
-                            val unit = gs.units[start] ?: return@detectDragGestures
+                            val unit = gs.units[start] ?: return@detectDragGesturesAfterLongPress
                             val coord = pixelToHex(change.position.x, change.position.y, size.width / 2f, size.height / 2f)
-                            if (coord == currentHoveredHex) return@detectDragGestures
+                            if (coord == currentHoveredHex) return@detectDragGesturesAfterLongPress
                             currentHoveredHex = coord
 
                             if (coord == start || !gs.map.tiles.containsKey(coord)) {
                                 ghostPath = null
-                                return@detectDragGestures
+                                return@detectDragGesturesAfterLongPress
                             }
 
                             val gridMap = GameGridMap(gs)
