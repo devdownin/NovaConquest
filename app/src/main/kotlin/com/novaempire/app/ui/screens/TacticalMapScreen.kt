@@ -843,7 +843,7 @@ fun TacticalMapScreen(
                         val adjacentEnemyPlanets = HexCoord.directions
                             .map { coord + it }
                             .mapNotNull { gameState.map.tiles[it] }
-                            .filter { it.terrain == TerrainType.PLANET && it.owner != null && it.owner != gameState.activeFaction }
+                            .filter { it.terrain == TerrainType.PLANET && it.owner != gameState.activeFaction }
 
                         adjacentEnemyPlanets.firstOrNull()?.let { enemyPlanet ->
                             if (enemyPlanet.systemLevel > 0) {
