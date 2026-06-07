@@ -73,7 +73,7 @@ object UtilityEvaluator : AIStrategy {
                 }
 
                 if (goal != null) {
-                    val gridMap = GameGridMap(currentState)
+                    val gridMap = GameGridMap(currentState, aiFaction)
                     val approachGoal = HexCoord.directions
                         .map { goal + it }
                         .filter { gridMap.isPassable(it) }

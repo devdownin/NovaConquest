@@ -5,10 +5,11 @@ import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.hex.HexCoord
 import kotlin.math.max
+import kotlin.random.Random
 
 object CombatResolver {
 
-    fun resolveCombat(state: GameState, attackerCoord: HexCoord, defenderCoord: HexCoord): GameState {
+    fun resolveCombat(state: GameState, attackerCoord: HexCoord, defenderCoord: HexCoord, rng: Random = Random.Default): GameState {
         val attacker = state.units[attackerCoord] ?: return state
         val defender = state.units[defenderCoord] ?: return state
 
@@ -21,8 +22,9 @@ object CombatResolver {
         val plasmaBonus = if (attackerPlayer?.techUnlocked?.contains("tech_plasma_weapons") == true) 2 else 0
         val totalBonus = heroBonus + factionBonus + plasmaBonus
 
-        // 1. Attacker deals damage
-        val damageToDefender = attacker.type.attack + totalBonus
+        // 1. Attacker deals damage (±20% variance)
+        val attackVariance = 0.8f + rng.nextFloat() * 0.4f
+        val damageToDefender = max(1, ((attacker.type.attack + totalBonus) * attackVariance).toInt())
         val defenderRemainingHp = max(0, defender.currentHp - damageToDefender)
 
         var newUnits = state.units.toMutableMap()
@@ -32,8 +34,9 @@ object CombatResolver {
             newUnits.remove(defenderCoord)
             newUnits[attackerCoord] = updatedAttacker
         } else {
-            // 2. Defender counter-attacks if still alive
-            val damageToAttacker = defender.type.attack
+            // 2. Defender counter-attacks if still alive (±20% variance)
+            val counterVariance = 0.8f + rng.nextFloat() * 0.4f
+            val damageToAttacker = max(1, (defender.type.attack * counterVariance).toInt())
             val attackerRemainingHp = max(0, attacker.currentHp - damageToAttacker)
 
             if (attackerRemainingHp <= 0) {

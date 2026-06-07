@@ -49,6 +49,10 @@ object TurnManager {
             if (nextState.activeEvent == GalacticEvent.ECONOMIC_BOOM) income += 3
             income += nextFaction.bonusCredits
 
+            // Unit upkeep: deducted from income each turn
+            val upkeep = nextState.units.values.filter { it.faction == nextFaction }.sumOf { it.type.upkeepCost }
+            income -= upkeep
+
             val newPlayerStates = nextState.playerStates.toMutableMap()
             newPlayerStates[nextFaction] = nextPlayerState.copy(credits = nextPlayerState.credits + income)
             nextState = nextState.copy(playerStates = newPlayerStates)
