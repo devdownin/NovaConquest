@@ -75,7 +75,7 @@ fun TacticalMapScreen(
     val initScale = 0.8f
     val initCoord = gameState.playerStates[gameState.humanFaction]?.capitalCoord
         ?: gameState.units.values.firstOrNull { it.faction == gameState.humanFaction }?.position
-        ?: HexCoord(0, 0)
+        ?: HexCoord(0, 0, 0)
     val horizSpacingInit = sqrt(3f) * HEX_RADIUS
     val vertSpacingInit = 1.5f * HEX_RADIUS
 
@@ -656,14 +656,13 @@ fun TacticalMapScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
-                .padding(horizontal = 32.dp, vertical = 16.dp)
                 .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onOpenAcademy) {
+                IconButton(onClick = onOpenAcademy, modifier = Modifier.size(40.dp)) {
                     Icon(imageVector = Icons.Default.Star, contentDescription = "Hero Academy", tint = NeonCyan)
                 }
                 IconButton(onClick = {
@@ -672,11 +671,11 @@ fun TacticalMapScreen(
                         -horizSpacingInit * (initCoord.q + initCoord.r / 2f) * initScale,
                         -vertSpacingInit * initCoord.r * initScale
                     )
-                }) {
+                }, modifier = Modifier.size(40.dp)) {
                     Icon(imageVector = Icons.Default.Refresh, contentDescription = "Reset view", tint = NeonCyan)
                 }
-                Spacer(modifier = Modifier.width(16.dp))
-                Text("NOVA CONQUEST", style = MaterialTheme.typography.headlineMedium, color = NeonCyan)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("NOVA CONQUEST", style = MaterialTheme.typography.titleSmall, color = NeonCyan)
             }
 
             Row(
@@ -684,8 +683,8 @@ fun TacticalMapScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Credits + income preview
-                IndustrialPanel(modifier = Modifier.padding(vertical = 4.dp), backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)) {
-                    Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                IndustrialPanel(modifier = Modifier.padding(vertical = 2.dp), backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)) {
+                    Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Star, contentDescription = null, tint = NeonOrange, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
@@ -697,8 +696,8 @@ fun TacticalMapScreen(
 
                 // Turn
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("TURN", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                    Text(gameState.turn.toString(), style = MaterialTheme.typography.headlineMedium, color = NeonCyan)
+                    Text("TURN", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                    Text(gameState.turn.toString(), style = MaterialTheme.typography.labelLarge, color = NeonCyan)
                 }
 
                 // Active Faction (colored dot)
