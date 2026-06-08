@@ -7,6 +7,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -153,13 +156,17 @@ fun TechBranchView(title: String, nodes: List<UiTechNode>, onResearchClick: (Str
         nodes.forEachIndexed { index, node ->
             TechNodeCard(node = node, onResearchClick = { onResearchClick(node.id) })
             if (index < nodes.size - 1) {
-                // Connection Line
-                Box(
-                    modifier = Modifier
-                        .width(2.dp)
-                        .height(32.dp)
-                        .background(if (node.state == TechNodeState.UNLOCKED) NeonCyan else MaterialTheme.colorScheme.surfaceVariant)
-                )
+                val connectorColor = if (node.state == TechNodeState.UNLOCKED) NeonCyan else MaterialTheme.colorScheme.surfaceVariant
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(modifier = Modifier.width(2.dp).height(12.dp).background(connectorColor))
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = connectorColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Box(modifier = Modifier.width(2.dp).height(12.dp).background(connectorColor))
+                }
             }
         }
     }
