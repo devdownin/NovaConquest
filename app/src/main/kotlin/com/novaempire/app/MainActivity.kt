@@ -182,6 +182,7 @@ class MainActivity : ComponentActivity() {
                         AppScreen.VICTORY -> {
                             VictoryScreen(
                                 gameState = gameState,
+                                isDefeat = gameState.winner != null && gameState.winner != gameState.humanFaction,
                                 onMainMenuClick = { currentScreen = AppScreen.MAIN_MENU }
                             )
                         }
@@ -259,6 +260,13 @@ fun GameContainer(
     var centerRequestCounter by remember { mutableStateOf(0) }
     var centerRequest by remember { mutableStateOf<Pair<com.novaempire.core.hex.HexCoord, Int>?>(null) }
     var endTurnSummary by remember { mutableStateOf<EndTurnSummary?>(null) }
+    val combatLog = remember { mutableStateListOf<Pair<String, String>>() }
+    LaunchedEffect(Unit) {
+        gameViewModel.notifications.collect { entry ->
+            combatLog.add(0, entry)
+            if (combatLog.size > 8) combatLog.removeAt(combatLog.size - 1)
+        }
+    }
     val currentOnEndTurn by rememberUpdatedState(onEndTurn)
     LaunchedEffect(endTurnSummary) {
         if (endTurnSummary != null) {
@@ -392,7 +400,8 @@ fun GameContainer(
                         onClearSelection = { selectedCoord = null },
                         onOpenAcademy = onOpenAcademy,
                         centerRequest = centerRequest,
-                        initialSelectedHex = selectedCoord
+                        initialSelectedHex = selectedCoord,
+                        combatLog = combatLog
                     )
                 }
                 GameTab.SYSTEM -> {

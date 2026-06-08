@@ -34,6 +34,8 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.novaempire.app.audio.AudioManager
 import com.novaempire.app.audio.SoundType
@@ -68,6 +70,7 @@ fun TacticalMapScreen(
     onClearSelection: () -> Unit,
     centerRequest: Pair<HexCoord, Int>? = null,
     initialSelectedHex: HexCoord? = null,
+    combatLog: List<Pair<String, String>> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val initScale = 0.8f
@@ -810,9 +813,13 @@ fun TacticalMapScreen(
                                 // Unit name + faction color
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text(unitOnTile.type.name, style = MaterialTheme.typography.labelLarge, color = getFactionColor(unitOnTile.faction))
-                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        if (unitOnTile.hasMoved) Text("MOVED", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-                                        if (unitOnTile.hasAttacked) Text("FIRED", style = MaterialTheme.typography.labelSmall, color = NeonRed.copy(alpha = 0.8f))
+                                    if (unitOnTile.faction == gameState.activeFaction) {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            if (unitOnTile.hasMoved) Text("MOVED", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                                            if (unitOnTile.hasAttacked) Text("FIRED", style = MaterialTheme.typography.labelSmall, color = NeonRed.copy(alpha = 0.8f))
+                                        }
+                                    } else {
+                                        Text(unitOnTile.faction.displayName, style = MaterialTheme.typography.labelSmall, color = getFactionColor(unitOnTile.faction).copy(alpha = 0.8f))
                                     }
                                 }
                                 // HP bar
@@ -930,6 +937,36 @@ fun TacticalMapScreen(
                 )
             } else {
                 combatPreviewData = null
+            }
+        }
+
+        // Combat log (bottom-left, last 6 events)
+        if (combatLog.isNotEmpty()) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 12.dp, bottom = 8.dp)
+                    .widthIn(max = 260.dp)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                combatLog.take(6).forEach { (msg, colorStr) ->
+                    val logColor = when (colorStr.uppercase()) {
+                        "RED" -> NeonRed
+                        "ORANGE" -> NeonOrange
+                        "GOLD" -> NeonGold
+                        "GREEN" -> NeonGreen
+                        else -> NeonCyan
+                    }
+                    Text(
+                        text = "▸ $msg",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = logColor.copy(alpha = 0.85f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
 

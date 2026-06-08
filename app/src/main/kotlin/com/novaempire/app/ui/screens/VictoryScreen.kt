@@ -13,14 +13,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.theme.NeonCyan
+import com.novaempire.app.ui.theme.NeonRed
 import com.novaempire.app.ui.theme.TextSecondary
 import com.novaempire.core.domain.state.GameState
 
 @Composable
 fun VictoryScreen(
     gameState: GameState,
+    isDefeat: Boolean = false,
     onMainMenuClick: () -> Unit
 ) {
+    val accentColor = if (isDefeat) NeonRed else NeonCyan
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -34,12 +37,12 @@ fun VictoryScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = "VICTORY ACHIEVED",
+                text = if (isDefeat) "DEFEAT" else "VICTORY ACHIEVED",
                 style = MaterialTheme.typography.displayLarge,
-                color = NeonCyan
+                color = accentColor
             )
             Text(
-                text = gameState.victoryReason ?: "Domination",
+                text = gameState.victoryReason ?: if (isDefeat) "Eliminated" else "Domination",
                 style = MaterialTheme.typography.headlineMedium,
                 color = TextSecondary,
                 modifier = Modifier.padding(bottom = 64.dp)
@@ -49,13 +52,17 @@ fun VictoryScreen(
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
                 shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, NeonCyan.copy(alpha = 0.5f))
+                border = BorderStroke(1.dp, accentColor.copy(alpha = 0.5f))
             ) {
                 Column(
                     modifier = Modifier.padding(32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    VictoryStat("Faction", gameState.winner?.name ?: "Unknown")
+                    if (isDefeat) {
+                        VictoryStat("Winner", gameState.winner?.displayName ?: "Unknown")
+                    } else {
+                        VictoryStat("Faction", gameState.winner?.displayName ?: "Unknown")
+                    }
                     Spacer(modifier = Modifier.height(16.dp))
                     VictoryStat("Cycles Elapsed", gameState.turn.toString())
                     Spacer(modifier = Modifier.height(32.dp))
@@ -65,9 +72,9 @@ fun VictoryScreen(
                         color = TextSecondary
                     )
                     Text(
-                        text = gameState.playerStates[gameState.winner]?.credits?.toString() ?: "0",
+                        text = gameState.playerStates[gameState.humanFaction]?.credits?.toString() ?: "0",
                         style = MaterialTheme.typography.displayLarge,
-                        color = NeonCyan
+                        color = accentColor
                     )
                 }
             }
