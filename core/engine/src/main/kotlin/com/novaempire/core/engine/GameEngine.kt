@@ -58,22 +58,23 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
         val spawnPoints = MapFactory.spawnPointsFor(mapSize.radius).filter { map.tiles.containsKey(it) }
         val units = mutableMapOf<HexCoord, GameUnit>()
         val playerStates = mutableMapOf<Faction, PlayerState>()
+        val spawnOwners = mutableMapOf<HexCoord, Faction>()
 
         val activeFactions = Faction.values().filter { it != Faction.ANCIENT_NPC }
-        
+
         activeFactions.forEachIndexed { index, faction ->
             val spawnPoint = if (index < spawnPoints.size) spawnPoints[index] else null
-            
+
             if (spawnPoint != null) {
-                // Initial unit for each faction
                 units[spawnPoint] = GameUnit(
                     type = if (faction == Faction.DOMINION) UnitType.CRUISER else UnitType.SCOUT,
                     faction = faction,
                     position = spawnPoint,
                     currentHp = if (faction == Faction.DOMINION) UnitType.CRUISER.maxHp else UnitType.SCOUT.maxHp
                 )
+                spawnOwners[spawnPoint] = faction
             }
-            
+
             playerStates[faction] = PlayerState(
                 faction = faction,
                 capitalCoord = spawnPoint,
@@ -81,7 +82,17 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
             )
         }
 
-        val initialState = GameState(map = map, units = units, playerStates = playerStates)
+        // Assign ownership of each spawn planet to its faction from turn 1
+        val updatedTiles = map.tiles.toMutableMap()
+        spawnOwners.forEach { (coord, faction) ->
+            updatedTiles[coord]?.let { tile ->
+                if (tile.terrain == com.novaempire.core.domain.models.TerrainType.PLANET)
+                    updatedTiles[coord] = tile.copy(owner = faction)
+            }
+        }
+        val updatedMap = map.copy(tiles = updatedTiles)
+
+        val initialState = GameState(map = updatedMap, units = units, playerStates = playerStates)
         return updateVision(initialState)
     }
 
@@ -227,7 +238,7 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 IntentValidator.ownedByActive(unit, state.activeFaction)?.let { return GameResult(state, it) }
                 IntentValidator.notMoved(unit)?.let { return GameResult(state, it) }
 
-                val gridMap = GameGridMap(state)
+                val gridMap = GameGridMap(state, state.activeFaction)
                 val ionPenalty = if (state.activeEvent == com.novaempire.core.domain.models.GalacticEvent.ION_STORM) 1 else 0
                 val effectiveMovement = (unit.type.movement + unit.faction.bonusMovement - ionPenalty).coerceAtLeast(1)
                 val path = com.novaempire.core.hex.HexPathfinder.findPath(

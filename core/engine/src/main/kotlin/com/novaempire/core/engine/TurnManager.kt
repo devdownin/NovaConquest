@@ -47,7 +47,12 @@ object TurnManager {
                 income += (income * 0.10).toInt() + 2
             }
             if (nextState.activeEvent == GalacticEvent.ECONOMIC_BOOM) income += 3
+            if (nextState.activeEvent == GalacticEvent.PIRATE_RAID) income -= 5
             income += nextFaction.bonusCredits
+
+            // Unit upkeep: deducted from income each turn
+            val upkeep = nextState.units.values.filter { it.faction == nextFaction }.sumOf { it.type.upkeepCost }
+            income -= upkeep
 
             val newPlayerStates = nextState.playerStates.toMutableMap()
             newPlayerStates[nextFaction] = nextPlayerState.copy(credits = nextPlayerState.credits + income)
@@ -92,7 +97,8 @@ object TurnManager {
         // Tick research for the faction that just ended its turn
         val researchingState = nextState.playerStates[state.activeFaction]
         researchingState?.researchInProgress?.let { prog ->
-            val newTurns = prog.turnsRemaining - 1
+            val researchTick = if (nextState.activeEvent == GalacticEvent.TECH_RUSH) 2 else 1
+            val newTurns = prog.turnsRemaining - researchTick
             val updatedResearcher = if (newTurns <= 0) {
                 researchingState.copy(
                     techUnlocked = researchingState.techUnlocked + prog.techId,
