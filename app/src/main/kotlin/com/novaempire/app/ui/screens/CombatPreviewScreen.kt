@@ -28,21 +28,22 @@ import com.novaempire.core.domain.models.GameUnit
 fun CombatPreviewScreen(
     attacker: GameUnit,
     defender: GameUnit,
+    minDamage: Int,
+    maxDamage: Int,
+    counterMin: Int,
+    counterMax: Int,
+    terrainNotes: List<String> = emptyList(),
     onConfirm: () -> Unit,
     onCancel: () -> Unit
 ) {
     val attackerColor = getFactionColor(attacker.faction)
     val defenderColor = getFactionColor(defender.faction)
-
-    // Simplified damage prediction
-    val predictedDamage = attacker.type.attack
-    val predictedCounter = if (predictedDamage >= defender.currentHp) 0 else defender.type.attack
-    val targetDestroyed = predictedDamage >= defender.currentHp
+    val targetDestroyed = minDamage >= defender.currentHp
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.8f)), // Overlay background
+            .background(Color.Black.copy(alpha = 0.8f)),
         contentAlignment = Alignment.Center
     ) {
         Surface(
@@ -69,7 +70,6 @@ fun CombatPreviewScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Attacker
                     CombatEntity(
                         name = "${attacker.faction.name} ${attacker.type.name}",
                         hp = "${attacker.currentHp}/${attacker.type.maxHp}",
@@ -82,7 +82,6 @@ fun CombatPreviewScreen(
                         color = TextSecondary,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
-                    // Defender
                     CombatEntity(
                         name = "${defender.faction.name} ${defender.type.name}",
                         hp = "${defender.currentHp}/${defender.type.maxHp}",
@@ -91,10 +90,11 @@ fun CombatPreviewScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
+                // Damage range
                 Text(
-                    text = "ESTIMATED DAMAGE: $predictedDamage",
+                    text = "DMG: $minDamage – $maxDamage",
                     style = MaterialTheme.typography.headlineMedium,
                     color = NeonRed
                 )
@@ -105,11 +105,24 @@ fun CombatPreviewScreen(
                         color = NeonRed
                     )
                 }
-                Text(
-                    text = "COUNTER-ATTACK: $predictedCounter",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = TextSecondary
-                )
+
+                // Terrain modifiers
+                terrainNotes.forEach { note ->
+                    Text(
+                        text = note,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = NeonOrange
+                    )
+                }
+
+                // Counter-attack
+                if (!targetDestroyed) {
+                    Text(
+                        text = "COUNTER: $counterMin – $counterMax",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = TextSecondary
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(32.dp))
 

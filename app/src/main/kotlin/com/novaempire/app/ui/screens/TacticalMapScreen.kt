@@ -118,7 +118,7 @@ fun TacticalMapScreen(
     val credits = playerState?.credits ?: 0
     val activeFactionColor = getFactionColor(gameState.activeFaction)
 
-    val incomePerTurn = remember(gameState.map.tiles, gameState.playerStates, gameState.activeFaction, gameState.activeEvent) {
+    val incomePerTurn = remember(gameState.map.tiles, gameState.playerStates, gameState.activeFaction, gameState.activeEvent, gameState.units) {
         val ps = gameState.playerStates[gameState.activeFaction] ?: return@remember 0
         var income = 10
         val ownedPlanets = gameState.map.tiles.values.filter {
@@ -127,7 +127,9 @@ fun TacticalMapScreen(
         income += ownedPlanets.sumOf { 5 + it.systemLevel * 2 }
         if (ps.recruitedHeroes.contains(HeroRegistry.ELARA)) income += (income * 0.10).toInt() + 2
         if (gameState.activeEvent == GalacticEvent.ECONOMIC_BOOM) income += 3
+        if (gameState.activeEvent == GalacticEvent.PIRATE_RAID) income -= 5
         income += gameState.activeFaction.bonusCredits
+        income -= gameState.units.values.filter { it.faction == gameState.activeFaction }.sumOf { it.type.upkeepCost }
         income
     }
     val buildingPlanets = remember(gameState.playerStates, gameState.activeFaction) {
@@ -140,7 +142,7 @@ fun TacticalMapScreen(
         val unit = gameState.units[sel] ?: return@remember emptySet<HexCoord>()
         if (unit.faction != gameState.activeFaction || unit.hasMoved) return@remember emptySet<HexCoord>()
         val ionPenalty = if (gameState.activeEvent == GalacticEvent.ION_STORM) 1 else 0
-        HexPathfinder.findReachable(sel, GameGridMap(gameState), (unit.type.movement + unit.faction.bonusMovement - ionPenalty).coerceAtLeast(1))
+        HexPathfinder.findReachable(sel, GameGridMap(gameState, gameState.activeFaction), (unit.type.movement + unit.faction.bonusMovement - ionPenalty).coerceAtLeast(1))
     }
 
     // Enemy units the selected unit can attack this turn
@@ -447,11 +449,15 @@ fun TacticalMapScreen(
                             strokeWidth = 1f
                         )
 
-                        // Movement range overlay (cyan fill)
+                        // Movement range overlay (cyan fill + border)
                         if (reachableHexes.contains(tile.coord)) {
                             drawHexagonPath(
                                 centerX = x, centerY = y, radius = hexRadius,
-                                color = NeonCyan.copy(alpha = 0.18f), fill = true
+                                color = NeonCyan.copy(alpha = 0.25f), fill = true
+                            )
+                            drawHexagonPath(
+                                centerX = x, centerY = y, radius = hexRadius,
+                                color = NeonCyan.copy(alpha = 0.55f), strokeWidth = 2f
                             )
                         }
 
@@ -687,7 +693,11 @@ fun TacticalMapScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text("$credits C", style = MaterialTheme.typography.labelLarge)
-                            Text("+$incomePerTurn C/turn", style = MaterialTheme.typography.labelSmall, color = NeonGreen)
+                            Text(
+                                text = "${if (incomePerTurn >= 0) "+" else ""}$incomePerTurn C/turn",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (incomePerTurn >= 0) NeonGreen else NeonRed
+                            )
                         }
                     }
                 }
@@ -877,9 +887,39 @@ fun TacticalMapScreen(
             val defender = gameState.units[defenderCoord]
 
             if (attacker != null && defender != null) {
+                val attackerPlayer = gameState.playerStates[attacker.faction]
+                val hasVance = attackerPlayer?.recruitedHeroes?.contains(HeroRegistry.VANCE) == true
+                val heroBonus = if (hasVance) maxOf(1, (attacker.type.attack * 0.15).toInt()) else 0
+                val factionBonus = if (attacker.faction.bonusAttack > 0) maxOf(1, (attacker.type.attack * attacker.faction.bonusAttack).toInt()) else 0
+                val plasmaBonus = if (attackerPlayer?.techUnlocked?.contains("tech_plasma_weapons") == true) 2 else 0
+                val totalBonus = heroBonus + factionBonus + plasmaBonus
+
+                val atkTerrain = gameState.map.tiles[attackerCoord]?.terrain
+                val defTerrain = gameState.map.tiles[defenderCoord]?.terrain
+                val terrainAtkMult = if (atkTerrain == TerrainType.BLACK_HOLE) 0.75f else 1.0f
+                val terrainDefMult = if (defTerrain == TerrainType.NEBULA) 0.8f else 1.0f
+
+                val rawBase = (attacker.type.attack + totalBonus) * terrainAtkMult * terrainDefMult
+                val minDmg = maxOf(1, (rawBase * 0.8f).toInt())
+                val maxDmg = maxOf(1, (rawBase * 1.2f).toInt())
+
+                val guaranteed = minDmg >= defender.currentHp
+                val counterMin = if (guaranteed) 0 else maxOf(1, (defender.type.attack * 0.8f).toInt())
+                val counterMax = if (maxDmg >= defender.currentHp) 0 else maxOf(1, (defender.type.attack * 1.2f).toInt())
+
+                val notes = buildList {
+                    if (atkTerrain == TerrainType.BLACK_HOLE) add("BLACK HOLE: -25% ATK")
+                    if (defTerrain == TerrainType.NEBULA) add("NEBULA: -20% DMG")
+                }
+
                 CombatPreviewScreen(
                     attacker = attacker,
                     defender = defender,
+                    minDamage = minDmg,
+                    maxDamage = maxDmg,
+                    counterMin = counterMin,
+                    counterMax = counterMax,
+                    terrainNotes = notes,
                     onConfirm = {
                         onAttackUnit(attackerCoord, defenderCoord)
                         combatPreviewData = null
@@ -889,7 +929,6 @@ fun TacticalMapScreen(
                     }
                 )
             } else {
-                // Stale preview (unit removed by AI between preview and confirm) — close it
                 combatPreviewData = null
             }
         }
