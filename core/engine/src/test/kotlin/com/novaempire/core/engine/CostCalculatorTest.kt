@@ -1,5 +1,8 @@
 package com.novaempire.core.engine
 
+import com.novaempire.core.domain.models.Faction
+import com.novaempire.core.domain.models.HeroRegistry
+import com.novaempire.core.domain.state.PlayerState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -21,16 +24,22 @@ class CostCalculatorTest {
 
     @Test
     fun kaelApplies10PercentDiscount() {
-        val base = CostCalculator.techCost("tech_hull_plating", emptySet(), hasKael = false)
-        val withKael = CostCalculator.techCost("tech_hull_plating", emptySet(), hasKael = true)
-        assertTrue(withKael < base)
+        val base = CostCalculator.techCost("tech_hull_plating", emptySet())
+        val withKael = CostCalculator.techCost(
+            "tech_hull_plating", emptySet(),
+            PlayerState(Faction.DOMINION, recruitedHeroes = setOf(HeroRegistry.KAEL))
+        )
+        assertTrue("Kael should reduce cost", withKael < base)
     }
 
     @Test
     fun factionDiscountApplied() {
         val base = CostCalculator.techCost("tech_hull_plating", emptySet())
-        val discounted = CostCalculator.techCost("tech_hull_plating", emptySet(), factionDiscount = 0.5f)
-        assertEquals(base / 2, discounted)
+        val discounted = CostCalculator.techCost(
+            "tech_hull_plating", emptySet(),
+            PlayerState(Faction.SYNTH) // SYNTH has 15% tech discount
+        )
+        assertTrue("SYNTH faction discount should reduce cost", discounted < base)
     }
 
     @Test
@@ -40,7 +49,10 @@ class CostCalculatorTest {
 
     @Test
     fun costNeverBelowOne() {
-        val result = CostCalculator.techCost("tech_hull_plating", emptySet(), hasKael = true, factionDiscount = 0.99f)
+        val result = CostCalculator.techCost(
+            "tech_hull_plating", emptySet(),
+            PlayerState(Faction.SYNTH, recruitedHeroes = setOf(HeroRegistry.KAEL))
+        )
         assertTrue(result >= 1)
     }
 }

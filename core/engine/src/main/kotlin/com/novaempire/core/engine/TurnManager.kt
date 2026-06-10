@@ -1,7 +1,7 @@
 package com.novaempire.core.engine
 
+import com.novaempire.core.domain.models.BonusType
 import com.novaempire.core.domain.models.Faction
-import com.novaempire.core.domain.models.GalacticEvent
 import com.novaempire.core.domain.models.GameUnit
 import com.novaempire.core.domain.models.HeroRegistry
 import com.novaempire.core.domain.models.TerrainType
@@ -37,20 +37,15 @@ object TurnManager {
         // Income for the faction starting its turn
         val nextPlayerState = nextState.playerStates[nextFaction]
         if (nextPlayerState != null) {
-            var income = 10
-            // Planet income: each owned planet yields credits based on its development level
             val ownedPlanets = nextState.map.tiles.values.filter {
                 it.terrain == TerrainType.PLANET && it.owner == nextFaction
             }
-            income += ownedPlanets.sumOf { 5 + it.systemLevel * 2 }
-            if (nextPlayerState.recruitedHeroes.contains(HeroRegistry.ELARA)) {
-                income += (income * 0.10).toInt() + 2
-            }
-            if (nextState.activeEvent == GalacticEvent.ECONOMIC_BOOM) income += 3
-            if (nextState.activeEvent == GalacticEvent.PIRATE_RAID) income -= 5
-            income += nextFaction.bonusCredits
+            var income = 10 + ownedPlanets.sumOf { 5 + it.systemLevel * 2 }
 
-            // Unit upkeep: deducted from income each turn
+            val incomePct = BonusRegistry.sum(BonusType.INCOME_PERCENT, nextPlayerState, nextState.activeEvent)
+            val incomeFlat = BonusRegistry.sum(BonusType.INCOME_FLAT, nextPlayerState, nextState.activeEvent)
+            income += (income * incomePct / 100.0).toInt() + incomeFlat
+
             val upkeep = nextState.units.values.filter { it.faction == nextFaction }.sumOf { it.type.upkeepCost }
             income -= upkeep
 
@@ -72,12 +67,13 @@ object TurnManager {
                     val candidates = listOf(order.planetCoord) + gridMap.getNeighbors(order.planetCoord)
                     val spawnHex = candidates.firstOrNull { stateAfterBuilds.units[it] == null && gridMap.isPassable(it) }
                     if (spawnHex != null) {
-                        val hasHullPlating = stateAfterBuilds.playerStates[state.activeFaction]?.techUnlocked?.contains("tech_hull_plating") == true
-                    val newUnit = GameUnit(
+                        val spawningPlayer = stateAfterBuilds.playerStates[state.activeFaction]
+                        val hpBonus = BonusRegistry.sum(BonusType.UNIT_HP_ON_SPAWN, spawningPlayer, nextState.activeEvent)
+                        val newUnit = GameUnit(
                             type = order.unitType,
                             faction = state.activeFaction,
                             position = spawnHex,
-                            currentHp = order.unitType.maxHp + if (hasHullPlating) 3 else 0
+                            currentHp = order.unitType.maxHp + hpBonus
                         )
                         val updatedUnits = stateAfterBuilds.units.toMutableMap()
                         updatedUnits[spawnHex] = newUnit
@@ -97,7 +93,7 @@ object TurnManager {
         // Tick research for the faction that just ended its turn
         val researchingState = nextState.playerStates[state.activeFaction]
         researchingState?.researchInProgress?.let { prog ->
-            val researchTick = if (nextState.activeEvent == GalacticEvent.TECH_RUSH) 2 else 1
+            val researchTick = 1 + BonusRegistry.sum(BonusType.RESEARCH_SPEED, researchingState, nextState.activeEvent)
             val newTurns = prog.turnsRemaining - researchTick
             val updatedResearcher = if (newTurns <= 0) {
                 researchingState.copy(
