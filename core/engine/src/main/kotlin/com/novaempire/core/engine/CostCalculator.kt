@@ -1,6 +1,9 @@
 package com.novaempire.core.engine
 
+import com.novaempire.core.domain.models.BonusType
+import com.novaempire.core.domain.models.GalacticEvent
 import com.novaempire.core.domain.models.TechRegistry
+import com.novaempire.core.domain.state.PlayerState
 import kotlin.math.max
 
 object CostCalculator {
@@ -8,15 +11,13 @@ object CostCalculator {
     fun techCost(
         techId: String,
         unlockedTechs: Set<String>,
-        hasKael: Boolean = false,
-        factionDiscount: Float = 0f
+        playerState: PlayerState? = null,
+        activeEvent: GalacticEvent = GalacticEvent.NONE
     ): Int {
         var cost = TechRegistry.baseCost(techId, unlockedTechs)
-        if (hasKael) {
-            cost = max(1, cost - max(1, (cost * 0.10).toInt()))
-        }
-        if (factionDiscount > 0f) {
-            cost = (cost * (1f - factionDiscount)).toInt()
+        val discountPct = BonusRegistry.sum(BonusType.TECH_COST_PERCENT, playerState, activeEvent)
+        if (discountPct > 0) {
+            cost = max(1, (cost * (1f - discountPct / 100f)).toInt())
         }
         return max(1, cost)
     }

@@ -17,5 +17,13 @@ enum class Faction(
     NOMADS("Star Nomads", "Superior mobility. +1 Move, +1 Vision.", bonusMovement = 1, bonusVision = 1),
     KAELEN("Kaelen Hegemony", "Ancient knowledge. +2 Vision range.", bonusVision = 2),
     XYLAR("Xylar Swarm", "Aggressive swarm. +1 Move, +5% Attack.", bonusMovement = 1, bonusAttack = 0.05f),
-    ANCIENT_NPC("Ancients", "Remnants of a forgotten age.")
+    ANCIENT_NPC("Ancients", "Remnants of a forgotten age.");
+
+    fun bonusModifiers(): List<BonusModifier> = buildList {
+        if (bonusAttack > 0f) add(BonusModifier(BonusType.ATTACK_PERCENT, (bonusAttack * 100).toInt()))
+        if (bonusCredits > 0) add(BonusModifier(BonusType.INCOME_FLAT, bonusCredits))
+        if (bonusTechDiscount > 0f) add(BonusModifier(BonusType.TECH_COST_PERCENT, (bonusTechDiscount * 100).toInt()))
+        if (bonusVision > 0) add(BonusModifier(BonusType.VISION_RANGE, bonusVision))
+        if (bonusMovement != 0) add(BonusModifier(BonusType.MOVEMENT_MODIFIER, bonusMovement))
+    }
 }

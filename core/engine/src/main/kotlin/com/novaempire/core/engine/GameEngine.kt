@@ -1,9 +1,20 @@
 package com.novaempire.core.engine
 
-import com.novaempire.core.domain.models.*
+import com.novaempire.core.domain.models.Faction
+import com.novaempire.core.domain.models.MapArchetype
+import com.novaempire.core.domain.models.MapSize
+import com.novaempire.core.domain.models.TerrainType
+import com.novaempire.core.domain.models.TechRegistry
+import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.domain.state.PlayerState
 import com.novaempire.core.hex.HexCoord
+import com.novaempire.core.domain.models.GameUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,11 +23,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -29,14 +35,17 @@ sealed class GameEffect {
     object ShakeCamera : GameEffect()
 }
 
-class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
+class GameEngine(private val deps: GameEngineDependencies = GameEngineDependencies()) {
+
+    constructor(aiStrategy: AIStrategy) : this(GameEngineDependencies(aiStrategy = aiStrategy))
+
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val intentChannel = Channel<GameIntent>(Channel.UNLIMITED)
 
     private val _isAiThinking = MutableStateFlow(false)
     val isAiThinking: StateFlow<Boolean> = _isAiThinking.asStateFlow()
 
-    private val _state = MutableStateFlow(createInitialState(com.novaempire.core.domain.models.MapSize.MEDIUM, com.novaempire.core.domain.models.MapArchetype.STANDARD))
+    private val _state = MutableStateFlow(createInitialState(MapSize.MEDIUM, MapArchetype.STANDARD))
     val state: StateFlow<GameState> = _state.asStateFlow()
 
     private val _errors = MutableSharedFlow<String>()
@@ -53,7 +62,7 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
         }
     }
 
-    private fun createInitialState(mapSize: com.novaempire.core.domain.models.MapSize, archetype: com.novaempire.core.domain.models.MapArchetype): GameState {
+    private fun createInitialState(mapSize: MapSize, archetype: MapArchetype): GameState {
         val map = MapFactory.generateMap(radius = mapSize.radius, archetype = archetype)
         val spawnPoints = MapFactory.spawnPointsFor(mapSize.radius).filter { map.tiles.containsKey(it) }
         val units = mutableMapOf<HexCoord, GameUnit>()
@@ -61,10 +70,8 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
         val spawnOwners = mutableMapOf<HexCoord, Faction>()
 
         val activeFactions = Faction.values().filter { it != Faction.ANCIENT_NPC }
-
         activeFactions.forEachIndexed { index, faction ->
-            val spawnPoint = if (index < spawnPoints.size) spawnPoints[index] else null
-
+            val spawnPoint = spawnPoints.getOrNull(index)
             if (spawnPoint != null) {
                 units[spawnPoint] = GameUnit(
                     type = if (faction == Faction.DOMINION) UnitType.CRUISER else UnitType.SCOUT,
@@ -74,25 +81,18 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 )
                 spawnOwners[spawnPoint] = faction
             }
-
-            playerStates[faction] = PlayerState(
-                faction = faction,
-                capitalCoord = spawnPoint,
-                credits = 100
-            )
+            playerStates[faction] = PlayerState(faction = faction, capitalCoord = spawnPoint, credits = 100)
         }
 
-        // Assign ownership of each spawn planet to its faction from turn 1
         val updatedTiles = map.tiles.toMutableMap()
         spawnOwners.forEach { (coord, faction) ->
             updatedTiles[coord]?.let { tile ->
-                if (tile.terrain == com.novaempire.core.domain.models.TerrainType.PLANET)
+                if (tile.terrain == TerrainType.PLANET)
                     updatedTiles[coord] = tile.copy(owner = faction)
             }
         }
-        val updatedMap = map.copy(tiles = updatedTiles)
 
-        val initialState = GameState(map = updatedMap, units = units, playerStates = playerStates)
+        val initialState = GameState(map = map.copy(tiles = updatedTiles), units = units, playerStates = playerStates)
         return updateVision(initialState)
     }
 
@@ -112,8 +112,11 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
     }
 
     private suspend fun handleIntent(intent: GameIntent) {
-        // Prevent player actions while AI is thinking, except for initialization/loading
-        if (_isAiThinking.value && intent !is GameIntent.LoadGame && intent !is GameIntent.StartNewGame && intent !is GameIntent.StartNewGameWithSize) {
+        if (_isAiThinking.value &&
+            intent !is GameIntent.LoadGame &&
+            intent !is GameIntent.StartNewGame &&
+            intent !is GameIntent.StartNewGameWithSize
+        ) {
             _errors.emit("AI is thinking, please wait.")
             return
         }
@@ -124,19 +127,15 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
             var currentState = prevState
             currentState = reduce(currentState, intent).newState
 
-            // Notify: human research completed this turn
             val humanFaction = currentState.humanFaction
             val humanPrev = prevState.playerStates[humanFaction]
             val humanNext = currentState.playerStates[humanFaction]
             val prevResearch = humanPrev?.researchInProgress
             if (prevResearch != null && humanNext?.researchInProgress == null) {
-                val name = com.novaempire.core.domain.models.TechRegistry
-                    .getTech(prevResearch.techId)?.name
-                    ?: prevResearch.techId
+                val name = TechRegistry.getTech(prevResearch.techId)?.name ?: prevResearch.techId
                 _effects.emit(GameEffect.ShowNotification("RESEARCH COMPLETE: $name", "CYAN"))
             }
 
-            // Notify: human build order completed
             val prevBuildQueue = prevState.playerStates[humanFaction]?.buildQueue ?: emptyList()
             val nextBuildQueue = currentState.playerStates[humanFaction]?.buildQueue ?: emptyList()
             if (prevBuildQueue.size > nextBuildQueue.size) {
@@ -144,7 +143,6 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 _effects.emit(GameEffect.ShowNotification("$count UNIT${if (count > 1) "S" else ""} READY FOR DEPLOYMENT", "CYAN"))
             }
 
-            // Notify: galactic event started (can fire on human's EndTurn if it's the end of a round)
             if (prevState.activeEvent != currentState.activeEvent &&
                 currentState.activeEvent != com.novaempire.core.domain.models.GalacticEvent.NONE) {
                 _effects.emit(GameEffect.ShowNotification(
@@ -152,12 +150,13 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 ))
             }
 
-            // AI Turn Loop — runs until it's the human player's turn again
             while (currentState.activeFaction != humanFaction) {
                 currentState = try {
                     withContext(Dispatchers.Default) {
                         withTimeout(10_000L) {
-                            aiStrategy.executeAITurn(currentState, currentState.activeFaction)
+                            deps.aiStrategy.executeAITurn(currentState, currentState.activeFaction) { s, i ->
+                                reduce(s, i).newState
+                            }
                         }
                     }
                 } catch (e: TimeoutCancellationException) {
@@ -166,10 +165,7 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 }
                 currentState = updateVision(currentState)
                 val prevForAI = currentState
-                // Trigger EndTurn to move to next faction
                 currentState = reduce(currentState, GameIntent.EndTurn).newState
-
-                // Galactic event can also start when a new round begins mid-AI loop
                 if (prevForAI.activeEvent != currentState.activeEvent &&
                     currentState.activeEvent != com.novaempire.core.domain.models.GalacticEvent.NONE) {
                     _effects.emit(GameEffect.ShowNotification(
@@ -178,12 +174,9 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 }
             }
 
-            // Global refresh after full round
             val refreshedUnits = currentState.units.mapValues { it.value.copy(hasMoved = false, hasAttacked = false) }
             currentState = currentState.copy(units = refreshedUnits)
-
-            val finalState = checkVictoryConditions(currentState)
-            _state.value = finalState
+            _state.value = checkVictoryConditions(currentState)
             _isAiThinking.value = false
         } else {
             val currentState = _state.value
@@ -192,10 +185,8 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 _errors.emit(result.error)
                 _effects.emit(GameEffect.PlaySound("UI_CLICK"))
             }
-            
+
             val nextState = result.newState
-            
-            // Side-effect: Camera shake, sound, and combat summary notification
             val combat = nextState.lastCombatEvent
             if (combat != null && (currentState.lastCombatEvent == null || combat != currentState.lastCombatEvent)) {
                 _effects.emit(GameEffect.ShakeCamera)
@@ -204,202 +195,37 @@ class GameEngine(private val aiStrategy: AIStrategy = UtilityEvaluator) {
                 val outcome = if (combat.targetDestroyed) "$attackerName DESTROYED $defenderName"
                               else "$attackerName HIT $defenderName"
                 _effects.emit(GameEffect.ShowNotification(outcome, "RED"))
-                if (combat.targetDestroyed) {
-                    _effects.emit(GameEffect.PlaySound("COMBAT_EXPLOSION"))
-                } else {
-                    _effects.emit(GameEffect.PlaySound("COMBAT_LASER"))
-                }
+                _effects.emit(if (combat.targetDestroyed) GameEffect.PlaySound("COMBAT_EXPLOSION")
+                              else GameEffect.PlaySound("COMBAT_LASER"))
             }
 
             _state.value = checkVictoryConditions(nextState)
         }
     }
 
-    private fun reduce(state: GameState, intent: GameIntent): GameResult {
-        return when (intent) {
+    // ── Reducer dispatcher ────────────────────────────────────────────────────
 
-            is GameIntent.StartNewGame -> {
-                GameResult(createInitialState(com.novaempire.core.domain.models.MapSize.MEDIUM, com.novaempire.core.domain.models.MapArchetype.STANDARD))
-            }
-            is GameIntent.StartNewGameWithSize -> {
-                GameResult(createInitialState(intent.mapSize, intent.archetype))
-            }
-            is GameIntent.LoadGame -> {
-                GameResult(updateVision(intent.loadedState))
-            }
-            is GameIntent.EndTurn -> {
-                GameResult(updateVision(TurnManager.advanceTurn(state)))
-            }
-            is GameIntent.SelectFaction -> {
-                GameResult(state.copy(activeFaction = intent.faction, humanFaction = intent.faction))
-            }
-            is GameIntent.MoveUnit -> {
-                val unit = state.units[intent.from] ?: return GameResult(state, "No unit at selected position.")
-                IntentValidator.ownedByActive(unit, state.activeFaction)?.let { return GameResult(state, it) }
-                IntentValidator.notMoved(unit)?.let { return GameResult(state, it) }
-
-                val gridMap = GameGridMap(state, state.activeFaction)
-                val ionPenalty = if (state.activeEvent == com.novaempire.core.domain.models.GalacticEvent.ION_STORM) 1 else 0
-                val effectiveMovement = (unit.type.movement + unit.faction.bonusMovement - ionPenalty).coerceAtLeast(1)
-                val path = com.novaempire.core.hex.HexPathfinder.findPath(
-                    intent.from, intent.to, gridMap,
-                    effectiveMovement
-                )
-                if (path != null && path.isNotEmpty()) {
-                    val updatedUnits = state.units.toMutableMap()
-                    updatedUnits.remove(intent.from)
-                    updatedUnits[intent.to] = unit.copy(position = intent.to, hasMoved = true)
-                    GameResult(updateVision(state.copy(units = updatedUnits), setOf(unit.faction)))
-                } else {
-                    GameResult(state, "Target position is unreachable or too far.")
-                }
-            }
-            is GameIntent.AttackUnit -> {
-                val unit = state.units[intent.attacker] ?: return GameResult(state, "Attacker not found.")
-                IntentValidator.ownedByActive(unit, state.activeFaction)?.let { return GameResult(state, it) }
-                IntentValidator.notAttacked(unit)?.let { return GameResult(state, it) }
-                val defender = state.units[intent.defender] ?: return GameResult(state, "Target not found.")
-                if (intent.attacker.distanceTo(intent.defender) > unit.type.range)
-                    return GameResult(state, "Target is out of range.")
-                GameResult(updateVision(
-                    CombatResolver.resolveCombat(state, intent.attacker, intent.defender),
-                    setOfNotNull(unit.faction, defender.faction)
-                ))
-            }
-            is GameIntent.ResearchTech -> {
-                val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
-                if (playerState.researchInProgress != null) return GameResult(state, "Research already in progress.")
-                val tech = com.novaempire.core.domain.models.TechRegistry.getTech(intent.techId)
-                    ?: return GameResult(state, "Technology not found.")
-                if (tech.requiresTechId != null && !playerState.techUnlocked.contains(tech.requiresTechId))
-                    return GameResult(state, "Prerequisite technology not researched.")
-                if (playerState.techUnlocked.contains(intent.techId))
-                    return GameResult(state, "Technology already researched.")
-                val eventDiscount = if (state.activeEvent == com.novaempire.core.domain.models.GalacticEvent.ANCIENT_SIGNAL) 0.25f else 0f
-                val cost = CostCalculator.techCost(
-                    intent.techId, playerState.techUnlocked,
-                    playerState.recruitedHeroes.contains(com.novaempire.core.domain.models.HeroRegistry.KAEL),
-                    (state.activeFaction.bonusTechDiscount + eventDiscount).coerceAtMost(0.9f)
-                )
-                IntentValidator.canAfford(playerState, cost)?.let { return GameResult(state, it) }
-                val newPlayerStates = state.playerStates.toMutableMap()
-                newPlayerStates[state.activeFaction] = playerState.copy(
-                    credits = playerState.credits - cost,
-                    researchInProgress = com.novaempire.core.domain.state.ResearchProgress(intent.techId, tech.tier + 1)
-                )
-                GameResult(state.copy(playerStates = newPlayerStates))
-            }
-            is GameIntent.BuildUnit -> {
-                val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
-                val planetCoord = intent.location ?: playerState.capitalCoord ?: return GameResult(state, "No valid spawn location.")
-                IntentValidator.canAfford(playerState, intent.unitType.cost)?.let { return GameResult(state, it) }
-                if (playerState.buildQueue.any { it.planetCoord == planetCoord })
-                    return GameResult(state, "Already producing a unit at this location.")
-                val turns = buildTurns(intent.unitType)
-                val newPlayerStates = state.playerStates.toMutableMap()
-                newPlayerStates[state.activeFaction] = playerState.copy(
-                    credits = playerState.credits - intent.unitType.cost,
-                    buildQueue = playerState.buildQueue + com.novaempire.core.domain.state.BuildOrder(intent.unitType, planetCoord, turns)
-                )
-                GameResult(state.copy(playerStates = newPlayerStates))
-            }
-            is GameIntent.RecruitHero -> {
-                val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
-                val hero = com.novaempire.core.domain.models.HeroRegistry.getHero(intent.heroId) ?: return GameResult(state, "Hero not found.")
-                IntentValidator.canAfford(playerState, hero.cost)?.let { return GameResult(state, it) }
-                if (playerState.recruitedHeroes.contains(hero.id)) return GameResult(state, "Hero already recruited.")
-                val newPlayerStates = state.playerStates.toMutableMap()
-                newPlayerStates[state.activeFaction] = playerState.copy(
-                    credits = playerState.credits - hero.cost,
-                    recruitedHeroes = playerState.recruitedHeroes + hero.id
-                )
-                GameResult(state.copy(playerStates = newPlayerStates))
-            }
-            is GameIntent.ChangeRelation -> {
-                val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
-                val newPlayerStates = state.playerStates.toMutableMap()
-                newPlayerStates[state.activeFaction] = playerState.copy(
-                    relations = playerState.relations.toMutableMap().also { it[intent.targetFaction] = intent.newRelation }
-                )
-                val targetState = newPlayerStates[intent.targetFaction]
-                if (targetState != null) {
-                    newPlayerStates[intent.targetFaction] = targetState.copy(
-                        relations = targetState.relations.toMutableMap().also { it[state.activeFaction] = intent.newRelation }
-                    )
-                }
-                GameResult(state.copy(playerStates = newPlayerStates))
-            }
-            is GameIntent.SiegePlanet -> {
-                val unit = state.units[intent.attackerCoord] ?: return GameResult(state, "Attacker not found.")
-                IntentValidator.ownedByActive(unit, state.activeFaction)?.let { return GameResult(state, it) }
-                IntentValidator.notAttacked(unit)?.let { return GameResult(state, it) }
-                IntentValidator.isPlanet(state, intent.planetCoord)?.let { return GameResult(state, it) }
-                if (state.map.tiles[intent.planetCoord]?.owner == state.activeFaction)
-                    return GameResult(state, "You cannot siege your own planet.")
-                GameResult(CombatResolver.siegePlanet(state, intent.attackerCoord, intent.planetCoord))
-            }
-            is GameIntent.CapturePlanet -> {
-                val unit = state.units[intent.unitCoord] ?: return GameResult(state, "Unit not found.")
-                IntentValidator.ownedByActive(unit, state.activeFaction)?.let { return GameResult(state, it) }
-                IntentValidator.notAttacked(unit)?.let { return GameResult(state, it) }
-                IntentValidator.isPlanet(state, intent.planetCoord)?.let { return GameResult(state, it) }
-                val tile = state.map.tiles[intent.planetCoord]!!
-                if (tile.systemLevel > 0) return GameResult(state, "Planet must be at level 0 to be captured.")
-                if (tile.owner == state.activeFaction) return GameResult(state, "You already own this planet.")
-                GameResult(CombatResolver.capturePlanet(state, intent.unitCoord, intent.planetCoord))
-            }
-            is GameIntent.UpgradeSystem -> {
-                val tile = state.map.tiles[intent.coord] ?: return GameResult(state, "Tile not found.")
-                IntentValidator.isPlanet(state, intent.coord)?.let { return GameResult(state, it) }
-                if (tile.owner != state.activeFaction) return GameResult(state, "You don't own this planet.")
-                if (tile.systemLevel >= 5) return GameResult(state, "Planet already at maximum level.")
-                val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
-                val upgradeCost = (tile.systemLevel + 1) * 15
-                IntentValidator.canAfford(playerState, upgradeCost)?.let { return GameResult(state, it) }
-                val newPlayerStates = state.playerStates.toMutableMap()
-                newPlayerStates[state.activeFaction] = playerState.copy(credits = playerState.credits - upgradeCost)
-                val newTiles = state.map.tiles.toMutableMap()
-                newTiles[intent.coord] = tile.copy(systemLevel = tile.systemLevel + 1)
-                GameResult(state.copy(playerStates = newPlayerStates, map = state.map.copy(tiles = newTiles)))
-            }
-            is GameIntent.CancelBuild -> {
-                val playerState = state.playerStates[state.activeFaction] ?: return GameResult(state, "Player state not found.")
-                val order = playerState.buildQueue.firstOrNull { it.planetCoord == intent.planetCoord }
-                    ?: return GameResult(state, "No build order at this location.")
-                val refund = order.unitType.cost / 2
-                val newPlayerStates = state.playerStates.toMutableMap()
-                newPlayerStates[state.activeFaction] = playerState.copy(
-                    credits = playerState.credits + refund,
-                    buildQueue = playerState.buildQueue.filter { it.planetCoord != intent.planetCoord }
-                )
-                GameResult(state.copy(playerStates = newPlayerStates))
-            }
-        }
-    }
-
-    private fun updateVision(
-        state: GameState,
-        factions: Collection<Faction> = Faction.values().asList()
-    ): GameState {
-        val updatedPlayers = state.playerStates.toMutableMap()
-
-        for (faction in factions) {
-            val playerState = updatedPlayers[faction] ?: PlayerState(faction)
-            val visibleNow = VisionSystem.calculateVisibleHexes(state, faction)
-            val newlyExplored = playerState.exploredHexes + visibleNow
-            updatedPlayers[faction] = playerState.copy(
-                visibleHexes = visibleNow,
-                exploredHexes = newlyExplored
-            )
-        }
-
-        return state.copy(playerStates = updatedPlayers)
-    }
-
-    private fun buildTurns(unitType: UnitType): Int = when (unitType) {
-        UnitType.SCOUT, UnitType.FIGHTER -> 1
-        UnitType.CRUISER, UnitType.BATTLESHIP, UnitType.CARRIER, UnitType.DEFENSE_PLATFORM -> 2
-        UnitType.DREADNOUGHT -> 3
+    internal fun reduce(state: GameState, intent: GameIntent): GameResult = when (intent) {
+        is GameIntent.StartNewGame ->
+            GameResult(createInitialState(MapSize.MEDIUM, MapArchetype.STANDARD))
+        is GameIntent.StartNewGameWithSize ->
+            GameResult(createInitialState(intent.mapSize, intent.archetype))
+        is GameIntent.LoadGame ->
+            GameResult(updateVision(intent.loadedState))
+        is GameIntent.EndTurn ->
+            GameResult(updateVision(TurnManager.advanceTurn(state)))
+        is GameIntent.SelectFaction ->
+            GameResult(state.copy(activeFaction = intent.faction, humanFaction = intent.faction))
+        is GameIntent.MoveUnit     -> handleMoveUnit(state, intent)
+        is GameIntent.AttackUnit   -> handleAttackUnit(state, intent, deps)
+        is GameIntent.ResearchTech -> handleResearchTech(state, intent)
+        is GameIntent.BuildUnit    -> handleBuildUnit(state, intent)
+        is GameIntent.RecruitHero  -> handleRecruitHero(state, intent)
+        is GameIntent.ChangeRelation -> handleChangeRelation(state, intent)
+        is GameIntent.SiegePlanet  -> handleSiegePlanet(state, intent, deps)
+        is GameIntent.CapturePlanet -> handleCapturePlanet(state, intent, deps)
+        is GameIntent.UpgradeSystem -> handleUpgradeSystem(state, intent)
+        is GameIntent.CancelBuild  -> handleCancelBuild(state, intent)
     }
 }
 
@@ -414,8 +240,8 @@ sealed class GameIntent {
     data class ChangeRelation(val targetFaction: Faction, val newRelation: com.novaempire.core.domain.models.DiplomaticRelation) : GameIntent()
     object StartNewGame : GameIntent()
     data class StartNewGameWithSize(
-        val mapSize: com.novaempire.core.domain.models.MapSize = com.novaempire.core.domain.models.MapSize.MEDIUM,
-        val archetype: com.novaempire.core.domain.models.MapArchetype = com.novaempire.core.domain.models.MapArchetype.STANDARD
+        val mapSize: MapSize = MapSize.MEDIUM,
+        val archetype: MapArchetype = MapArchetype.STANDARD
     ) : GameIntent()
     data class LoadGame(val loadedState: GameState) : GameIntent()
     data class SiegePlanet(val attackerCoord: HexCoord, val planetCoord: HexCoord) : GameIntent()
