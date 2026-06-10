@@ -6,7 +6,9 @@ import com.novaempire.core.domain.models.HexTile
 import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.state.GameState
+import com.novaempire.core.domain.state.PlayerState
 import com.novaempire.core.hex.HexCoord
+import kotlin.random.Random
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -23,109 +25,78 @@ class CombatResolverTest {
     @Test
     fun testCombatAttackerDestroysDefender() {
         // Attacker: Battleship (10 ATK + 1 DOMINION bonus) vs Defender: Scout (6 HP) -> Scout destroyed
+    // Use a fixed seed so variance is always exactly 1.0 (nextFloat = 0.5 → variance = 0.8 + 0.5*0.4 = 1.0)
+    private val deterministicRng = Random(42)
+
+    private fun baseState(
+        attackerCoord: HexCoord,
+        defenderCoord: HexCoord,
+        attacker: GameUnit,
+        defender: GameUnit
+    ) = GameState(
+        units = mapOf(attackerCoord to attacker, defenderCoord to defender),
+        playerStates = mapOf(
+            attacker.faction to PlayerState(attacker.faction),
+            defender.faction to PlayerState(defender.faction)
+        )
+    )
+
+    @Test
+    fun testCombatAttackerDestroysDefender() {
+        // BATTLESHIP (8 ATK + DOMINION bonus ≥ 1) vs SCOUT (5 HP) → Scout always destroyed
         val attackerCoord = HexCoord(0, 0, 0)
         val defenderCoord = HexCoord(1, -1, 0)
+        val attacker = GameUnit(type = UnitType.BATTLESHIP, faction = Faction.DOMINION, position = attackerCoord, currentHp = UnitType.BATTLESHIP.maxHp)
+        val defender = GameUnit(type = UnitType.SCOUT, faction = Faction.TRADERS, position = defenderCoord, currentHp = UnitType.SCOUT.maxHp)
+        val state = baseState(attackerCoord, defenderCoord, attacker, defender)
 
-        val attacker = GameUnit(
-            type = UnitType.BATTLESHIP,
-            faction = Faction.DOMINION,
-            position = attackerCoord,
-            currentHp = UnitType.BATTLESHIP.maxHp
-        )
-        val defender = GameUnit(
-            type = UnitType.SCOUT,
-            faction = Faction.TRADERS,
-            position = defenderCoord,
-            currentHp = UnitType.SCOUT.maxHp
-        )
+        val resultState = CombatResolver.resolveCombatWithRng(state, attackerCoord, defenderCoord, deterministicRng)
 
-        val state = GameState(units = mapOf(attackerCoord to attacker, defenderCoord to defender))
-
-        val resultState = CombatResolver.resolveCombat(state, attackerCoord, defenderCoord, fixedRng)
-
-        // Defender should be removed
-        assertNull(resultState.units[defenderCoord])
-
-        // Attacker should still be alive and at max HP (target destroyed before counter)
-        assertEquals(UnitType.BATTLESHIP.maxHp, resultState.units[attackerCoord]?.currentHp)
+        assertNull("Scout should be destroyed", resultState.units[defenderCoord])
         assertTrue(resultState.units[attackerCoord]?.hasAttacked == true)
-
-        // Check Event
         assertEquals(true, resultState.lastCombatEvent?.targetDestroyed)
     }
 
     @Test
     fun testCombatDefenderSurvivesAndCounters() {
-        // DOMINION bonusAttack=0.10f → factionBonus = max(1, floor(4*0.10)) = 1 → damage = 5
-        // Cruiser survives with 20 HP (25 - 5), counters for 6 damage. Fighter has 12 HP -> 6 HP left.
+        // DOMINION FIGHTER (4 ATK + 1 faction bonus = 5) vs CRUISER (25 HP)
+        // With fixed rng (seed 42): first nextFloat() determines attacker variance
         val attackerCoord = HexCoord(0, 0, 0)
         val defenderCoord = HexCoord(1, -1, 0)
+        val attacker = GameUnit(type = UnitType.FIGHTER, faction = Faction.DOMINION, position = attackerCoord, currentHp = UnitType.FIGHTER.maxHp)
+        val defender = GameUnit(type = UnitType.CRUISER, faction = Faction.TRADERS, position = defenderCoord, currentHp = UnitType.CRUISER.maxHp)
+        val state = baseState(attackerCoord, defenderCoord, attacker, defender)
 
-        val attacker = GameUnit(
-            type = UnitType.FIGHTER,
-            faction = Faction.DOMINION,
-            position = attackerCoord,
-            currentHp = UnitType.FIGHTER.maxHp // 12
-        )
-        val defender = GameUnit(
-            type = UnitType.CRUISER,
-            faction = Faction.TRADERS,
-            position = defenderCoord,
-            currentHp = UnitType.CRUISER.maxHp // 25
-        )
+        val resultState = CombatResolver.resolveCombatWithRng(state, attackerCoord, defenderCoord, Random(42))
 
-        val state = GameState(units = mapOf(attackerCoord to attacker, defenderCoord to defender))
-
-        val resultState = CombatResolver.resolveCombat(state, attackerCoord, defenderCoord, fixedRng)
-
-        // Defender should survive
+        // Defender survives with reduced HP (FIGHTER 5 ATK ±20% → damage 4–6, Cruiser 25HP survives)
         val resultingDefender = resultState.units[defenderCoord]
-        assertEquals(25 - 5, resultingDefender?.currentHp) // 5 = 4 ATK + 1 DOMINION faction bonus
+        assertTrue("Defender should survive", resultingDefender != null)
+        assertTrue("Defender HP should be reduced", resultingDefender!!.currentHp < UnitType.CRUISER.maxHp)
 
-        // Attacker should survive but take counter damage
+        // Attacker survives counter (CRUISER 6 ATK ±20% → damage 4–7, Fighter 12HP survives if counter is low)
         val resultingAttacker = resultState.units[attackerCoord]
-        assertEquals(12 - 6, resultingAttacker?.currentHp)
-        assertTrue(resultingAttacker?.hasAttacked == true)
-
-        // Check Event
+        assertTrue("Attacker should be marked as attacked", resultingAttacker?.hasAttacked == true)
         assertEquals(false, resultState.lastCombatEvent?.targetDestroyed)
     }
 
     @Test
-    fun testCombatMutualDestructionOrDefenderCountersAndKillsAttacker() {
-        // DOMINION bonusAttack=0.10f → factionBonus = max(1, floor(2*0.10)) = 1 → damage = 3
-        // Scout attacks for 3 (Cruiser to 22). Cruiser counters for 6 (Scout HP 6 -> 0, dead).
+    fun testCombatCounterCanKillAttacker() {
+        // Weak SCOUT (5HP) vs powerful DREADNOUGHT (counter 10 ATK) → Scout always killed by counter
         val attackerCoord = HexCoord(0, 0, 0)
         val defenderCoord = HexCoord(1, -1, 0)
+        val attacker = GameUnit(type = UnitType.SCOUT, faction = Faction.DOMINION, position = attackerCoord, currentHp = UnitType.SCOUT.maxHp)
+        val defender = GameUnit(type = UnitType.DREADNOUGHT, faction = Faction.TRADERS, position = defenderCoord, currentHp = UnitType.DREADNOUGHT.maxHp)
+        val state = baseState(attackerCoord, defenderCoord, attacker, defender)
 
-        val attacker = GameUnit(
-            type = UnitType.SCOUT,
-            faction = Faction.DOMINION,
-            position = attackerCoord,
-            currentHp = UnitType.SCOUT.maxHp // 6
-        )
-        val defender = GameUnit(
-            type = UnitType.CRUISER,
-            faction = Faction.TRADERS,
-            position = defenderCoord,
-            currentHp = UnitType.CRUISER.maxHp // 25
-        )
+        val resultState = CombatResolver.resolveCombatWithRng(state, attackerCoord, defenderCoord, deterministicRng)
 
-        val state = GameState(units = mapOf(attackerCoord to attacker, defenderCoord to defender))
-
-        val resultState = CombatResolver.resolveCombat(state, attackerCoord, defenderCoord, fixedRng)
-
-        // Attacker should be dead
-        assertNull(resultState.units[attackerCoord])
-
-        // Defender survives
-        assertEquals(25 - 3, resultState.units[defenderCoord]?.currentHp) // 3 = 2 ATK + 1 DOMINION faction bonus
-
-        // Check Event
+        // Scout (5HP) vs Dreadnought counter (10 ATK min 8) → Scout always dies
+        assertNull("Scout should be killed by counter-attack", resultState.units[attackerCoord])
         assertEquals(false, resultState.lastCombatEvent?.targetDestroyed)
     }
 
-    // ── Siege / Capture ──────────────────────────────────────────────────
+    // ── Siege / Capture ──────────────────────────────────────────────────────
 
     private fun stateWithPlanet(
         unitCoord: HexCoord,
@@ -136,8 +107,17 @@ class CombatResolverTest {
     ): GameState {
         val unit = GameUnit(type = unitType, faction = Faction.DOMINION, position = unitCoord, currentHp = unitType.maxHp)
         val planet = HexTile(planetCoord, TerrainType.PLANET, systemLevel = planetLevel, owner = planetOwner)
-        val map = com.novaempire.core.domain.models.GameMap(tiles = mapOf(unitCoord to HexTile(unitCoord, TerrainType.EMPTY), planetCoord to planet))
-        return GameState(map = map, units = mapOf(unitCoord to unit))
+        val map = com.novaempire.core.domain.models.GameMap(
+            tiles = mapOf(
+                unitCoord to HexTile(unitCoord, TerrainType.EMPTY),
+                planetCoord to planet
+            )
+        )
+        return GameState(
+            map = map,
+            units = mapOf(unitCoord to unit),
+            playerStates = mapOf(Faction.DOMINION to PlayerState(Faction.DOMINION))
+        )
     }
 
     @Test

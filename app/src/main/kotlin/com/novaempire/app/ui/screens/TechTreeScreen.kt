@@ -59,8 +59,7 @@ fun TechTreeScreen(
         val isAvailable = !isUnlocked && !isResearching &&
             research == null &&
             (tech.requiresTechId == null || unlockedTechs.contains(tech.requiresTechId))
-        val hasKael = playerState?.recruitedHeroes?.contains("hero_kael") == true
-        val cost = CostCalculator.techCost(tech.id, unlockedTechs, hasKael)
+        val cost = CostCalculator.techCost(tech.id, unlockedTechs, playerState)
 
         val nodeState = when {
             isUnlocked -> TechNodeState.UNLOCKED
