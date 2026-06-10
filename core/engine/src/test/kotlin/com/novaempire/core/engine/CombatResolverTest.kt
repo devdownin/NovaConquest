@@ -11,12 +11,18 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.random.Random
 
 class CombatResolverTest {
 
+    private val fixedRng = object : Random() {
+        override fun nextBits(bitCount: Int): Int = 0
+        override fun nextFloat(): Float = 0.5f // Results in 1.0 variance: 0.8 + 0.5 * 0.4 = 1.0
+    }
+
     @Test
     fun testCombatAttackerDestroysDefender() {
-        // Attacker: Battleship (8 ATK) vs Defender: Scout (5 HP) -> Scout destroyed
+        // Attacker: Battleship (10 ATK + 1 DOMINION bonus) vs Defender: Scout (6 HP) -> Scout destroyed
         val attackerCoord = HexCoord(0, 0, 0)
         val defenderCoord = HexCoord(1, -1, 0)
 
@@ -35,7 +41,7 @@ class CombatResolverTest {
 
         val state = GameState(units = mapOf(attackerCoord to attacker, defenderCoord to defender))
 
-        val resultState = CombatResolver.resolveCombat(state, attackerCoord, defenderCoord)
+        val resultState = CombatResolver.resolveCombat(state, attackerCoord, defenderCoord, fixedRng)
 
         // Defender should be removed
         assertNull(resultState.units[defenderCoord])
@@ -51,7 +57,7 @@ class CombatResolverTest {
     @Test
     fun testCombatDefenderSurvivesAndCounters() {
         // DOMINION bonusAttack=0.10f → factionBonus = max(1, floor(4*0.10)) = 1 → damage = 5
-        // Cruiser survives with 20 HP, counters for 6 damage. Fighter has 12 HP -> 6 HP left.
+        // Cruiser survives with 20 HP (25 - 5), counters for 6 damage. Fighter has 12 HP -> 6 HP left.
         val attackerCoord = HexCoord(0, 0, 0)
         val defenderCoord = HexCoord(1, -1, 0)
 
@@ -70,7 +76,7 @@ class CombatResolverTest {
 
         val state = GameState(units = mapOf(attackerCoord to attacker, defenderCoord to defender))
 
-        val resultState = CombatResolver.resolveCombat(state, attackerCoord, defenderCoord)
+        val resultState = CombatResolver.resolveCombat(state, attackerCoord, defenderCoord, fixedRng)
 
         // Defender should survive
         val resultingDefender = resultState.units[defenderCoord]
@@ -88,7 +94,7 @@ class CombatResolverTest {
     @Test
     fun testCombatMutualDestructionOrDefenderCountersAndKillsAttacker() {
         // DOMINION bonusAttack=0.10f → factionBonus = max(1, floor(2*0.10)) = 1 → damage = 3
-        // Scout attacks for 3 (Cruiser to 22). Cruiser counters for 6 (Scout HP 5 -> -1, dead).
+        // Scout attacks for 3 (Cruiser to 22). Cruiser counters for 6 (Scout HP 6 -> 0, dead).
         val attackerCoord = HexCoord(0, 0, 0)
         val defenderCoord = HexCoord(1, -1, 0)
 
@@ -96,7 +102,7 @@ class CombatResolverTest {
             type = UnitType.SCOUT,
             faction = Faction.DOMINION,
             position = attackerCoord,
-            currentHp = UnitType.SCOUT.maxHp // 5
+            currentHp = UnitType.SCOUT.maxHp // 6
         )
         val defender = GameUnit(
             type = UnitType.CRUISER,
@@ -107,7 +113,7 @@ class CombatResolverTest {
 
         val state = GameState(units = mapOf(attackerCoord to attacker, defenderCoord to defender))
 
-        val resultState = CombatResolver.resolveCombat(state, attackerCoord, defenderCoord)
+        val resultState = CombatResolver.resolveCombat(state, attackerCoord, defenderCoord, fixedRng)
 
         // Attacker should be dead
         assertNull(resultState.units[attackerCoord])
