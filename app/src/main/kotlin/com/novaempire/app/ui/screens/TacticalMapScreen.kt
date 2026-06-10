@@ -855,18 +855,42 @@ fun TacticalMapScreen(
                         }
                     }
 
-                    // Siege / Capture — when a friendly unit is selected and adjacent enemy planet exists
-                    if (unitOnTile != null && unitOnTile.faction == gameState.activeFaction && !unitOnTile.hasAttacked) {
-                        val adjacentEnemyPlanets = HexCoord.directions
-                            .map { coord + it }
-                            .mapNotNull { gameState.map.tiles[it] }
-                            .filter { it.terrain == TerrainType.PLANET && it.owner != gameState.activeFaction }
+                    // Siege / Capture — unit selected with adjacent enemy planet, OR planet selected with adjacent friendly unit
+                    run {
+                        val attackerUnit = when {
+                            unitOnTile != null && unitOnTile.faction == gameState.activeFaction && !unitOnTile.hasAttacked -> unitOnTile
+                            else -> null
+                        }
+                        val attackerCoord: HexCoord?
+                        val targetPlanet: com.novaempire.core.domain.models.HexTile?
 
-                        adjacentEnemyPlanets.firstOrNull()?.let { enemyPlanet ->
-                            if (enemyPlanet.systemLevel > 0) {
+                        if (attackerUnit != null) {
+                            // Unit is selected — look for adjacent enemy planet
+                            attackerCoord = coord
+                            targetPlanet = HexCoord.directions
+                                .map { coord + it }
+                                .mapNotNull { gameState.map.tiles[it] }
+                                .firstOrNull { it.terrain == TerrainType.PLANET && it.owner != gameState.activeFaction }
+                        } else if (tile != null && tile.terrain == TerrainType.PLANET && tile.owner != gameState.activeFaction) {
+                            // Enemy planet is selected — look for adjacent friendly unit that hasn't attacked
+                            val adjacentFriendly = HexCoord.directions
+                                .map { coord + it }
+                                .firstOrNull { neighbor ->
+                                    val u = gameState.units[neighbor]
+                                    u != null && u.faction == gameState.activeFaction && !u.hasAttacked
+                                }
+                            attackerCoord = adjacentFriendly
+                            targetPlanet = if (adjacentFriendly != null) tile else null
+                        } else {
+                            attackerCoord = null
+                            targetPlanet = null
+                        }
+
+                        if (attackerCoord != null && targetPlanet != null) {
+                            if (targetPlanet.systemLevel > 0) {
                                 IndustrialPanel(modifier = Modifier.size(48.dp)) {
                                     IconButton(
-                                        onClick = { siegePreviewData = Triple(coord, enemyPlanet.coord, false) },
+                                        onClick = { siegePreviewData = Triple(attackerCoord, targetPlanet.coord, false) },
                                         modifier = Modifier.fillMaxSize()
                                     ) {
                                         Icon(Icons.Default.PlayArrow, contentDescription = "Siege Planet", tint = NeonOrange)
@@ -875,7 +899,7 @@ fun TacticalMapScreen(
                             } else {
                                 IndustrialPanel(modifier = Modifier.size(48.dp)) {
                                     IconButton(
-                                        onClick = { siegePreviewData = Triple(coord, enemyPlanet.coord, true) },
+                                        onClick = { siegePreviewData = Triple(attackerCoord, targetPlanet.coord, true) },
                                         modifier = Modifier.fillMaxSize()
                                     ) {
                                         Icon(Icons.Default.CheckCircle, contentDescription = "Capture Planet", tint = NeonGreen)
