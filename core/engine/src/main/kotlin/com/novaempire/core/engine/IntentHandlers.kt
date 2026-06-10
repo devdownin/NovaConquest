@@ -3,14 +3,17 @@ package com.novaempire.core.engine
 import com.novaempire.core.domain.models.BonusType
 import com.novaempire.core.domain.models.DiplomaticRelation
 import com.novaempire.core.domain.models.Faction
+import com.novaempire.core.domain.models.GameUnit
 import com.novaempire.core.domain.models.GalacticEvent
 import com.novaempire.core.domain.models.HeroRegistry
 import com.novaempire.core.domain.models.TechRegistry
+import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.state.BuildOrder
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.domain.state.PlayerState
 import com.novaempire.core.domain.state.ResearchProgress
 import com.novaempire.core.hex.HexPathfinder
+import kotlin.random.Random
 
 // ── Vision ───────────────────────────────────────────────────────────────────
 
@@ -52,13 +55,18 @@ internal fun handleMoveUnit(state: GameState, intent: GameIntent.MoveUnit): Game
     val effectiveMovement = (unit.type.movement + moveMod).coerceAtLeast(1)
     val path = HexPathfinder.findPath(intent.from, intent.to, gridMap, effectiveMovement)
 
-    return if (path != null && path.isNotEmpty()) {
-        val updatedUnits = state.units.toMutableMap()
-        updatedUnits.remove(intent.from)
-        updatedUnits[intent.to] = unit.copy(position = intent.to, hasMoved = true)
-        GameResult(updateVision(state.copy(units = updatedUnits), setOf(unit.faction)))
+    if (path == null || path.isEmpty()) return GameResult(state, "Target position is unreachable or too far.")
+
+    val preExplored = state.playerStates[unit.faction]?.exploredHexes ?: emptySet()
+    val updatedUnits = state.units.toMutableMap()
+    updatedUnits.remove(intent.from)
+    updatedUnits[intent.to] = unit.copy(position = intent.to, hasMoved = true)
+    val movedState = updateVision(state.copy(units = updatedUnits), setOf(unit.faction))
+    val freshHexes = (movedState.playerStates[unit.faction]?.exploredHexes ?: emptySet()) - preExplored
+    return if (freshHexes.isNotEmpty() && Random.nextFloat() < 0.3f) {
+        applyExplorationDiscovery(movedState, unit.faction)
     } else {
-        GameResult(state, "Target position is unreachable or too far.")
+        GameResult(movedState)
     }
 }
 
@@ -174,6 +182,105 @@ internal fun handleCancelBuild(state: GameState, intent: GameIntent.CancelBuild)
         credits = playerState.credits + refund,
         buildQueue = playerState.buildQueue.filter { it.planetCoord != intent.planetCoord }
     )))
+}
+
+// ── Exploration discovery ─────────────────────────────────────────────────────
+
+private fun applyExplorationDiscovery(state: GameState, faction: Faction): GameResult {
+    val playerState = state.playerStates[faction] ?: return GameResult(state)
+    return when (Random.nextInt(3)) {
+        0 -> {
+            val newPStates = state.playerStates.toMutableMap()
+            newPStates[faction] = playerState.copy(credits = playerState.credits + 30)
+            GameResult(state.copy(playerStates = newPStates), notification = "DISCOVERY: Ancient cache found — +30 Credits")
+        }
+        1 -> {
+            val research = playerState.researchInProgress
+            if (research != null && research.turnsRemaining > 1) {
+                val newPStates = state.playerStates.toMutableMap()
+                newPStates[faction] = playerState.copy(researchInProgress = research.copy(turnsRemaining = research.turnsRemaining - 1))
+                GameResult(state.copy(playerStates = newPStates), notification = "DISCOVERY: Tech data recovered — research accelerated")
+            } else GameResult(state, notification = "DISCOVERY: Star map fragment found")
+        }
+        else -> GameResult(state, notification = "DISCOVERY: Anomalous signal — location logged")
+    }
+}
+
+// ── Carrier transport ─────────────────────────────────────────────────────────
+
+internal fun handleLoadUnit(state: GameState, intent: GameIntent.LoadUnit): GameResult {
+    val carrier = state.units[intent.carrierCoord] ?: return GameResult(state, "Carrier not found.")
+    if (carrier.type != UnitType.CARRIER) return GameResult(state, "Only Carriers can load units.")
+    IntentValidator.ownedByActive(carrier, state.activeFaction)?.let { return GameResult(state, it) }
+    if (carrier.cargo.size >= 2) return GameResult(state, "Carrier at max capacity (2 units).")
+    if (intent.carrierCoord.distanceTo(intent.unitCoord) > 1) return GameResult(state, "Unit not adjacent to carrier.")
+    val unit = state.units[intent.unitCoord] ?: return GameResult(state, "Unit not found.")
+    if (unit.faction != state.activeFaction) return GameResult(state, "Cannot load enemy units.")
+    if (unit.type != UnitType.SCOUT && unit.type != UnitType.FIGHTER) return GameResult(state, "Only Scouts and Fighters can be loaded.")
+    val newUnits = state.units.toMutableMap()
+    newUnits.remove(intent.unitCoord)
+    newUnits[intent.carrierCoord] = carrier.copy(cargo = carrier.cargo + unit.type)
+    return GameResult(state.copy(units = newUnits))
+}
+
+internal fun handleDeployUnit(state: GameState, intent: GameIntent.DeployUnit): GameResult {
+    val carrier = state.units[intent.carrierCoord] ?: return GameResult(state, "Carrier not found.")
+    if (carrier.type != UnitType.CARRIER) return GameResult(state, "Not a carrier.")
+    IntentValidator.ownedByActive(carrier, state.activeFaction)?.let { return GameResult(state, it) }
+    if (intent.unitIndex < 0 || intent.unitIndex >= carrier.cargo.size) return GameResult(state, "Invalid cargo slot.")
+    if (intent.carrierCoord.distanceTo(intent.deployCoord) > 2) return GameResult(state, "Deploy target too far (max 2 hexes).")
+    if (state.units[intent.deployCoord] != null) return GameResult(state, "Target hex occupied.")
+    val tile = state.map.tiles[intent.deployCoord]
+    if (tile == null || !tile.terrain.isPassable) return GameResult(state, "Cannot deploy to impassable terrain.")
+    val deployedType = carrier.cargo[intent.unitIndex]
+    val newUnit = GameUnit(type = deployedType, faction = state.activeFaction, position = intent.deployCoord,
+        currentHp = deployedType.maxHp, hasMoved = true)
+    val newCargo = carrier.cargo.toMutableList().also { it.removeAt(intent.unitIndex) }
+    val newUnits = state.units.toMutableMap()
+    newUnits[intent.carrierCoord] = carrier.copy(cargo = newCargo)
+    newUnits[intent.deployCoord] = newUnit
+    return GameResult(updateVision(state.copy(units = newUnits), setOf(state.activeFaction)))
+}
+
+// ── Hero active abilities ─────────────────────────────────────────────────────
+
+internal fun handleUseHeroAbility(state: GameState, intent: GameIntent.UseHeroAbility): GameResult {
+    val playerState = state.activePlayer() ?: return GameResult(state, "Player not found.")
+    if (!playerState.recruitedHeroes.contains(intent.heroId)) return GameResult(state, "Hero not recruited.")
+    if (playerState.heroAbilitiesUsed.contains(intent.heroId)) return GameResult(state, "Ability already used this game.")
+    val markUsed = playerState.heroAbilitiesUsed + intent.heroId
+    return when (intent.heroId) {
+        HeroRegistry.VANCE -> {
+            val newUnits = state.units.mapValues { (_, u) ->
+                if (u.faction == state.activeFaction && u.hasAttacked) u.copy(hasAttacked = false) else u
+            }
+            GameResult(state.withUpdatedPlayer(playerState.copy(heroAbilitiesUsed = markUsed)).copy(units = newUnits),
+                notification = "VANCE: Frappe de Suppression — all fleet units may fire again")
+        }
+        HeroRegistry.ELARA -> {
+            GameResult(state.withUpdatedPlayer(playerState.copy(credits = playerState.credits + 80, heroAbilitiesUsed = markUsed)),
+                notification = "ELARA: Convoi Commercial — +80 Credits")
+        }
+        HeroRegistry.NIX -> {
+            val newUnits = state.units.mapValues { (_, u) ->
+                if (u.faction == state.activeFaction) u.copy(currentHp = u.type.maxHp) else u
+            }
+            GameResult(state.withUpdatedPlayer(playerState.copy(heroAbilitiesUsed = markUsed)).copy(units = newUnits),
+                notification = "NIX: Refuge Stellaire — all units fully healed")
+        }
+        HeroRegistry.KAEL -> {
+            val research = playerState.researchInProgress
+            val newPlayer = if (research != null) playerState.copy(
+                techUnlocked = playerState.techUnlocked + research.techId,
+                researchInProgress = null,
+                heroAbilitiesUsed = markUsed
+            ) else playerState.copy(heroAbilitiesUsed = markUsed)
+            val msg = if (research != null) "KAEL: Prototype — ${research.techId} research completed instantly"
+                      else "KAEL: Prototype — no research in progress"
+            GameResult(state.withUpdatedPlayer(newPlayer), notification = msg)
+        }
+        else -> GameResult(state, "Unknown hero ability.")
+    }
 }
 
 // ── Build-turn lookup ─────────────────────────────────────────────────────────

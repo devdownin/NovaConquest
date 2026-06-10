@@ -66,6 +66,8 @@ fun TacticalMapScreen(
     onOpenSystemManagement: (HexCoord) -> Unit,
     onSiegePlanet: (HexCoord, HexCoord) -> Unit,
     onCapturePlanet: (HexCoord, HexCoord) -> Unit,
+    onLoadUnit: (HexCoord, HexCoord) -> Unit = { _, _ -> },
+    onDeployUnit: (HexCoord, HexCoord, Int) -> Unit = { _, _, _ -> },
     onOpenAcademy: () -> Unit,
     onClearSelection: () -> Unit,
     centerRequest: Pair<HexCoord, Int>? = null,
@@ -104,6 +106,8 @@ fun TacticalMapScreen(
     val currentOnAttackUnit by rememberUpdatedState(onAttackUnit)
     val currentOnSiegePlanet by rememberUpdatedState(onSiegePlanet)
     val currentOnCapturePlanet by rememberUpdatedState(onCapturePlanet)
+    val currentOnLoadUnit by rememberUpdatedState(onLoadUnit)
+    val currentOnDeployUnit by rememberUpdatedState(onDeployUnit)
 
     val laserProgress = remember { Animatable(0f) }
     val explosionScale = remember { Animatable(0f) }
@@ -807,6 +811,12 @@ fun TacticalMapScreen(
                                         Text("${tile.systemLevel * 2} dmg/siege", style = MaterialTheme.typography.labelLarge, color = NeonOrange)
                                     }
                                 }
+                                if (tile.specialty != null) {
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text("Specialty", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                                        Text(tile.specialty.displayName, style = MaterialTheme.typography.labelLarge, color = NeonCyan)
+                                    }
+                                }
                             }
                             if (unitOnTile != null) {
                                 Spacer(modifier = Modifier.height(8.dp))
@@ -841,6 +851,57 @@ fun TacticalMapScreen(
                                     StatChip("ATK", unitOnTile.type.attack.toString())
                                     StatChip("RNG", unitOnTile.type.range.toString())
                                     StatChip("MOV", if (unitOnTile.hasMoved) "0/${unitOnTile.type.movement}" else unitOnTile.type.movement.toString())
+                                }
+                            }
+                        }
+                    }
+
+                    // Carrier transport — LOAD adjacent units or DEPLOY from cargo
+                    if (unitOnTile != null && unitOnTile.type == UnitType.CARRIER &&
+                        unitOnTile.faction == gameState.activeFaction) {
+                        // LOAD buttons: adjacent friendly light units not already in carrier
+                        HexCoord.directions.map { coord + it }.forEach { neighbor ->
+                            val candidate = gameState.units[neighbor]
+                            if (candidate != null && candidate.faction == gameState.activeFaction &&
+                                (candidate.type == UnitType.SCOUT || candidate.type == UnitType.FIGHTER) &&
+                                unitOnTile.cargo.size < 2) {
+                                IndustrialPanel(modifier = Modifier.fillMaxWidth()) {
+                                    Row(
+                                        modifier = Modifier.padding(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("LOAD ${candidate.type.name}", style = MaterialTheme.typography.labelSmall, color = NeonCyan)
+                                        IconButton(onClick = { currentOnLoadUnit(coord, neighbor) }, modifier = Modifier.size(32.dp)) {
+                                            Icon(Icons.Default.Star, contentDescription = "Load", tint = NeonCyan, modifier = Modifier.size(20.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // DEPLOY buttons: one per cargo slot
+                        unitOnTile.cargo.forEachIndexed { idx, cargoType ->
+                            IndustrialPanel(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier.padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("DEPLOY ${cargoType.name}", style = MaterialTheme.typography.labelSmall, color = NeonOrange)
+                                    IconButton(
+                                        onClick = {
+                                            // Deploy to first empty passable adjacent hex
+                                            val deployHex = HexCoord.directions.map { coord + it }
+                                                .firstOrNull { h ->
+                                                    gameState.units[h] == null &&
+                                                    gameState.map.tiles[h]?.terrain?.isPassable == true
+                                                }
+                                            if (deployHex != null) currentOnDeployUnit(coord, deployHex, idx)
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(Icons.Default.Refresh, contentDescription = "Deploy", tint = NeonOrange, modifier = Modifier.size(20.dp))
+                                    }
                                 }
                             }
                         }

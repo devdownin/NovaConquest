@@ -27,7 +27,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
-data class GameResult(val newState: GameState, val error: String? = null)
+data class GameResult(val newState: GameState, val error: String? = null, val notification: String? = null)
 
 sealed class GameEffect {
     data class PlaySound(val soundId: String) : GameEffect()
@@ -185,6 +185,9 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
                 _errors.emit(result.error)
                 _effects.emit(GameEffect.PlaySound("UI_CLICK"))
             }
+            if (result.notification != null) {
+                _effects.emit(GameEffect.ShowNotification(result.notification, "CYAN"))
+            }
 
             val nextState = result.newState
             val combat = nextState.lastCombatEvent
@@ -226,6 +229,9 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         is GameIntent.CapturePlanet -> handleCapturePlanet(state, intent, deps)
         is GameIntent.UpgradeSystem -> handleUpgradeSystem(state, intent)
         is GameIntent.CancelBuild  -> handleCancelBuild(state, intent)
+        is GameIntent.LoadUnit     -> handleLoadUnit(state, intent)
+        is GameIntent.DeployUnit   -> handleDeployUnit(state, intent)
+        is GameIntent.UseHeroAbility -> handleUseHeroAbility(state, intent)
     }
 }
 
@@ -248,4 +254,7 @@ sealed class GameIntent {
     data class CapturePlanet(val unitCoord: HexCoord, val planetCoord: HexCoord) : GameIntent()
     data class UpgradeSystem(val coord: HexCoord) : GameIntent()
     data class CancelBuild(val planetCoord: HexCoord) : GameIntent()
+    data class LoadUnit(val carrierCoord: HexCoord, val unitCoord: HexCoord) : GameIntent()
+    data class DeployUnit(val carrierCoord: HexCoord, val deployCoord: HexCoord, val unitIndex: Int = 0) : GameIntent()
+    data class UseHeroAbility(val heroId: String) : GameIntent()
 }

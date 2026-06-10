@@ -29,6 +29,7 @@ data class GameState(
     val eventDurationRemaining: Int = 0,
     val winner: Faction? = null,
     val victoryReason: String? = null,
+    val dominationTurns: Map<Faction, Int> = emptyMap(),
     @Transient val lastCombatEvent: CombatEvent? = null
 )
 
@@ -49,5 +50,6 @@ data class PlayerState(
     @Transient val visibleHexes: Set<HexCoord> = emptySet(),
     val capitalCoord: HexCoord? = null,
     val recruitedHeroes: Set<String> = emptySet(),
+    val heroAbilitiesUsed: Set<String> = emptySet(),
     val relations: Map<Faction, com.novaempire.core.domain.models.DiplomaticRelation> = emptyMap()
 )

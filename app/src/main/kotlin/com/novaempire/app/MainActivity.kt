@@ -165,6 +165,12 @@ class MainActivity : ComponentActivity() {
                                 onChangeRelation = { faction, relation ->
                                     gameViewModel.dispatch(GameIntent.ChangeRelation(faction, relation))
                                 },
+                                onLoadUnit = { carrier, unit ->
+                                    gameViewModel.dispatch(GameIntent.LoadUnit(carrier, unit))
+                                },
+                                onDeployUnit = { carrier, target, idx ->
+                                    gameViewModel.dispatch(GameIntent.DeployUnit(carrier, target, idx))
+                                },
                                 onOpenAcademy = {
                                     currentScreen = AppScreen.HERO_ACADEMY
                                 }
@@ -175,6 +181,9 @@ class MainActivity : ComponentActivity() {
                                 gameState = gameState,
                                 onRecruitClick = { heroId ->
                                     gameViewModel.dispatch(GameIntent.RecruitHero(heroId))
+                                },
+                                onUseAbility = { heroId ->
+                                    gameViewModel.dispatch(GameIntent.UseHeroAbility(heroId))
                                 },
                                 onBackClick = { currentScreen = AppScreen.GAME }
                             )
@@ -218,6 +227,8 @@ fun GameContainer(
     onResearchTech: (String) -> Unit,
     onBuildUnit: (com.novaempire.core.domain.models.UnitType, com.novaempire.core.hex.HexCoord) -> Unit,
     onChangeRelation: (com.novaempire.core.domain.models.Faction, com.novaempire.core.domain.models.DiplomaticRelation) -> Unit,
+    onLoadUnit: (com.novaempire.core.hex.HexCoord, com.novaempire.core.hex.HexCoord) -> Unit = { _, _ -> },
+    onDeployUnit: (com.novaempire.core.hex.HexCoord, com.novaempire.core.hex.HexCoord, Int) -> Unit = { _, _, _ -> },
     onOpenAcademy: () -> Unit
 ) {
     var currentTab by remember { mutableStateOf(GameTab.MAP) }
@@ -391,6 +402,8 @@ fun GameContainer(
                         onAttackUnit = onAttackUnit,
                         onSiegePlanet = onSiegePlanet,
                         onCapturePlanet = onCapturePlanet,
+                        onLoadUnit = onLoadUnit,
+                        onDeployUnit = onDeployUnit,
                         visibleHexes = visibleHexes,
                         onHexClick = { selectedCoord = it },
                         onOpenSystemManagement = { coord ->

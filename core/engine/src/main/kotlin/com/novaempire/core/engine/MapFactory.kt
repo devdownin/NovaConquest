@@ -3,6 +3,7 @@ package com.novaempire.core.engine
 import com.novaempire.core.domain.models.GameMap
 import com.novaempire.core.domain.models.HexTile
 import com.novaempire.core.domain.models.MapArchetype
+import com.novaempire.core.domain.models.PlanetSpecialty
 import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.hex.HexCoord
 import kotlin.random.Random
@@ -85,6 +86,29 @@ class MapFactory {
             // Guarantee that every spawn and every planet sits in one passable region,
             // so a ship can always move and reach objectives regardless of the seed.
             ensureConnectivity(tiles, spawnPoints)
+
+            // Place a symmetric wormhole pair at mid-ring positions (skip spawns/black-holes/planets).
+            val half = radius / 2
+            if (half > 0) {
+                val wA = HexCoord(half, -half, 0)
+                val wB = HexCoord(-half, half, 0)
+                for (w in listOf(wA, wB)) {
+                    val existing = tiles[w]
+                    if (existing != null && existing.terrain != TerrainType.PLANET &&
+                        existing.terrain != TerrainType.BLACK_HOLE && w !in spawnPoints) {
+                        tiles[w] = existing.copy(terrain = TerrainType.WORMHOLE, systemLevel = 0)
+                    }
+                }
+            }
+
+            // Assign specialties to ~25 % of non-spawn planets.
+            val specialties = PlanetSpecialty.values()
+            tiles.keys.toList().forEach { coord ->
+                val t = tiles[coord] ?: return@forEach
+                if (t.terrain == TerrainType.PLANET && coord !in spawnPoints && random.nextFloat() < 0.25f) {
+                    tiles[coord] = t.copy(specialty = specialties[random.nextInt(specialties.size)])
+                }
+            }
 
             return GameMap(tiles, radius, archetype, zodiacNodes)
         }
