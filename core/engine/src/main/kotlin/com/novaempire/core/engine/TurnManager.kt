@@ -4,6 +4,7 @@ import com.novaempire.core.domain.models.BonusType
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.GameUnit
 import com.novaempire.core.domain.models.HeroRegistry
+import com.novaempire.core.domain.models.PlanetSpecialty
 import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.state.GameState
 import kotlin.random.Random
@@ -20,6 +21,16 @@ object TurnManager {
         if (nextIndex == 0) {
             nextState = nextState.copy(turn = state.turn + 1)
             nextState = EventSystem.tick(nextState, rng)
+            // Domination tracking: count planets per faction; update dominationTurns.
+            val totalPlanets = nextState.map.tiles.values.count { it.terrain == TerrainType.PLANET }
+            if (totalPlanets > 0) {
+                val newDomTurns = nextState.dominationTurns.toMutableMap()
+                for (f in allFactions) {
+                    val owned = nextState.map.tiles.values.count { it.terrain == TerrainType.PLANET && it.owner == f }
+                    newDomTurns[f] = if (owned * 100 / totalPlanets >= 60) (newDomTurns[f] ?: 0) + 1 else 0
+                }
+                nextState = nextState.copy(dominationTurns = newDomTurns)
+            }
         }
 
         // Nix hero: heal all units of the faction that just ended its turn
@@ -45,6 +56,7 @@ object TurnManager {
             val incomePct = BonusRegistry.sum(BonusType.INCOME_PERCENT, nextPlayerState, nextState.activeEvent)
             val incomeFlat = BonusRegistry.sum(BonusType.INCOME_FLAT, nextPlayerState, nextState.activeEvent)
             income += (income * incomePct / 100.0).toInt() + incomeFlat
+            income += ownedPlanets.count { it.specialty == PlanetSpecialty.TRADE_POST } * 8
 
             val upkeep = nextState.units.values.filter { it.faction == nextFaction }.sumOf { it.type.upkeepCost }
             income -= upkeep
@@ -60,8 +72,13 @@ object TurnManager {
             val remainingOrders = mutableListOf<com.novaempire.core.domain.state.BuildOrder>()
             var stateAfterBuilds = nextState
 
+            val forgeWorldCount = nextState.map.tiles.values.count {
+                it.terrain == TerrainType.PLANET && it.owner == state.activeFaction &&
+                it.specialty == PlanetSpecialty.FORGE_WORLD
+            }
             for (order in buildingFactionState.buildQueue) {
-                val newTurns = order.turnsRemaining - 1
+                val buildTick = if (forgeWorldCount > 0 && nextState.map.tiles[order.planetCoord]?.specialty == PlanetSpecialty.FORGE_WORLD) 2 else 1
+                val newTurns = order.turnsRemaining - buildTick
                 if (newTurns <= 0) {
                     val gridMap = GameGridMap(stateAfterBuilds)
                     val candidates = listOf(order.planetCoord) + gridMap.getNeighbors(order.planetCoord)
@@ -93,7 +110,11 @@ object TurnManager {
         // Tick research for the faction that just ended its turn
         val researchingState = nextState.playerStates[state.activeFaction]
         researchingState?.researchInProgress?.let { prog ->
-            val researchTick = 1 + BonusRegistry.sum(BonusType.RESEARCH_SPEED, researchingState, nextState.activeEvent)
+            val researchHubCount = nextState.map.tiles.values.count {
+                it.terrain == TerrainType.PLANET && it.owner == state.activeFaction &&
+                it.specialty == PlanetSpecialty.RESEARCH_HUB
+            }
+            val researchTick = 1 + researchHubCount + BonusRegistry.sum(BonusType.RESEARCH_SPEED, researchingState, nextState.activeEvent)
             val newTurns = prog.turnsRemaining - researchTick
             val updatedResearcher = if (newTurns <= 0) {
                 researchingState.copy(

@@ -28,23 +28,35 @@ import com.novaempire.app.ui.theme.NeonRed
 import com.novaempire.app.ui.theme.TextSecondary
 import com.novaempire.core.domain.models.Hero
 import com.novaempire.core.domain.models.Faction
+import com.novaempire.core.domain.models.HeroRegistry
 import com.novaempire.core.domain.state.GameState
 
 @Composable
 fun HeroAcademyScreen(
     gameState: GameState,
     onRecruitClick: (String) -> Unit,
+    onUseAbility: (String) -> Unit = {},
     onBackClick: () -> Unit
 ) {
     val playerState = gameState.playerStates[gameState.activeFaction]
     val credits = playerState?.credits ?: 0
     val recruitedHeroes = playerState?.recruitedHeroes ?: emptyList()
 
-    val availableHeroes = listOf(
+    val heroAbilitiesUsed = playerState?.heroAbilitiesUsed ?: emptySet()
+    val allHeroes = listOf(
         Hero("hero_vance", "Commander Vance", Faction.DOMINION, 1500, "+15% Raw Damage Output"),
         Hero("hero_kael", "Architect Kael", Faction.SYNTH, 1200, "-10% Tech Research Cost"),
-        Hero("hero_nix", "High Seer Nix", Faction.XYLAR, 2000, "+1 HP Fleet Regen / Turn")
-    ).filter { it.id !in recruitedHeroes }
+        Hero("hero_nix", "High Seer Nix", Faction.XYLAR, 2000, "+1 HP Fleet Regen / Turn"),
+        Hero("hero_elara", "Admiral Elara", Faction.DOMINION, 1800, "+10% Income + 2C flat bonus")
+    )
+    val recruitedHeroObjects = allHeroes.filter { it.id in recruitedHeroes }
+    val availableHeroes = allHeroes.filter { it.id !in recruitedHeroes }
+    val heroAbilityDescriptions = mapOf(
+        HeroRegistry.VANCE to "Frappe de Suppression — all fleet units may fire again this turn",
+        HeroRegistry.KAEL to "Prototype — complete current research instantly",
+        HeroRegistry.NIX to "Refuge Stellaire — fully heal all friendly units",
+        HeroRegistry.ELARA to "Convoi Commercial — gain +80 Credits immediately"
+    )
 
     Box(
         modifier = Modifier
@@ -79,6 +91,43 @@ fun HeroAcademyScreen(
                         Text("${credits} C", style = MaterialTheme.typography.headlineMedium, color = NeonCyan)
                     }
                 }
+            }
+
+            if (recruitedHeroObjects.isNotEmpty()) {
+                Text(
+                    text = "YOUR COMMANDERS",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = NeonCyan,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                recruitedHeroObjects.forEach { hero ->
+                    val abilityUsed = heroAbilitiesUsed.contains(hero.id)
+                    IndustrialPanel(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), borderColor = NeonCyan.copy(alpha = 0.4f)) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(hero.name.uppercase(), style = MaterialTheme.typography.labelLarge, color = NeonCyan)
+                                Text(
+                                    heroAbilityDescriptions[hero.id] ?: hero.bonusDescription,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (abilityUsed) TextSecondary else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            IndustrialButton(
+                                text = if (abilityUsed) "USED" else "USE ABILITY",
+                                onClick = { if (!abilityUsed) onUseAbility(hero.id) },
+                                isPrimary = !abilityUsed,
+                                color = if (abilityUsed) TextSecondary else NeonOrange,
+                                modifier = Modifier.widthIn(min = 120.dp)
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
             }
 
             Text(

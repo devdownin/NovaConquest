@@ -12,5 +12,6 @@ data class GameUnit(
     val position: HexCoord,
     val currentHp: Int,
     val hasMoved: Boolean = false,
-    val hasAttacked: Boolean = false
+    val hasAttacked: Boolean = false,
+    val cargo: List<UnitType> = emptyList()
 )

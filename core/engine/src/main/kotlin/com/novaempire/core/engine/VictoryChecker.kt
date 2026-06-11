@@ -34,7 +34,12 @@ object VictoryChecker {
             }
         }
 
-        // 4. Military Conquest: only one faction still has units or planets
+        // 4. Galactic Domination: hold 60 %+ of planets for 3 consecutive global turns
+        state.dominationTurns.entries.find { it.value >= 3 }?.let {
+            return VictoryResult(it.key, "Galactic Domination")
+        }
+
+        // 5. Military Conquest: only one faction still has units or planets
         val activeFactions = Faction.values().filter { it != Faction.ANCIENT_NPC }
         val survivors = activeFactions.filter { faction ->
             state.units.values.any { it.faction == faction } ||
@@ -44,7 +49,7 @@ object VictoryChecker {
             return VictoryResult(survivors.first(), "Military Conquest")
         }
 
-        // 5. Time Limit: 100 turns — highest credits wins
+        // 6. Time Limit: 100 turns — highest credits wins
         if (state.turn >= 100) {
             state.playerStates.values.maxByOrNull { it.credits }?.let {
                 return VictoryResult(it.faction, "Time Limit Reached - Score Victory")
