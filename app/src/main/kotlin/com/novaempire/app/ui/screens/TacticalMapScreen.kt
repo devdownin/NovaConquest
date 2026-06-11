@@ -811,10 +811,10 @@ fun TacticalMapScreen(
                                         Text("${tile.systemLevel * 2} dmg/siege", style = MaterialTheme.typography.labelLarge, color = NeonOrange)
                                     }
                                 }
-                                if (tile.specialty != null) {
+                                tile.specialty?.let { specialty ->
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                         Text("Specialty", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                                        Text(tile.specialty.displayName, style = MaterialTheme.typography.labelLarge, color = NeonCyan)
+                                        Text(specialty.displayName, style = MaterialTheme.typography.labelLarge, color = NeonCyan)
                                     }
                                 }
                             }
