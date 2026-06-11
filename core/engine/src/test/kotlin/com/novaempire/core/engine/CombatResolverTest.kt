@@ -8,7 +8,6 @@ import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.domain.state.PlayerState
 import com.novaempire.core.hex.HexCoord
-import kotlin.random.Random
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -22,9 +21,6 @@ class CombatResolverTest {
         override fun nextFloat(): Float = 0.5f // Results in 1.0 variance: 0.8 + 0.5 * 0.4 = 1.0
     }
 
-    @Test
-    fun testCombatAttackerDestroysDefender() {
-        // Attacker: Battleship (10 ATK + 1 DOMINION bonus) vs Defender: Scout (6 HP) -> Scout destroyed
     // Use a fixed seed so variance is always exactly 1.0 (nextFloat = 0.5 → variance = 0.8 + 0.5*0.4 = 1.0)
     private val deterministicRng = Random(42)
 
