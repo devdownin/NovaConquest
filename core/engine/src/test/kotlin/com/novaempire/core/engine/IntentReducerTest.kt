@@ -41,13 +41,13 @@ class IntentReducerTest {
     fun researchTechQueuesAndDeductsCredits() = runBlocking {
         val e = engine()
         val creditsBefore = e.state.value.playerStates[Faction.DOMINION]!!.credits
-        // tech_hull_plating: tier-1 military, no prerequisite, base cost 4
+        // tech_hull_plating: tier-1 military, no prerequisite, base cost 8
         e.processIntent(GameIntent.ResearchTech("tech_hull_plating"))
         delay(100)
         val player = e.state.value.playerStates[Faction.DOMINION]!!
         // ResearchTech queues the tech into researchInProgress; credits are deducted immediately
         assertEquals("tech_hull_plating", player.researchInProgress?.techId)
-        assertEquals(creditsBefore - 4, player.credits)
+        assertEquals(creditsBefore - 8, player.credits)
     }
 
     @Test

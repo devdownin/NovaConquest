@@ -12,14 +12,14 @@ class CostCalculatorTest {
     @Test
     fun baseCostNoModifiers() {
         val cost = CostCalculator.techCost("tech_hull_plating", emptySet())
-        assertEquals(4, cost)
+        assertEquals(8, cost)
     }
 
     @Test
     fun costIncreasesWithUnlockedBranchTechs() {
         val unlocked = setOf("tech_hull_plating")
         val cost = CostCalculator.techCost("tech_plasma_weapons", unlocked)
-        assertEquals(4 + 4, cost) // base 4 + 4 * 1 unlocked in branch
+        assertEquals(8 + 6, cost) // base 8 + 6 * 1 unlocked in branch
     }
 
     @Test
