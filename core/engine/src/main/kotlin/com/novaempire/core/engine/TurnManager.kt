@@ -51,7 +51,7 @@ object TurnManager {
             val ownedPlanets = nextState.map.tiles.values.filter {
                 it.terrain == TerrainType.PLANET && it.owner == nextFaction
             }
-            var income = 10 + ownedPlanets.sumOf { 5 + it.systemLevel * 2 }
+            var income = 6 + ownedPlanets.sumOf { 5 + it.systemLevel * 2 }
 
             val incomePct = BonusRegistry.sum(BonusType.INCOME_PERCENT, nextPlayerState, nextState.activeEvent)
             val incomeFlat = BonusRegistry.sum(BonusType.INCOME_FLAT, nextPlayerState, nextState.activeEvent)

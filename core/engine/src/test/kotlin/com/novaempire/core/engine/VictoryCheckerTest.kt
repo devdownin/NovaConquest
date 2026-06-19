@@ -2,6 +2,7 @@ package com.novaempire.core.engine
 
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.MapArchetype
+import com.novaempire.core.domain.models.TechRegistry
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.domain.state.PlayerState
 import org.junit.Assert.assertEquals
@@ -22,7 +23,7 @@ class VictoryCheckerTest {
 
     @Test
     fun techVictoryWhenAllTechsUnlocked() {
-        val techs = (1..8).map { "t$it" }.toSet()
+        val techs = (1..TechRegistry.ALL_TECHS.size).map { "t$it" }.toSet()
         val state = stateWith(PlayerState(Faction.TRADERS, techUnlocked = techs))
         val result = VictoryChecker.check(state)!!
         assertEquals(Faction.TRADERS, result.winner)
@@ -30,16 +31,16 @@ class VictoryCheckerTest {
     }
 
     @Test
-    fun economicVictoryAt1000Credits() {
-        val state = stateWith(PlayerState(Faction.SYNTH, credits = 1000))
+    fun economicVictoryAt2500Credits() {
+        val state = stateWith(PlayerState(Faction.SYNTH, credits = 2500))
         val result = VictoryChecker.check(state)!!
         assertEquals(Faction.SYNTH, result.winner)
         assertEquals("Economic Supremacy", result.reason)
     }
 
     @Test
-    fun economicVictoryRequires1000NotLess() {
-        val state = stateWith(PlayerState(Faction.SYNTH, credits = 999))
+    fun economicVictoryRequires2500NotLess() {
+        val state = stateWith(PlayerState(Faction.SYNTH, credits = 2499))
         assertNull(VictoryChecker.check(state))
     }
 

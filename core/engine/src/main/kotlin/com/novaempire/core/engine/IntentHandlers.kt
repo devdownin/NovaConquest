@@ -287,7 +287,7 @@ internal fun handleUseHeroAbility(state: GameState, intent: GameIntent.UseHeroAb
 
 internal fun buildTurns(unitType: com.novaempire.core.domain.models.UnitType): Int = when (unitType) {
     com.novaempire.core.domain.models.UnitType.SCOUT,
-    com.novaempire.core.domain.models.UnitType.FIGHTER -> 1
+    com.novaempire.core.domain.models.UnitType.FIGHTER -> 2
     com.novaempire.core.domain.models.UnitType.CRUISER,
     com.novaempire.core.domain.models.UnitType.BATTLESHIP,
     com.novaempire.core.domain.models.UnitType.CARRIER,

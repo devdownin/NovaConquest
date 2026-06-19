@@ -19,8 +19,8 @@ object VictoryChecker {
             return VictoryResult(it.faction, "Technological Dominance")
         }
 
-        // 2. Economic Victory: 1000 Credits
-        state.playerStates.values.find { it.credits >= 1000 }?.let {
+        // 2. Economic Victory: 2500 Credits
+        state.playerStates.values.find { it.credits >= 2500 }?.let {
             return VictoryResult(it.faction, "Economic Supremacy")
         }
 
@@ -34,8 +34,8 @@ object VictoryChecker {
             }
         }
 
-        // 4. Galactic Domination: hold 60 %+ of planets for 3 consecutive global turns
-        state.dominationTurns.entries.find { it.value >= 3 }?.let {
+        // 4. Galactic Domination: hold 60 %+ of planets for 6 consecutive global turns
+        state.dominationTurns.entries.find { it.value >= 6 }?.let {
             return VictoryResult(it.key, "Galactic Domination")
         }
 
