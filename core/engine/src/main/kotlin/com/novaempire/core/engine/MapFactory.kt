@@ -67,7 +67,7 @@ class MapFactory {
                             }
                         }
                         if (terrain == TerrainType.PLANET) {
-                            systemLevel = random.nextInt(1, 5)
+                            systemLevel = random.nextInt(2, 5)
                         }
                     }
 
@@ -79,7 +79,7 @@ class MapFactory {
             val spawnPoints = spawnPointsFor(radius)
             spawnPoints.forEach { coord ->
                 if (tiles.containsKey(coord) && !zodiacNodes.contains(coord)) {
-                    tiles[coord] = HexTile(coord, TerrainType.PLANET, 2)
+                    tiles[coord] = HexTile(coord, TerrainType.PLANET, 3)
                 }
             }
 
