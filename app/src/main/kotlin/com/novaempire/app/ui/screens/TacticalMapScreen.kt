@@ -409,14 +409,14 @@ fun TacticalMapScreen(
 
                 // Pre-allocate paints for performance
                 val textPaintVisible = android.graphics.Paint().apply {
-                    color = android.graphics.Color.argb((0.15f * 255f).toInt(), 0, 255, 255)
-                    textSize = 12f
+                    color = android.graphics.Color.argb((0.12f * 255f).toInt(), 74, 123, 157) // acier froid
+                    textSize = 11f
                     textAlign = android.graphics.Paint.Align.CENTER
                     typeface = android.graphics.Typeface.MONOSPACE
                 }
                 val textPaintFog = android.graphics.Paint().apply {
-                    color = android.graphics.Color.argb((0.15f * 255f * 0.4f).toInt(), 0, 255, 255)
-                    textSize = 12f
+                    color = android.graphics.Color.argb((0.06f * 255f).toInt(), 74, 123, 157)
+                    textSize = 11f
                     textAlign = android.graphics.Paint.Align.CENTER
                     typeface = android.graphics.Typeface.MONOSPACE
                 }
@@ -432,15 +432,15 @@ fun TacticalMapScreen(
 
                     if (isExplored) {
                         val baseColor = when (tile.terrain) {
-                            TerrainType.EMPTY -> VoidBlack
-                            TerrainType.ASTEROIDS -> Color(0xFF2A2E39)
-                            TerrainType.NEBULA -> Color(0xFF3B2A45)
-                            TerrainType.PLANET -> Color(0xFF15202B)
-                            TerrainType.BLACK_HOLE -> Color(0xFF452A15)
-                            TerrainType.WORMHOLE -> Color(0xFF151B2B)
-                            TerrainType.PLASMA_CLOUD -> Color(0xFF451A15)
-                            TerrainType.ION_STORM -> Color(0xFF3B3A45)
-                            TerrainType.ANOMALY -> Color(0xFF2A4539)
+                            TerrainType.EMPTY -> Color(0xFF181210)  // béton froid vide
+                            TerrainType.ASTEROIDS -> Color(0xFF241C14)  // roche brun-gris
+                            TerrainType.NEBULA -> Color(0xFF261530)  // violet brume épais
+                            TerrainType.PLANET -> Color(0xFF162018)  // vert-noir profond
+                            TerrainType.BLACK_HOLE -> Color(0xFF1A0A00)  // brun-noir abyssal
+                            TerrainType.WORMHOLE -> Color(0xFF12152A)  // bleu nuit
+                            TerrainType.PLASMA_CLOUD -> Color(0xFF2A1208)  // brun rouille sombre
+                            TerrainType.ION_STORM -> Color(0xFF20202E)  // gris-bleu lourd
+                            TerrainType.ANOMALY -> Color(0xFF142218)  // vert-brun étrange
                         }
 
                         val alpha = if (isVisible) 1f else 0.4f
@@ -452,8 +452,8 @@ fun TacticalMapScreen(
 
                         drawHexagonPath(
                             centerX = x, centerY = y, radius = hexRadius,
-                            color = Color(0xFF8F9094).copy(alpha = 0.15f * alpha),
-                            strokeWidth = 1f
+                            color = Color(0xFF130F0A).copy(alpha = alpha * 0.85f),
+                            strokeWidth = 2.5f  // contour encre épaisse BD
                         )
 
                         // Movement range overlay (cyan fill + border)
@@ -517,8 +517,8 @@ fun TacticalMapScreen(
                             )
                         }
                     } else {
-                        drawHexagonPath(x, y, hexRadius, color = VoidBlack, fill = true)
-                        drawHexagonPath(x, y, hexRadius, color = Color(0xFF1A1D24), fill = false, strokeWidth = 1f)
+                        drawHexagonPath(x, y, hexRadius, color = Color(0xFF0D0A07), fill = true)
+                        drawHexagonPath(x, y, hexRadius, color = Color(0xFF130F0A), fill = false, strokeWidth = 2.5f)
                     }
                 }
             }
@@ -624,9 +624,15 @@ fun TacticalMapScreen(
                     if (explosionScale.value > 0f) {
                         val explosionRadius = hexRadius * explosionScale.value
                         if (explosionRadius > 0f) {
+                            // Éclaboussure encre Bilal — fumée brune, pas néon
                             drawCircle(
                                 brush = Brush.radialGradient(
-                                    colors = listOf(NeonOrange.copy(alpha = 1f - explosionScale.value), Color.Transparent),
+                                    colorStops = arrayOf(
+                                        0.0f to Color(0xFF8B3A0A).copy(alpha = (1f - explosionScale.value) * 0.95f),
+                                        0.4f to Color(0xFF3D1A06).copy(alpha = (0.7f - explosionScale.value).coerceAtLeast(0f)),
+                                        0.8f to Color(0xFF1A0D04).copy(alpha = (0.3f - explosionScale.value).coerceAtLeast(0f)),
+                                        1.0f to Color.Transparent
+                                    ),
                                     center = Offset(dx, dy),
                                     radius = explosionRadius
                                 ),
@@ -1190,62 +1196,93 @@ fun pixelToHex(x: Float, y: Float, centerX: Float, centerY: Float): HexCoord {
 }
 
 fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float, owner: Faction?) {
-    val planetColor = owner?.let { getFactionColor(it) } ?: NeonGreen // Neutral
-    val atmosphereColor = planetColor.copy(alpha = 0.2f)
+    val planetColor = owner?.let { getFactionColor(it) } ?: NeonGreen
+    val inkBlack = Color(0xFF130F0A)
 
-    // Core glow
+    // Disque planète — gradient mat, pas de glow électrique
     drawCircle(
         brush = Brush.radialGradient(
-            colors = listOf(planetColor.copy(alpha = 0.7f), atmosphereColor, Color.Transparent),
-            center = Offset(x, y),
-            radius = hexRadius * 0.6f
+            colorStops = arrayOf(
+                0.0f to planetColor.copy(alpha = 0.55f),
+                0.6f to planetColor.copy(alpha = 0.25f),
+                1.0f to Color.Transparent
+            ),
+            center = Offset(x - hexRadius * 0.1f, y - hexRadius * 0.1f),
+            radius = hexRadius * 0.58f
         ),
-        radius = hexRadius * 0.6f,
+        radius = hexRadius * 0.58f,
         center = Offset(x, y)
     )
 
-    // Technical orbital rings
-    val ringPath = Path().apply {
-        addOval(androidx.compose.ui.geometry.Rect(
-            Offset(x - hexRadius * 0.8f, y - hexRadius * 0.2f),
-            Size(hexRadius * 1.6f, hexRadius * 0.4f)
-        ))
-    }
-    drawPath(
-        path = ringPath,
-        color = NeonCyan.copy(alpha = 0.4f),
-        style = Stroke(width = 1.5f)
+    // Contour encre épaisse BD
+    drawCircle(
+        color = inkBlack,
+        radius = hexRadius * 0.52f,
+        center = Offset(x, y),
+        style = Stroke(width = 3f)
+    )
+    drawCircle(
+        color = planetColor.copy(alpha = 0.7f),
+        radius = hexRadius * 0.52f,
+        center = Offset(x, y),
+        style = Stroke(width = 1f)
     )
 
-    // Inner details (industrial nodes/cities)
+    // Anneau orbital discret
+    val ringPath = Path().apply {
+        addOval(androidx.compose.ui.geometry.Rect(
+            Offset(x - hexRadius * 0.75f, y - hexRadius * 0.18f),
+            Size(hexRadius * 1.5f, hexRadius * 0.36f)
+        ))
+    }
+    drawPath(path = ringPath, color = planetColor.copy(alpha = 0.28f), style = Stroke(width = 1f))
+
+    // Glint planète
+    drawLine(
+        color = Color.White.copy(alpha = 0.25f),
+        start = Offset(x - hexRadius * 0.25f, y - hexRadius * 0.38f),
+        end   = Offset(x + hexRadius * 0.05f, y - hexRadius * 0.18f),
+        strokeWidth = 1.5f
+    )
+
+    // Détails urbanisation (3 points)
     for (i in 0 until 3) {
-        val angle = (i * 120f) * (Math.PI / 180f)
+        val angle = (i * 120f + 20f) * (Math.PI / 180f)
         val dist = hexRadius * 0.2f
         drawCircle(
-            color = planetColor,
-            radius = 3f,
+            color = planetColor.copy(alpha = 0.8f),
+            radius = 2.5f,
             center = Offset(x + cos(angle).toFloat() * dist, y + sin(angle).toFloat() * dist)
         )
     }
 
-    // Industrial border if owned
+    // Tirets possession — pointillés discrets si propriétaire
     if (owner != null) {
         drawCircle(
-            color = planetColor.copy(alpha = 0.5f),
-            radius = hexRadius * 0.45f,
+            color = planetColor.copy(alpha = 0.35f),
+            radius = hexRadius * 0.42f,
             center = Offset(x, y),
-            style = Stroke(width = 2f, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
+            style = Stroke(width = 1.5f,
+                pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(8f, 8f)))
         )
     }
 }
 
 fun DrawScope.drawUnit(x: Float, y: Float, unit: GameUnit) {
     val factionColor = getFactionColor(unit.faction)
+    val inkBlack = Color(0xFF130F0A)
     val size = 25f
-    
+
+    // Helper: apply Bilal layers to a path — black fill → tinted fill → black outline → color outline
+    fun applyBilalLayers(path: Path) {
+        drawPath(path, color = inkBlack, style = Fill)
+        drawPath(path, color = factionColor.copy(alpha = 0.28f), style = Fill)
+        drawPath(path, color = inkBlack, style = Stroke(width = 4.5f))
+        drawPath(path, color = factionColor, style = Stroke(width = 1.5f))
+    }
+
     when (unit.type) {
         UnitType.CRUISER, UnitType.BATTLESHIP -> {
-            // Industrial ship body (Angular)
             val path = Path().apply {
                 moveTo(x + size, y)
                 lineTo(x - size * 0.5f, y - size * 0.7f)
@@ -1254,15 +1291,11 @@ fun DrawScope.drawUnit(x: Float, y: Float, unit: GameUnit) {
                 lineTo(x - size * 0.5f, y + size * 0.7f)
                 close()
             }
-            drawPath(path, color = factionColor, style = Stroke(width = 2.5f))
-            drawPath(path, color = factionColor.copy(alpha = 0.2f), style = Fill)
-            
-            // Antennas / Sensors
-            drawLine(factionColor, Offset(x + size * 0.2f, y - size * 0.5f), Offset(x + size * 0.2f, y - size * 1.2f), strokeWidth = 1.5f)
-            drawCircle(factionColor, radius = 2f, center = Offset(x + size * 0.2f, y - size * 1.2f))
+            applyBilalLayers(path)
+            drawLine(factionColor.copy(alpha = 0.7f), Offset(x + size * 0.2f, y - size * 0.5f), Offset(x + size * 0.2f, y - size * 1.1f), strokeWidth = 1.5f)
+            drawCircle(factionColor, radius = 2f, center = Offset(x + size * 0.2f, y - size * 1.1f))
         }
         UnitType.FIGHTER -> {
-            // Delta wing style
             val path = Path().apply {
                 moveTo(x + size * 0.7f, y)
                 lineTo(x - size * 0.7f, y - size * 0.6f)
@@ -1270,14 +1303,11 @@ fun DrawScope.drawUnit(x: Float, y: Float, unit: GameUnit) {
                 lineTo(x - size * 0.7f, y + size * 0.6f)
                 close()
             }
-            drawPath(path, color = factionColor, style = Stroke(width = 2f))
-            
-            // Twin engines
-            drawRect(factionColor, Offset(x - size * 0.8f, y - size * 0.4f), Size(8f, 4f))
-            drawRect(factionColor, Offset(x - size * 0.8f, y + size * 0.3f), Size(8f, 4f))
+            applyBilalLayers(path)
+            drawRect(factionColor.copy(alpha = 0.7f), Offset(x - size * 0.8f, y - size * 0.4f), Size(7f, 3f))
+            drawRect(factionColor.copy(alpha = 0.7f), Offset(x - size * 0.8f, y + size * 0.3f), Size(7f, 3f))
         }
         UnitType.SCOUT -> {
-            // Diamond technical shape
             val path = Path().apply {
                 moveTo(x + size * 0.8f, y)
                 lineTo(x, y - size * 0.4f)
@@ -1285,21 +1315,16 @@ fun DrawScope.drawUnit(x: Float, y: Float, unit: GameUnit) {
                 lineTo(x, y + size * 0.4f)
                 close()
             }
-            drawPath(path, color = factionColor, style = Stroke(width = 2f))
-            
-            // Radar dish
+            applyBilalLayers(path)
             drawArc(
-                color = factionColor,
-                startAngle = -45f,
-                sweepAngle = 90f,
-                useCenter = false,
+                color = factionColor.copy(alpha = 0.6f),
+                startAngle = -45f, sweepAngle = 90f, useCenter = false,
                 topLeft = Offset(x - size * 0.3f, y - size * 0.3f),
                 size = Size(size * 0.6f, size * 0.6f),
                 style = Stroke(width = 1.5f)
             )
         }
         UnitType.CARRIER -> {
-            // Large rectangular technical hull
             val path = Path().apply {
                 moveTo(x + size, y - size * 0.4f)
                 lineTo(x + size, y + size * 0.4f)
@@ -1307,13 +1332,10 @@ fun DrawScope.drawUnit(x: Float, y: Float, unit: GameUnit) {
                 lineTo(x - size, y - size * 0.6f)
                 close()
             }
-            drawPath(path, color = factionColor, style = Stroke(width = 2.5f))
-            
-            // Flight deck lines
-            drawLine(factionColor, Offset(x - size * 0.5f, y), Offset(x + size * 0.5f, y), strokeWidth = 1f)
+            applyBilalLayers(path)
+            drawLine(factionColor.copy(alpha = 0.5f), Offset(x - size * 0.5f, y), Offset(x + size * 0.5f, y), strokeWidth = 1f)
         }
         UnitType.DREADNOUGHT -> {
-            // Massive heavy hull
             val path = Path().apply {
                 moveTo(x + size * 1.2f, y)
                 lineTo(x - size * 0.2f, y - size * 0.8f)
@@ -1322,18 +1344,14 @@ fun DrawScope.drawUnit(x: Float, y: Float, unit: GameUnit) {
                 lineTo(x - size * 0.2f, y + size * 0.8f)
                 close()
             }
-            drawPath(path, color = factionColor, style = Stroke(width = 3.5f))
-            drawPath(path, color = factionColor.copy(alpha = 0.3f), style = Fill)
-            
-            // Multiple turrets / antennas
+            applyBilalLayers(path)
             for (i in 0 until 3) {
                 val tx = x - size * 0.5f + (i * size * 0.4f)
-                drawCircle(factionColor, radius = 3f, center = Offset(tx, y))
-                drawLine(factionColor, Offset(tx, y), Offset(tx, y - size * 0.3f), strokeWidth = 2f)
+                drawCircle(factionColor.copy(alpha = 0.8f), radius = 2.5f, center = Offset(tx, y))
+                drawLine(factionColor.copy(alpha = 0.6f), Offset(tx, y), Offset(tx, y - size * 0.28f), strokeWidth = 1.5f)
             }
         }
         UnitType.DEFENSE_PLATFORM -> {
-            // Octagonal station structure
             val path = Path().apply {
                 for (i in 0 until 8) {
                     val angle = (i * 45f) * (Math.PI / 180f)
@@ -1344,33 +1362,40 @@ fun DrawScope.drawUnit(x: Float, y: Float, unit: GameUnit) {
                 }
                 close()
             }
-            drawPath(path, color = factionColor, style = Stroke(width = 3f))
-            
-            // Core energy ring
-            drawCircle(factionColor.copy(alpha = 0.4f), radius = size * 0.3f, center = Offset(x, y), style = Stroke(width = 2f))
-            
-            // Defense arrays (Solar/Shield)
+            applyBilalLayers(path)
+            drawCircle(factionColor.copy(alpha = 0.35f), radius = size * 0.28f, center = Offset(x, y), style = Stroke(width = 1.5f))
             for (i in 0 until 4) {
                 val angle = (i * 90f + 22.5f) * (Math.PI / 180f)
                 val rx = x + cos(angle).toFloat() * size * 0.9f
                 val ry = y + sin(angle).toFloat() * size * 0.9f
-                drawRect(factionColor, Offset(rx - 4f, ry - 4f), Size(8f, 8f))
+                drawRect(inkBlack, Offset(rx - 4f, ry - 4f), Size(8f, 8f))
+                drawRect(factionColor, Offset(rx - 3f, ry - 3f), Size(6f, 6f))
             }
         }
         else -> {
-            // Fallback for any unknown units
-            drawCircle(factionColor, radius = size * 0.5f, center = Offset(x, y), style = Stroke(width = 2f))
+            drawCircle(inkBlack, radius = size * 0.5f, center = Offset(x, y), style = Fill)
+            drawCircle(factionColor.copy(alpha = 0.3f), radius = size * 0.5f, center = Offset(x, y), style = Fill)
+            drawCircle(inkBlack, radius = size * 0.5f, center = Offset(x, y), style = Stroke(width = 4f))
+            drawCircle(factionColor, radius = size * 0.5f, center = Offset(x, y), style = Stroke(width = 1.5f))
         }
     }
 
-    // HP Bar (Technical overlay)
+    // Glint blanc diagonal — signature reflet Bilal
+    drawLine(
+        color = Color.White.copy(alpha = 0.28f),
+        start = Offset(x - size * 0.32f, y - size * 0.52f),
+        end   = Offset(x + size * 0.08f, y - size * 0.22f),
+        strokeWidth = 1.5f
+    )
+
+    // Barre HP — métal mat, pas gris numérique
     val hpPercent = unit.currentHp.toFloat() / unit.type.maxHp
     val barWidth = 40f
-    val barHeight = 4f
-    val barTop = y + size + 10f
-    
-    drawRect(Color.Gray.copy(alpha = 0.3f), Offset(x - barWidth/2, barTop), Size(barWidth, barHeight))
-    drawRect(factionColor, Offset(x - barWidth/2, barTop), Size(barWidth * hpPercent, barHeight))
+    val barHeight = 3.5f
+    val barTop = y + size + 9f
+    drawRect(Color(0xFF2D2620), Offset(x - barWidth / 2, barTop), Size(barWidth, barHeight))
+    drawRect(factionColor.copy(alpha = 0.85f), Offset(x - barWidth / 2, barTop), Size(barWidth * hpPercent, barHeight))
+    drawRect(inkBlack, Offset(x - barWidth / 2, barTop), Size(barWidth, barHeight), style = Stroke(width = 1f))
 }
 
 fun DrawScope.drawAsteroids(x: Float, y: Float, hexRadius: Float) {
@@ -1379,6 +1404,7 @@ fun DrawScope.drawAsteroids(x: Float, y: Float, hexRadius: Float) {
         Offset(-25f, 15f), Offset(0f, 25f), Offset(-5f, 0f)
     )
     val sizes = listOf(8f, 12f, 10f, 14f, 6f, 16f)
+    val inkBlack = Color(0xFF130F0A)
 
     offsets.forEachIndexed { index, offset ->
         val ax = x + offset.x
@@ -1387,33 +1413,38 @@ fun DrawScope.drawAsteroids(x: Float, y: Float, hexRadius: Float) {
 
         val path = Path()
         path.moveTo(ax, ay - r)
-        path.lineTo(ax + r, ay)
-        path.lineTo(ax, ay + r)
+        path.lineTo(ax + r * 0.8f, ay - r * 0.3f)
+        path.lineTo(ax + r, ay + r * 0.4f)
+        path.lineTo(ax + r * 0.2f, ay + r)
+        path.lineTo(ax - r * 0.6f, ay + r * 0.8f)
         path.lineTo(ax - r, ay)
         path.close()
 
-        drawPath(path, color = NeonOrange.copy(alpha = 0.6f), style = Stroke(width = 1.5f))
+        drawPath(path, color = Color(0xFF2A1C10), style = Fill)           // roche sombre
+        drawPath(path, color = inkBlack, style = Stroke(width = 2.5f))    // encre épaisse
+        drawPath(path, color = NeonOrange.copy(alpha = 0.5f), style = Stroke(width = 1f))  // rouille
     }
 }
 
 fun DrawScope.drawNebula(x: Float, y: Float, hexRadius: Float) {
+    // Nuage violet-brume Bilal — pas de violet électrique
     drawCircle(
         brush = Brush.radialGradient(
-            colors = listOf(Color(0xFFB026FF).copy(alpha = 0.5f), Color.Transparent),
+            colors = listOf(VioletBrume.copy(alpha = 0.6f), Color.Transparent),
             center = Offset(x - 10f, y - 10f),
-            radius = hexRadius * 0.7f
+            radius = hexRadius * 0.72f
         ),
-        radius = hexRadius * 0.7f,
+        radius = hexRadius * 0.72f,
         center = Offset(x - 10f, y - 10f)
     )
     drawCircle(
         brush = Brush.radialGradient(
-            colors = listOf(NeonCyan.copy(alpha = 0.3f), Color.Transparent),
-            center = Offset(x + 15f, y + 10f),
-            radius = hexRadius * 0.6f
+            colors = listOf(NeonCyan.copy(alpha = 0.2f), Color.Transparent),
+            center = Offset(x + 14f, y + 8f),
+            radius = hexRadius * 0.55f
         ),
-        radius = hexRadius * 0.6f,
-        center = Offset(x + 15f, y + 10f)
+        radius = hexRadius * 0.55f,
+        center = Offset(x + 14f, y + 8f)
     )
 }
 

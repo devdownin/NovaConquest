@@ -20,6 +20,7 @@ import com.novaempire.app.ui.components.HalftoneBackground
 import com.novaempire.app.ui.components.HeaderLine
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.components.IndustrialPanel
+import com.novaempire.app.ui.components.InkWashOverlay
 import com.novaempire.app.ui.components.NoiseOverlay
 import com.novaempire.app.ui.theme.NeonCyan
 
@@ -35,9 +36,9 @@ fun MainMenuScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Background effects
-        HalftoneBackground(modifier = Modifier.fillMaxSize(), color = Color.White.copy(alpha = 0.05f))
-        NoiseOverlay(modifier = Modifier.fillMaxSize(), alpha = 0.05f)
+        // Background Bilal — grain fort + lavis violet-brun
+        HalftoneBackground(modifier = Modifier.fillMaxSize(), color = Color.White.copy(alpha = 0.03f))
+        InkWashOverlay(modifier = Modifier.fillMaxSize())
 
         // Header
         Row(
