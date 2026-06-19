@@ -6,49 +6,52 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-// Note: Replace FontFamily.Default with actual Rajdhani and Inter fonts when available in res/font
+// Note: swap FontFamily.Default with Libre Baskerville Bold + Space Mono once TTFs are in res/font
 val RajdhaniFamily = FontFamily.Default
-val InterFamily = FontFamily.Default
+val InterFamily    = FontFamily.Default
 
 val Typography = Typography(
     displayLarge = TextStyle(
         fontFamily = RajdhaniFamily,
-        fontWeight = FontWeight.Bold,
+        fontWeight = FontWeight.Black,
         fontSize = 48.sp,
-        letterSpacing = (-0.5).sp,
+        letterSpacing = 4.sp,          // titre grande affiche BD
         color = TextPrimary
     ),
     headlineLarge = TextStyle(
         fontFamily = RajdhaniFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 32.sp,
+        fontSize = 30.sp,
+        letterSpacing = 3.sp,
         color = TextPrimary
     ),
     headlineMedium = TextStyle(
         fontFamily = RajdhaniFamily,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 24.sp,
+        fontWeight = FontWeight.Bold,
+        fontSize = 22.sp,
+        letterSpacing = 2.sp,
         color = TextPrimary
     ),
     bodyLarge = TextStyle(
         fontFamily = InterFamily,
         fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.5.sp,
+        fontSize = 15.sp,
+        lineHeight = 22.sp,
+        letterSpacing = 0.3.sp,
         color = TextPrimary
     ),
     bodyMedium = TextStyle(
         fontFamily = InterFamily,
         fontWeight = FontWeight.Normal,
-        fontSize = 14.sp,
+        fontSize = 13.sp,
+        lineHeight = 19.sp,
         color = TextSecondary
     ),
     labelLarge = TextStyle(
         fontFamily = RajdhaniFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 14.sp,
-        letterSpacing = 1.sp,
+        fontSize = 13.sp,
+        letterSpacing = 2.sp,          // uppercase espacé style gazette
         color = TextPrimary
     )
 )

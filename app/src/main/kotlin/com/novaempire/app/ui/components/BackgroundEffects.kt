@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.graphics.Canvas as ACanvas
 import android.graphics.Paint as APaint
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -11,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.onSizeChanged
@@ -65,7 +68,7 @@ fun HalftoneBackground(
 @Composable
 fun NoiseOverlay(
     modifier: Modifier = Modifier,
-    alpha: Float = 0.03f
+    alpha: Float = 0.10f   // grain film fort — signature Bilal
 ) {
     val step = 16
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
@@ -99,4 +102,19 @@ fun NoiseOverlay(
     Canvas(modifier = modifier.fillMaxSize().onSizeChanged { canvasSize = it }) {
         bitmap?.let { drawImage(it) }
     }
+}
+
+/** Lavis atmosphérique Bilal : grain fort + vignette violet-brun aux bords. */
+@Composable
+fun InkWashOverlay(modifier: Modifier = Modifier) {
+    NoiseOverlay(modifier = modifier, alpha = 0.10f)
+    Box(
+        modifier = modifier.background(
+            Brush.radialGradient(
+                0.0f to Color(0xFF0D0820).copy(alpha = 0.45f),  // violet profond centre
+                0.5f to Color.Transparent,
+                1.0f to Color(0xFF1A0F05).copy(alpha = 0.55f)   // brun chaud bords
+            )
+        )
+    )
 }
