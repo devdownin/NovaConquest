@@ -95,6 +95,9 @@ object TurnManager {
                         val updatedUnits = stateAfterBuilds.units.toMutableMap()
                         updatedUnits[spawnHex] = newUnit
                         stateAfterBuilds = stateAfterBuilds.copy(units = updatedUnits)
+                    } else {
+                        // All spawn candidates blocked — retry next turn
+                        remainingOrders.add(order.copy(turnsRemaining = 1))
                     }
                 } else {
                     remainingOrders.add(order.copy(turnsRemaining = newTurns))
