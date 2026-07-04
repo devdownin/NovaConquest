@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -489,10 +490,12 @@ fun TacticalMapScreen(
                             TerrainType.PLANET -> drawPlanet(x, y, hexRadius, tile.owner)
                             TerrainType.ASTEROIDS -> drawAsteroids(x, y, hexRadius)
                             TerrainType.NEBULA -> drawNebula(x, y, hexRadius)
-                            TerrainType.BLACK_HOLE -> {
-                                drawCircle(color = NeonOrange.copy(alpha = 0.8f * alpha), radius = hexRadius * 0.6f, center = Offset(x, y))
-                            }
-                            else -> {}
+                            TerrainType.BLACK_HOLE -> drawBlackHole(x, y, hexRadius)
+                            TerrainType.WORMHOLE -> drawWormhole(x, y, hexRadius)
+                            TerrainType.PLASMA_CLOUD -> drawPlasmaCloud(x, y, hexRadius)
+                            TerrainType.ION_STORM -> drawIonStorm(x, y, hexRadius)
+                            TerrainType.ANOMALY -> drawAnomaly(x, y, hexRadius)
+                            TerrainType.EMPTY -> {}
                         }
 
                         // Production indicator: small orange square on planet with active build order
@@ -1286,7 +1289,7 @@ fun DrawScope.drawUnit(x: Float, y: Float, unit: GameUnit) {
     }
 
     when (unit.type) {
-        UnitType.CRUISER, UnitType.BATTLESHIP -> {
+        UnitType.CRUISER -> {
             val path = Path().apply {
                 moveTo(x + size, y)
                 lineTo(x - size * 0.5f, y - size * 0.7f)
@@ -1298,6 +1301,25 @@ fun DrawScope.drawUnit(x: Float, y: Float, unit: GameUnit) {
             applyBilalLayers(path)
             drawLine(factionColor.copy(alpha = 0.7f), Offset(x + size * 0.2f, y - size * 0.5f), Offset(x + size * 0.2f, y - size * 1.1f), strokeWidth = 1.5f)
             drawCircle(factionColor, radius = 2f, center = Offset(x + size * 0.2f, y - size * 1.1f))
+        }
+        UnitType.BATTLESHIP -> {
+            val path = Path().apply {
+                moveTo(x + size * 1.1f, y)
+                lineTo(x + size * 0.4f, y - size * 0.4f)
+                lineTo(x - size * 0.6f, y - size * 0.5f)
+                lineTo(x - size * 0.9f, y - size * 0.2f)
+                lineTo(x - size * 0.9f, y + size * 0.2f)
+                lineTo(x - size * 0.6f, y + size * 0.5f)
+                lineTo(x + size * 0.4f, y + size * 0.4f)
+                close()
+            }
+            applyBilalLayers(path)
+            // Two turrets for battleship
+            drawCircle(factionColor.copy(alpha = 0.8f), radius = 2f, center = Offset(x + size * 0.1f, y - size * 0.2f))
+            drawLine(factionColor.copy(alpha = 0.6f), Offset(x + size * 0.1f, y - size * 0.2f), Offset(x + size * 0.5f, y - size * 0.6f), strokeWidth = 1.5f)
+
+            drawCircle(factionColor.copy(alpha = 0.8f), radius = 2f, center = Offset(x - size * 0.3f, y - size * 0.2f))
+            drawLine(factionColor.copy(alpha = 0.6f), Offset(x - size * 0.3f, y - size * 0.2f), Offset(x + size * 0.1f, y - size * 0.6f), strokeWidth = 1.5f)
         }
         UnitType.FIGHTER -> {
             val path = Path().apply {
@@ -1579,4 +1601,277 @@ fun hexRound(fracQ: Double, fracR: Double, fracS: Double): HexCoord {
         s = -q - r
     }
     return HexCoord(q, r, s)
+}
+
+fun DrawScope.drawBlackHole(x: Float, y: Float, hexRadius: Float) {
+    val inkBlack = Color(0xFF130F0A)
+    val eventHorizonColor = Color(0xFF1A0A00)
+
+    // Accretion disk (distortion effect via gradient)
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(NeonOrange.copy(alpha = 0.8f), Color.Transparent),
+            center = Offset(x, y),
+            radius = hexRadius * 0.8f
+        ),
+        radius = hexRadius * 0.8f,
+        center = Offset(x, y)
+    )
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(NeonRed.copy(alpha = 0.6f), Color.Transparent),
+            center = Offset(x, y),
+            radius = hexRadius * 0.95f
+        ),
+        radius = hexRadius * 0.95f,
+        center = Offset(x, y)
+    )
+
+    // Event Horizon (the black hole itself)
+    drawCircle(
+        color = eventHorizonColor,
+        radius = hexRadius * 0.35f,
+        center = Offset(x, y),
+        style = Fill
+    )
+
+    // Thick comic book ink outline
+    drawCircle(
+        color = inkBlack,
+        radius = hexRadius * 0.35f,
+        center = Offset(x, y),
+        style = Stroke(width = 3.5f)
+    )
+
+    // Inner glow / edge of the void
+    drawCircle(
+        color = NeonOrange.copy(alpha = 0.9f),
+        radius = hexRadius * 0.35f,
+        center = Offset(x, y),
+        style = Stroke(width = 1.5f)
+    )
+
+    // White glint for stylistic consistency, distorted slightly
+    drawLine(
+        color = Color.White.copy(alpha = 0.25f),
+        start = Offset(x - hexRadius * 0.2f, y - hexRadius * 0.2f),
+        end   = Offset(x - hexRadius * 0.05f, y - hexRadius * 0.1f),
+        strokeWidth = 1.5f
+    )
+}
+
+fun DrawScope.drawWormhole(x: Float, y: Float, hexRadius: Float) {
+    val inkBlack = Color(0xFF130F0A)
+    val wormholeColor = Color(0xFF12152A)
+
+    // Spiral arms simulation with overlapping rotated ellipses
+    for (i in 0 until 4) {
+        val angle = (i * 45f)
+        withTransform({
+            rotate(angle, Offset(x, y))
+        }) {
+            drawOval(
+                brush = Brush.radialGradient(
+                    colors = listOf(NeonCyan.copy(alpha = 0.4f), Color.Transparent),
+                    center = Offset(x, y),
+                    radius = hexRadius * 0.7f
+                ),
+                topLeft = Offset(x - hexRadius * 0.7f, y - hexRadius * 0.2f),
+                size = Size(hexRadius * 1.4f, hexRadius * 0.4f)
+            )
+            drawOval(
+                color = NeonCyan.copy(alpha = 0.6f),
+                topLeft = Offset(x - hexRadius * 0.7f, y - hexRadius * 0.2f),
+                size = Size(hexRadius * 1.4f, hexRadius * 0.4f),
+                style = Stroke(width = 1f)
+            )
+        }
+    }
+
+    // Central rift
+    drawCircle(
+        color = wormholeColor,
+        radius = hexRadius * 0.25f,
+        center = Offset(x, y),
+        style = Fill
+    )
+
+    drawCircle(
+        color = inkBlack,
+        radius = hexRadius * 0.25f,
+        center = Offset(x, y),
+        style = Stroke(width = 3f)
+    )
+
+    drawCircle(
+        color = NeonCyan.copy(alpha = 0.9f),
+        radius = hexRadius * 0.25f,
+        center = Offset(x, y),
+        style = Stroke(width = 1.5f)
+    )
+
+    // Glint
+    drawLine(
+        color = Color.White.copy(alpha = 0.3f),
+        start = Offset(x - hexRadius * 0.15f, y - hexRadius * 0.15f),
+        end   = Offset(x + hexRadius * 0.05f, y - hexRadius * 0.05f),
+        strokeWidth = 1.5f
+    )
+}
+
+fun DrawScope.drawPlasmaCloud(x: Float, y: Float, hexRadius: Float) {
+    val inkBlack = Color(0xFF130F0A)
+
+    // Rust/orange turbulent cloud
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(NeonOrange.copy(alpha = 0.5f), Color.Transparent),
+            center = Offset(x - 5f, y + 10f),
+            radius = hexRadius * 0.8f
+        ),
+        radius = hexRadius * 0.8f,
+        center = Offset(x - 5f, y + 10f)
+    )
+
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(NeonRed.copy(alpha = 0.4f), Color.Transparent),
+            center = Offset(x + 12f, y - 12f),
+            radius = hexRadius * 0.6f
+        ),
+        radius = hexRadius * 0.6f,
+        center = Offset(x + 12f, y - 12f)
+    )
+
+    // Plasma arcs (jagged lines)
+    val path = Path().apply {
+        moveTo(x - hexRadius * 0.4f, y - hexRadius * 0.2f)
+        lineTo(x - hexRadius * 0.1f, y - hexRadius * 0.4f)
+        lineTo(x + hexRadius * 0.1f, y - hexRadius * 0.1f)
+        lineTo(x + hexRadius * 0.4f, y - hexRadius * 0.3f)
+    }
+    drawPath(path, color = NeonOrange.copy(alpha = 0.8f), style = Stroke(width = 2f))
+
+    val path2 = Path().apply {
+        moveTo(x - hexRadius * 0.3f, y + hexRadius * 0.3f)
+        lineTo(x, y + hexRadius * 0.1f)
+        lineTo(x + hexRadius * 0.2f, y + hexRadius * 0.4f)
+        lineTo(x + hexRadius * 0.5f, y + hexRadius * 0.2f)
+    }
+    drawPath(path2, color = NeonRed.copy(alpha = 0.7f), style = Stroke(width = 1.5f))
+
+    // Dark matter specks in the plasma
+    for (i in 0 until 5) {
+        val angle = (i * 72f) * (Math.PI / 180f)
+        val dist = hexRadius * 0.4f
+        drawCircle(
+            color = inkBlack,
+            radius = 3f,
+            center = Offset(x + cos(angle).toFloat() * dist, y + sin(angle).toFloat() * dist)
+        )
+    }
+}
+
+fun DrawScope.drawIonStorm(x: Float, y: Float, hexRadius: Float) {
+    val inkBlack = Color(0xFF130F0A)
+
+    // Heavy grey-blue cloud base
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(Color(0xFF20202E).copy(alpha = 0.7f), Color.Transparent),
+            center = Offset(x, y),
+            radius = hexRadius * 0.85f
+        ),
+        radius = hexRadius * 0.85f,
+        center = Offset(x, y)
+    )
+
+    // Energetic cyan flashes
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(NeonCyan.copy(alpha = 0.3f), Color.Transparent),
+            center = Offset(x - 15f, y - 5f),
+            radius = hexRadius * 0.5f
+        ),
+        radius = hexRadius * 0.5f,
+        center = Offset(x - 15f, y - 5f)
+    )
+
+    // Lightning strikes
+    val lightning = Path().apply {
+        moveTo(x - hexRadius * 0.2f, y - hexRadius * 0.5f)
+        lineTo(x - hexRadius * 0.05f, y - hexRadius * 0.1f)
+        lineTo(x - hexRadius * 0.2f, y)
+        lineTo(x + hexRadius * 0.1f, y + hexRadius * 0.4f)
+        lineTo(x, y + hexRadius * 0.1f)
+        lineTo(x + hexRadius * 0.15f, y)
+        close()
+    }
+    drawPath(lightning, color = NeonCyan.copy(alpha = 0.9f), style = Fill)
+    drawPath(lightning, color = inkBlack, style = Stroke(width = 1.5f))
+
+    val lightning2 = Path().apply {
+        moveTo(x + hexRadius * 0.3f, y - hexRadius * 0.3f)
+        lineTo(x + hexRadius * 0.1f, y)
+        lineTo(x + hexRadius * 0.2f, y + hexRadius * 0.1f)
+        lineTo(x, y + hexRadius * 0.3f)
+    }
+    drawPath(lightning2, color = NeonCyan.copy(alpha = 0.7f), style = Stroke(width = 2f))
+}
+
+fun DrawScope.drawAnomaly(x: Float, y: Float, hexRadius: Float) {
+    val inkBlack = Color(0xFF130F0A)
+
+    // Strange green-brown base
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(Color(0xFF142218).copy(alpha = 0.6f), Color.Transparent),
+            center = Offset(x, y),
+            radius = hexRadius * 0.75f
+        ),
+        radius = hexRadius * 0.75f,
+        center = Offset(x, y)
+    )
+
+    // Unnatural geometry
+    val path = Path().apply {
+        moveTo(x, y - hexRadius * 0.4f)
+        lineTo(x + hexRadius * 0.35f, y - hexRadius * 0.15f)
+        lineTo(x + hexRadius * 0.35f, y + hexRadius * 0.15f)
+        lineTo(x, y + hexRadius * 0.4f)
+        lineTo(x - hexRadius * 0.35f, y + hexRadius * 0.15f)
+        lineTo(x - hexRadius * 0.35f, y - hexRadius * 0.15f)
+        close()
+    }
+
+    // Distorted fill and thick ink stroke
+    drawPath(path, color = NeonGreen.copy(alpha = 0.2f), style = Fill)
+    drawPath(path, color = inkBlack, style = Stroke(width = 3f))
+    drawPath(path, color = NeonGreen.copy(alpha = 0.8f), style = Stroke(width = 1.5f,
+        pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(5f, 5f))))
+
+    // Glitching inner lines
+    drawLine(
+        color = NeonGreen.copy(alpha = 0.9f),
+        start = Offset(x - hexRadius * 0.2f, y),
+        end = Offset(x + hexRadius * 0.2f, y),
+        strokeWidth = 2f
+    )
+    drawLine(
+        color = NeonGreen.copy(alpha = 0.9f),
+        start = Offset(x, y - hexRadius * 0.2f),
+        end = Offset(x, y + hexRadius * 0.2f),
+        strokeWidth = 2f
+    )
+
+    // Artifact nodes
+    for (i in 0 until 4) {
+        val angle = (i * 90f + 45f) * (Math.PI / 180f)
+        val dist = hexRadius * 0.25f
+        drawCircle(
+            color = NeonOrange.copy(alpha = 0.9f),
+            radius = 2.5f,
+            center = Offset(x + cos(angle).toFloat() * dist, y + sin(angle).toFloat() * dist)
+        )
+    }
 }
