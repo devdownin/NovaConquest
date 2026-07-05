@@ -27,6 +27,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -1213,18 +1216,35 @@ fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float, owner: Faction?) 
         center = Offset(x, y)
     )
 
-    // Contour encre épaisse BD
+    // Ombrage par hachures (Cross-hatching style Graphic Noir)
+    clipPath(
+        Path().apply { addOval(androidx.compose.ui.geometry.Rect(x - hexRadius * 0.52f, y - hexRadius * 0.52f, x + hexRadius * 0.52f, y + hexRadius * 0.52f)) }
+    ) {
+        for (i in 0 until 15) {
+            val hY = y + hexRadius * 0.1f + i * 4f
+            if (hY < y + hexRadius * 0.52f) {
+                drawLine(
+                    color = inkBlack.copy(alpha = 0.6f),
+                    start = Offset(x - hexRadius * 0.5f, hY),
+                    end = Offset(x + hexRadius * 0.5f, hY - hexRadius * 0.3f),
+                    strokeWidth = 1f
+                )
+            }
+        }
+    }
+
+    // Contour encre épaisse BD avec style plus texturé
     drawCircle(
         color = inkBlack,
         radius = hexRadius * 0.52f,
         center = Offset(x, y),
-        style = Stroke(width = 3f)
+        style = Stroke(width = 4f, cap = StrokeCap.Round, join = StrokeJoin.Round)
     )
     drawCircle(
         color = planetColor.copy(alpha = 0.7f),
         radius = hexRadius * 0.52f,
         center = Offset(x, y),
-        style = Stroke(width = 1f)
+        style = Stroke(width = 1.5f)
     )
 
     // Anneau orbital discret
