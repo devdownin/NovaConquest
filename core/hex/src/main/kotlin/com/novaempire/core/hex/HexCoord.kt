@@ -2,6 +2,7 @@ package com.novaempire.core.hex
 import kotlinx.serialization.Serializable
 
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * Cube coordinates for a hexagonal grid.
@@ -26,12 +27,12 @@ data class HexCoord(val q: Int, val r: Int, val s: Int) {
         )
 
         fun round(fracQ: Double, fracR: Double, fracS: Double): HexCoord {
-            var q = Math.round(fracQ).toInt()
-            var r = Math.round(fracR).toInt()
-            var s = Math.round(fracS).toInt()
-            val qDiff = Math.abs(q - fracQ)
-            val rDiff = Math.abs(r - fracR)
-            val sDiff = Math.abs(s - fracS)
+            var q = fracQ.roundToInt()
+            var r = fracR.roundToInt()
+            var s = fracS.roundToInt()
+            val qDiff = kotlin.math.abs(q - fracQ)
+            val rDiff = kotlin.math.abs(r - fracR)
+            val sDiff = kotlin.math.abs(s - fracS)
             if (qDiff > rDiff && qDiff > sDiff) q = -r - s
             else if (rDiff > sDiff) r = -q - s
             else s = -q - r
