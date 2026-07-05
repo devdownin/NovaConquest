@@ -1,0 +1,23 @@
+{
+  "name": "HALLOWEEN",
+  "colors": {
+    "primary": "#FFD35400",
+    "secondary": "#FF8E44AD",
+    "tertiary": "#FFF39C12",
+    "background": "#FF1A0F0A",
+    "surface": "#FF2E190E",
+    "surfaceVariant": "#FF452410",
+    "onPrimary": "#FFFFDAB9",
+    "onSecondary": "#FFFFDAB9",
+    "onTertiary": "#FFFFDAB9",
+    "onBackground": "#FFFFDAB9",
+    "onSurface": "#FFFFDAB9",
+    "onSurfaceVariant": "#FFB09989"
+  },
+  "graphics": {
+    "outlineStrokeWidth": 3.5,
+    "planetShadowAlpha": 0.8,
+    "blurRadius": 10.0,
+    "particleCountMultiplier": 1.2
+  }
+}
