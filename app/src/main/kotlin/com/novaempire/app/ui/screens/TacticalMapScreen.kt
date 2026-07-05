@@ -54,6 +54,8 @@ import com.novaempire.core.hex.HexPathfinder
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.math.roundToInt
+import kotlin.math.roundToInt
 
 private const val HEX_RADIUS = 60f
 
@@ -306,18 +308,8 @@ fun TacticalMapScreen(
                                     onClearSelection()
                                 }
                                 // Any other second tap → reselect new tile
-                                else -> {
-                                    selectedHex = coord
-                                    onHexClick(coord)
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                }
                             }
                             // No friendly unit selected → select tile
-                            else -> {
-                                selectedHex = coord
-                                onHexClick(coord)
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            }
                         }
                     }
                 }
@@ -945,7 +937,7 @@ fun TacticalMapScreen(
                                 .map { coord + it }
                                 .mapNotNull { gameState.map.tiles[it] }
                                 .firstOrNull { it.terrain == TerrainType.PLANET && it.owner != gameState.activeFaction }
-                        } else if (tile != null && tile.terrain == TerrainType.PLANET && tile.owner != gameState.activeFaction) {
+                        } else if (tile.terrain == TerrainType.PLANET && tile.owner != gameState.activeFaction) {
                             // Enemy planet is selected — look for adjacent friendly unit that hasn't attacked
                             val adjacentFriendly = HexCoord.directions
                                 .map { coord + it }
@@ -1254,7 +1246,7 @@ fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float, owner: Faction?) 
 
     // Détails urbanisation (3 points)
     for (i in 0 until 3) {
-        val angle = (i * 120f + 20f) * (Math.PI / 180f)
+        val angle = (i * 120f + 20f) * (kotlin.math.PI / 180f)
         val dist = hexRadius * 0.2f
         drawCircle(
             color = planetColor.copy(alpha = 0.8f),
@@ -1380,7 +1372,7 @@ fun DrawScope.drawUnit(x: Float, y: Float, unit: GameUnit) {
         UnitType.DEFENSE_PLATFORM -> {
             val path = Path().apply {
                 for (i in 0 until 8) {
-                    val angle = (i * 45f) * (Math.PI / 180f)
+                    val angle = (i * 45f) * (kotlin.math.PI / 180f)
                     val r = size * 0.7f
                     val px = x + cos(angle).toFloat() * r
                     val py = y + sin(angle).toFloat() * r
@@ -1391,18 +1383,12 @@ fun DrawScope.drawUnit(x: Float, y: Float, unit: GameUnit) {
             applyBilalLayers(path)
             drawCircle(factionColor.copy(alpha = 0.35f), radius = size * 0.28f, center = Offset(x, y), style = Stroke(width = 1.5f))
             for (i in 0 until 4) {
-                val angle = (i * 90f + 22.5f) * (Math.PI / 180f)
+                val angle = (i * 90f + 22.5f) * (kotlin.math.PI / 180f)
                 val rx = x + cos(angle).toFloat() * size * 0.9f
                 val ry = y + sin(angle).toFloat() * size * 0.9f
                 drawRect(inkBlack, Offset(rx - 4f, ry - 4f), Size(8f, 8f))
                 drawRect(factionColor, Offset(rx - 3f, ry - 3f), Size(6f, 6f))
             }
-        }
-        else -> {
-            drawCircle(inkBlack, radius = size * 0.5f, center = Offset(x, y), style = Fill)
-            drawCircle(factionColor.copy(alpha = 0.3f), radius = size * 0.5f, center = Offset(x, y), style = Fill)
-            drawCircle(inkBlack, radius = size * 0.5f, center = Offset(x, y), style = Stroke(width = 4f))
-            drawCircle(factionColor, radius = size * 0.5f, center = Offset(x, y), style = Stroke(width = 1.5f))
         }
     }
 
@@ -1486,7 +1472,7 @@ fun DrawScope.drawHexagonPath(
     val path = Path()
     for (i in 0..5) {
         val angleDeg = 60f * i - 30f
-        val angleRad = Math.PI / 180f * angleDeg
+        val angleRad = kotlin.math.PI / 180f * angleDeg
         val px = centerX + radius * cos(angleRad).toFloat()
         val py = centerY + radius * sin(angleRad).toFloat()
         if (i == 0) {
@@ -1585,13 +1571,13 @@ fun TerrainTooltipOverlay(
 }
 
 fun hexRound(fracQ: Double, fracR: Double, fracS: Double): HexCoord {
-    var q = Math.round(fracQ).toInt()
-    var r = Math.round(fracR).toInt()
-    var s = Math.round(fracS).toInt()
+    var q = fracQ.roundToInt()
+    var r = fracR.roundToInt()
+    var s = fracS.roundToInt()
 
-    val qDiff = Math.abs(q - fracQ)
-    val rDiff = Math.abs(r - fracR)
-    val sDiff = Math.abs(s - fracS)
+    val qDiff = kotlin.math.abs(q - fracQ)
+    val rDiff = kotlin.math.abs(r - fracR)
+    val sDiff = kotlin.math.abs(s - fracS)
 
     if (qDiff > rDiff && qDiff > sDiff) {
         q = -r - s
@@ -1762,7 +1748,7 @@ fun DrawScope.drawPlasmaCloud(x: Float, y: Float, hexRadius: Float) {
 
     // Dark matter specks in the plasma
     for (i in 0 until 5) {
-        val angle = (i * 72f) * (Math.PI / 180f)
+        val angle = (i * 72f) * (kotlin.math.PI / 180f)
         val dist = hexRadius * 0.4f
         drawCircle(
             color = inkBlack,
@@ -1866,7 +1852,7 @@ fun DrawScope.drawAnomaly(x: Float, y: Float, hexRadius: Float) {
 
     // Artifact nodes
     for (i in 0 until 4) {
-        val angle = (i * 90f + 45f) * (Math.PI / 180f)
+        val angle = (i * 90f + 45f) * (kotlin.math.PI / 180f)
         val dist = hexRadius * 0.25f
         drawCircle(
             color = NeonOrange.copy(alpha = 0.9f),
