@@ -91,13 +91,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AudioManager.init(this)
         setContent {
-            NovaEmpireTheme {
+            val gameViewModel: GameViewModel = viewModel()
+            val gameState by gameViewModel.gameState.collectAsState()
+            NovaEmpireTheme(themeType = gameState.themeConfig.currentTheme) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    val gameViewModel: GameViewModel = viewModel()
-                    val gameState by gameViewModel.gameState.collectAsState()
                     var currentScreen by remember { mutableStateOf(AppScreen.MAIN_MENU) }
                     val snackbarHostState = remember { SnackbarHostState() }
                     val coroutineScope = rememberCoroutineScope()
