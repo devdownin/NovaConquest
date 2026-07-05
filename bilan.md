@@ -85,9 +85,3 @@
   - **Dead Code / UI simplification:** Cleaned up unused `else ->` block inside `TacticalMapScreen` `drawUnit()` function, removed unreachable warning branches.
   - **Replaced `Math.PI`:** Adjusted standard `Math.PI` calls to `kotlin.math.PI`.
   - **Adjusted Top Navigation Bar:** Adjusted the `padding` to match `8.dp` vertical padding, maintaining symmetry across UI bars as per design guidelines.
-
-## Graphics Enhancements (Graphic Noir Futurism)
-
-  - **UI Frosted Glass Effect:** Added a `BlurEffect` via `graphicsLayer` rendering to `IndustrialPanel` to simulate frosted glass on the HUD elements for devices running Android S and above.
-  - **Unit Details:** Upgraded the custom Canvas vector shapes in `drawUnit` with more technical components (antennas, sensor dishes, engine glow, thrusters, and cockpit glass) following the comic-book style lines and proportions.
-  - **Particle System:** Created a `ParticleSystem` and wired it into `TacticalMapScreen` `activeCombatEvent` to generate sparks and debris using a `LaunchedEffect` game loop when combats occur, instead of basic animated circles.
