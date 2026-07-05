@@ -78,3 +78,10 @@
 
   - 4 factions sur 6 (Synth/Nomads/Kaelen/Xylar) restent inertes : pas de capitale ni d'unités instanciées — décision de design, pas un bug.
   - Garantie de mobilité : elle porte sur le **terrain** (région connexe + spawn jamais encerclé). Un blocage *tactique* par d'autres unités reste possible et relève du gameplay.
+
+## Audit - Bug fixes & UI optimisations
+
+  - **Bug in `HexCoord` rounding:** `java.lang.Math.round` was incorrectly rounding negative numbers like -0.5 to 0.0 (half-up) instead of half-to-even, creating asymmetry in hexagonal tie-breaking. Replaced all occurrences in `HexCoord.kt` and `TacticalMapScreen.kt` with `kotlin.math.roundToInt()`.
+  - **Dead Code / UI simplification:** Cleaned up unused `else ->` block inside `TacticalMapScreen` `drawUnit()` function, removed unreachable warning branches.
+  - **Replaced `Math.PI`:** Adjusted standard `Math.PI` calls to `kotlin.math.PI`.
+  - **Adjusted Top Navigation Bar:** Adjusted the `padding` to match `8.dp` vertical padding, maintaining symmetry across UI bars as per design guidelines.
