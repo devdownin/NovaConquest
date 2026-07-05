@@ -93,3 +93,9 @@
   - **Particle System:** Created a `ParticleSystem` and wired it into `TacticalMapScreen` `activeCombatEvent` to generate sparks and debris using a `LaunchedEffect` game loop when combats occur, instead of basic animated circles.
   - **Comic-book Style Inking:** Added heavy, textured comic-book style outlines (`StrokeWidth = 4f, StrokeCap.Round, StrokeJoin.Round`) to planets, replacing simple radial gradients with cross-hatching shading.
   - **Typography (Monospace):** Replaced default Inter/Rajdhani fallback fonts with `FontFamily.Monospace` to increase the technical, industrial look across coordinate overlays and the entire HUD.
+
+## Theming Architecture (Graphic Noir Futurism)
+
+  - **Theme Config & State:** Added a `ThemeConfig` data model directly inside `GameState` holding the `currentTheme` (`DEFAULT`, `HALLOWEEN`, `WINTER`).
+  - **Dynamic Theme Loading:** Built `ThemeManager` inside `:app` exposing `getColorSchemeForTheme` to retrieve alternate dark color palettes (`HALLOWEEN` and `WINTER`) alongside the `DEFAULT`.
+  - **Automatic Date Detection:** Implemented `getActiveTheme` which falls back to reading the system calendar (October 25 to Nov 5 for Halloween, Dec 20 to Jan 5 for Winter) if the state's `currentTheme` is `DEFAULT`. The state will now pass the resolved theme to the UI's `NovaEmpireTheme(themeType = ...)` wrapper in `MainActivity`.
