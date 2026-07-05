@@ -7,8 +7,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 // Note: swap FontFamily.Default with Libre Baskerville Bold + Space Mono once TTFs are in res/font
-val RajdhaniFamily = FontFamily.Default
-val InterFamily    = FontFamily.Default
+val RajdhaniFamily = FontFamily.Monospace
+val InterFamily    = FontFamily.Monospace
 
 val Typography = Typography(
     displayLarge = TextStyle(
