@@ -90,7 +90,6 @@
 
   - **UI Frosted Glass Effect:** Added a `BlurEffect` via `graphicsLayer` rendering to `IndustrialPanel` to simulate frosted glass on the HUD elements for devices running Android S and above.
   - **Unit Details:** Upgraded the custom Canvas vector shapes in `drawUnit` with more technical components (antennas, sensor dishes, engine glow, thrusters, and cockpit glass) following the comic-book style lines and proportions.
-  - **Particle System:** Created a `ParticleSystem` and wired it into `TacticalMapScreen` `activeCombatEvent` to generate sparks and debris using a `LaunchedEffect` game loop when combats occur, instead of basic animated circles.
   - **Comic-book Style Inking:** Added heavy, textured comic-book style outlines (`StrokeWidth = 4f, StrokeCap.Round, StrokeJoin.Round`) to planets, replacing simple radial gradients with cross-hatching shading.
   - **Typography (Monospace):** Replaced default Inter/Rajdhani fallback fonts with `FontFamily.Monospace` to increase the technical, industrial look across coordinate overlays and the entire HUD.
 
@@ -100,9 +99,17 @@
   - **Dynamic Theme Loading:** Built `ThemeManager` inside `:app` exposing `getColorSchemeForTheme` to retrieve alternate dark color palettes (`HALLOWEEN` and `WINTER`) alongside the `DEFAULT`.
   - **Automatic Date Detection:** Implemented `getActiveTheme` which falls back to reading the system calendar (October 25 to Nov 5 for Halloween, Dec 20 to Jan 5 for Winter) if the state's `currentTheme` is `DEFAULT`. The state will now pass the resolved theme to the UI's `NovaEmpireTheme(themeType = ...)` wrapper in `MainActivity`.
   - **Environment & Unit Renderers:** Introduced `UnitRenderer` and `EnvironmentRenderer` interfaces to abstract away the direct drawing logic. This provides the architectural foundation necessary to later swap out the current "Canvas Vector" pack with external `VectorDrawable` XMLs or rasterized "Texture Packs" dynamically.
-  - **Faction Cosmestics:** Added distinct geometry-based emblems for every faction (`FactionCosmetics`) which are drawn on top of owned planets and on the hull of Dreadnought units to break faction visual symmetry.
-  - **Biomes & Parallax:** Implemented `BackgroundRenderer` that adds depth via scrolling parallax stars. The background adapts based on the Map Archetype (adding a purple nebula layer for ZODIAC maps).
-  - **Dynamic Combat Impacts:** Introduced screen shake (`cameraShakeX`, `cameraShakeY`) when an attack lands. The shake intensity doubles if the target is destroyed. Weapon fire duration varies based on the unit type (e.g. 500ms heavy lasers for Dreadnoughts, 200ms quick bursts for smaller ships).
   - **JSON Theming Architecture:** Themes are now completely decoupled from hardcoded Kotlin strings and extracted into the `assets/themes/` directory as editable `JSON` files.
   - **Graphics Config Extraction:** Along with colors, visual multipliers (such as `outlineStrokeWidth`, `blurRadius`, `planetShadowAlpha` and `particleCountMultiplier`) have been extracted into the JSON theme file for live adjustment by artists.
   - **Graphic Designer Documentation:** Rewrote `THEME_GUIDE_FR.md` to instruct graphic designers on using the `Material Theme Builder` web tool, generating `.json` files, and tweaking game visual effects without touching the codebase.
+
+## Campaign Mode
+
+  - **Domain Models:** Added `CampaignMission` and `CampaignObjective` models to define specific scenarios with unique victory conditions (e.g., Survive X turns, Accumulate Y credits, Defeat Faction).
+  - **Registry:** Created `CampaignRegistry` inside `:core:domain` to store predefined missions (e.g., "The Awakening", "Stolen Riches").
+  - **State:** Extended `GameState` with `CampaignState` to track the active mission ID.
+  - **Engine:** Updated `GameEngine` to handle the `GameIntent.StartCampaign` intent, which applies the scenario configuration to the new game state.
+  - **Victory Conditions:** Modified `VictoryChecker.kt` to evaluate campaign objectives. If a campaign is active, standard victory conditions are ignored. Added a specific check to ensure the player loses if all their units and planets are destroyed during a campaign.
+  - **UI Integration:** Added a "SKIRMISH" button to the `MainMenuScreen` to preserve the standard game mode. Changed the "NEW CAMPAIGN" button to navigate to the new `CampaignSelectionScreen`.
+  - **Selection Screen:** Implemented `CampaignSelectionScreen.kt` to display the list of available missions from the registry and allow the user to launch them.
+  - **View Model:** Added `startCampaignMission` to `GameViewModel` to handle the specific sequence of intents required to initialize a scenario.
