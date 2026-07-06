@@ -4,43 +4,63 @@ Ce guide explique pas à pas comment un graphiste (ou développeur UI) peut cré
 
 ## Comprendre l'Architecture des Thèmes
 
-Dans Nova Empire, un thème est défini par une palette de 12 couleurs (`ColorScheme`) utilisée par le framework Jetpack Compose. Les ressources graphiques (couleurs des planètes, unités, effets de particules) s'adaptent dynamiquement à ce thème sans changer le code de dessin.
+Dans Nova Empire, un thème est défini par des fichiers JSON situés dans `app/src/main/assets/themes/`.
+Les ressources graphiques (couleurs des planètes, unités, effets de particules, etc.) s'adaptent dynamiquement à ce fichier au démarrage du jeu, **sans avoir besoin de toucher au code Kotlin**.
 
-Le gestionnaire central se trouve dans le fichier :
-`app/src/main/kotlin/com/novaempire/app/ui/theme/ThemeManager.kt`
+## Étape 1 : Créer votre Palette de Couleurs (Via Material Theme Builder)
 
-## Étape 1 : Créer votre Palette de Couleurs
+1. Allez sur l'outil officiel de Google : **[Material Theme Builder](https://m3.material.io/theme-builder)**
+2. Utilisez l'outil pour générer votre palette Dark Theme visuellement (vous pouvez importer une image ou définir une couleur primaire).
+3. Inspirez-vous des principes "Graphic Noir Futurism" :
+    - Des fonds sombres (brun, métal froid, noir profond) pour `background` et `surface`.
+    - Des accents "Néon" vifs (cyan acier, rouge vif, orange rouille) pour `primary`, `secondary` et `tertiary`.
 
-Ouvrez `ThemeManager.kt`. Vous allez créer une nouvelle variable pour votre thème, par exemple pour un thème "CYBERPUNK".
+## Étape 2 : Créer le Fichier JSON
 
-Voici les 12 couleurs à fournir, avec leur rôle dans l'interface "Graphic Noir" :
+1. Dans le projet, naviguez vers `app/src/main/assets/themes/`
+2. Créez un nouveau fichier JSON, par exemple `cyberpunk.json`.
+3. Remplissez-le avec la structure suivante :
 
-```kotlin
-val CYBERPUNK = darkColorScheme(
-    primary = Color(0xFF00FF00),      // (NeonGreen) : Éléments positifs, capture de planète, confirmations, unités alliées.
-    secondary = Color(0xFFFF0055),    // (NeonPink) : Dégâts, santé basse, cibles ennemies.
-    tertiary = Color(0xFF00FFFF),     // (NeonCyan) : Couleur principale de l'interface, texte des secteurs, boutons, radar.
-
-    background = Color(0xFF05050A),   // Fond de l'espace profond (très sombre).
-    surface = Color(0xFF151020),      // Panneaux industriels (menus, boutons).
-    surfaceVariant = Color(0xFF2A2035), // Éléments surélevés, fond des jauges de vie.
-
-    onPrimary = Color(0xFFE0E0E0),    // Texte sur fond Primary.
-    onSecondary = Color(0xFFE0E0E0),  // Texte sur fond Secondary.
-    onTertiary = Color(0xFFE0E0E0),   // Texte sur fond Tertiary.
-
-    onBackground = Color(0xFFE0E0E0), // Texte principal sur le fond (Titre principal).
-    onSurface = Color(0xFFD4C8B0),    // (TextPrimary) : Texte de contenu dans les panneaux.
-    onSurfaceVariant = Color(0xFF7A6E60) // (TextSecondary) : Texte secondaire/grisé.
-)
+```json
+{
+  "name": "CYBERPUNK",
+  "colors": {
+    "primary": "#FF00FF00",
+    "secondary": "#FFFF0055",
+    "tertiary": "#FF00FFFF",
+    "background": "#FF05050A",
+    "surface": "#FF151020",
+    "surfaceVariant": "#FF2A2035",
+    "onPrimary": "#FFE0E0E0",
+    "onSecondary": "#FFE0E0E0",
+    "onTertiary": "#FFE0E0E0",
+    "onBackground": "#FFE0E0E0",
+    "onSurface": "#FFD4C8B0",
+    "onSurfaceVariant": "#FF7A6E60"
+  },
+  "graphics": {
+    "outlineStrokeWidth": 3.0,
+    "planetShadowAlpha": 0.6,
+    "blurRadius": 12.0,
+    "particleCountMultiplier": 1.0
+  }
+}
 ```
 
-## Étape 2 : Enregistrer le Thème dans le Modèle de Données
+*Note : Les couleurs doivent toujours inclure la couche Alpha au début (Ex: `#FF...` pour 100% opaque).*
 
-Ouvrez le fichier :
+### Ajustement des Paramètres Graphiques (`graphics`)
+- `outlineStrokeWidth` : L'épaisseur des traits d'encre BD autour des éléments de la carte.
+- `planetShadowAlpha` : L'intensité de l'ombrage en hachures sur les planètes.
+- `blurRadius` : La puissance du verre dépoli (Frosted Glass) de l'interface utilisateur.
+- `particleCountMultiplier` : Le nombre d'étincelles/débris émis lors d'un combat (Mettez 2.0 pour des explosions massives, 0.5 pour un effet minimaliste).
+
+## Étape 3 : Enregistrer le Thème dans le Modèle de Données
+
+Pour que l'application puisse trouver votre JSON, ouvrez le fichier source :
 `core/domain/src/main/kotlin/com/novaempire/core/domain/models/ThemeConfig.kt`
 
-Ajoutez le nom de votre thème dans l'énumération `ThemeType` :
+Ajoutez le nom de votre thème dans l'énumération `ThemeType` (le nom doit correspondre EXACTEMENT au `name` du JSON) :
 
 ```kotlin
 @Serializable
@@ -52,44 +72,18 @@ enum class ThemeType {
 }
 ```
 
-## Étape 3 : Relier le Thème au Moteur
-
-Retournez dans `ThemeManager.kt`.
-
-1. Trouvez la fonction `getColorSchemeForTheme` et ajoutez votre thème au `when` :
-
+Puis dans `app/src/main/kotlin/com/novaempire/app/ui/theme/ThemeManager.kt`, ajoutez la ligne de chargement du JSON :
 ```kotlin
-fun getColorSchemeForTheme(themeType: ThemeType): androidx.compose.material3.ColorScheme {
-    return when (themeType) {
-        ThemeType.HALLOWEEN -> HALLOWEEN
-        ThemeType.WINTER -> WINTER
-        ThemeType.CYBERPUNK -> CYBERPUNK // <--- Ajoutez cette ligne
-        else -> DEFAULT
-    }
-}
+val cyberpunkJsonStr = context.assets.open("themes/cyberpunk.json").bufferedReader().use { it.readText() }
+loadedThemes[ThemeType.CYBERPUNK] = parseThemeDefinition(cyberpunkJsonStr)
 ```
 
-2. (Optionnel) Si votre thème correspond à un événement saisonnier, ajoutez-le dans `getActiveTheme`. L'exemple suivant l'active du 1er au 15 Février :
+## Étape 4 : Activer le Thème (Tests ou Saisonnier)
 
-```kotlin
-// Cyberpunk: Feb 1 to Feb 15
-(month == Calendar.FEBRUARY && day <= 15) -> ThemeType.CYBERPUNK
-```
+Pour tester immédiatement votre thème, modifiez la fonction `getActiveTheme` dans `ThemeManager.kt` :
 
-## Tester le Rendu
-
-Le moteur de jeu lit la date système pour forcer un thème si la partie n'en a pas sauvegardé un. Pour tester immédiatement votre thème sans attendre la date :
-
-Dans `ThemeManager.kt` :
-Modifiez la toute première ligne de `getActiveTheme` pour forcer votre thème temporairement :
 ```kotlin
 fun getActiveTheme(savedTheme: ThemeType? = null): ThemeType {
-    return ThemeType.CYBERPUNK // Ligne de test ! N'oubliez pas de l'effacer ensuite.
+    return ThemeType.CYBERPUNK // Force votre thème
     // ...
 ```
-
-## Principes Graphiques à Respecter
-
-Si vous ajustez les couleurs, gardez à l'esprit la direction artistique :
-- **Graphic Noir Futurism** : Évitez les couleurs primaires pures (sauf pour les néons `primary/secondary/tertiary`). Privilégiez des couleurs désaturées, sales (bruns, gris chauds, violets foncés) pour `background` et `surface`.
-- Les contours (`inkBlack`) de la carte (Dessin des vaisseaux et planètes) resteront noirs, quel que soit le thème, pour préserver l'effet "Bande Dessinée".

@@ -1,0 +1,23 @@
+{
+  "name": "DEFAULT",
+  "colors": {
+    "primary": "#FF4A7B9D",
+    "secondary": "#FF8B2A2A",
+    "tertiary": "#FFB85C2A",
+    "background": "#FF130F0A",
+    "surface": "#FF1C1810",
+    "surfaceVariant": "#FF2D2620",
+    "onPrimary": "#FFD4C8B0",
+    "onSecondary": "#FFD4C8B0",
+    "onTertiary": "#FFD4C8B0",
+    "onBackground": "#FFD4C8B0",
+    "onSurface": "#FFD4C8B0",
+    "onSurfaceVariant": "#FF7A6E60"
+  },
+  "graphics": {
+    "outlineStrokeWidth": 3.0,
+    "planetShadowAlpha": 0.6,
+    "blurRadius": 12.0,
+    "particleCountMultiplier": 1.0
+  }
+}

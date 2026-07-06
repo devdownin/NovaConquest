@@ -85,7 +85,7 @@ fun IndustrialPanel(
         modifier = modifier.then(
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                 Modifier.graphicsLayer {
-                    renderEffect = androidx.compose.ui.graphics.BlurEffect(12f, 12f, androidx.compose.ui.graphics.TileMode.Clamp)
+                    renderEffect = androidx.compose.ui.graphics.BlurEffect(com.novaempire.app.ui.theme.ThemeManager.getGraphicsConfig(com.novaempire.app.ui.theme.ThemeManager.getActiveTheme()).blurRadius, com.novaempire.app.ui.theme.ThemeManager.getGraphicsConfig(com.novaempire.app.ui.theme.ThemeManager.getActiveTheme()).blurRadius, androidx.compose.ui.graphics.TileMode.Clamp)
                     clip = true
                     this.shape = shape
                 }

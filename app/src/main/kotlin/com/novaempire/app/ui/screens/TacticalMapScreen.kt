@@ -116,6 +116,8 @@ fun TacticalMapScreen(
     val currentOnCapturePlanet by rememberUpdatedState(onCapturePlanet)
     val currentOnLoadUnit by rememberUpdatedState(onLoadUnit)
     val currentOnDeployUnit by rememberUpdatedState(onDeployUnit)
+    val currentTheme = gameState.themeConfig.currentTheme
+    val graphicsConfig = com.novaempire.app.ui.theme.ThemeManager.getGraphicsConfig(currentTheme)
 
     val laserProgress = remember { Animatable(0f) }
     val explosionScale = remember { Animatable(0f) }
@@ -311,8 +313,16 @@ fun TacticalMapScreen(
                                     onClearSelection()
                                 }
                                 // Any other second tap → reselect new tile
+                                else -> {
+                                    selectedHex = coord
+                                    onHexClick(coord)
+                                }
                             }
                             // No friendly unit selected → select tile
+                            else -> {
+                                selectedHex = coord
+                                onHexClick(coord)
+                            }
                         }
                     }
                 }
@@ -482,7 +492,7 @@ fun TacticalMapScreen(
                         )
 
                         when (tile.terrain) {
-                            TerrainType.PLANET -> drawPlanet(x, y, hexRadius, tile.owner)
+                            TerrainType.PLANET -> drawPlanet(x, y, hexRadius, tile.owner, graphicsConfig)
                             TerrainType.ASTEROIDS -> drawAsteroids(x, y, hexRadius)
                             TerrainType.NEBULA -> drawNebula(x, y, hexRadius)
                             TerrainType.BLACK_HOLE -> drawBlackHole(x, y, hexRadius)
@@ -1197,7 +1207,7 @@ fun pixelToHex(x: Float, y: Float, centerX: Float, centerY: Float): HexCoord {
     return hexRound(q.toDouble(), r.toDouble(), -q.toDouble() - r.toDouble())
 }
 
-fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float, owner: Faction?) {
+fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float, owner: Faction?, graphicsConfig: com.novaempire.app.ui.theme.GraphicsConfig) {
     val planetColor = owner?.let { getFactionColor(it) } ?: NeonGreen
     val inkBlack = Color(0xFF130F0A)
 
@@ -1238,7 +1248,7 @@ fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float, owner: Faction?) 
         color = inkBlack,
         radius = hexRadius * 0.52f,
         center = Offset(x, y),
-        style = Stroke(width = 4f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        style = Stroke(width = graphicsConfig.outlineStrokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
     )
     drawCircle(
         color = planetColor.copy(alpha = 0.7f),

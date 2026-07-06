@@ -11,6 +11,30 @@ data class VictoryResult(val winner: Faction, val reason: String)
 object VictoryChecker {
 
     fun check(state: GameState): VictoryResult? {
+        // 0. Campaign Objectives (if active)
+        val activeMissionId = state.campaignState.activeMissionId
+        if (activeMissionId != null) {
+            val mission = com.novaempire.core.domain.models.CampaignRegistry.MISSIONS.find { it.id == activeMissionId }
+            if (mission != null) {
+                // Check if the player has lost (no units or planets left)
+                val playerHasUnits = state.units.values.any { it.faction == mission.playerFaction }
+                val playerHasPlanets = state.map.tiles.values.any { it.owner == mission.playerFaction }
+                if (!playerHasUnits && !playerHasPlanets) {
+                    return VictoryResult(mission.enemyFaction, "Defeat! Your forces have been annihilated.")
+                }
+
+                val isVictorious = when (mission.objective.type) {
+                    com.novaempire.core.domain.models.CampaignObjectiveType.SURVIVE_TURNS -> state.turn >= mission.objective.targetValue
+                    com.novaempire.core.domain.models.CampaignObjectiveType.ACCUMULATE_CREDITS -> (state.playerStates[mission.playerFaction]?.credits ?: 0) >= mission.objective.targetValue
+                    com.novaempire.core.domain.models.CampaignObjectiveType.DEFEAT_FACTION -> !state.units.values.any { it.faction == mission.enemyFaction } && !state.map.tiles.values.any { it.owner == mission.enemyFaction }
+                    else -> false
+                }
+                if (isVictorious) {
+                    return VictoryResult(mission.playerFaction, "Campaign Mission Complete: ${mission.name}")
+                }
+                return null // If in a campaign, standard victory conditions are ignored
+            }
+        }
         val existing = state.winner
         if (existing != null) return VictoryResult(existing, state.victoryReason ?: "")
 

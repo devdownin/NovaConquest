@@ -1,12 +1,66 @@
 package com.novaempire.app.ui.theme
 
+import android.content.Context
+import android.util.Log
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.graphics.Color
 import com.novaempire.core.domain.models.ThemeType
+import org.json.JSONObject
 import java.util.Calendar
 
 object ThemeManager {
-    val DEFAULT = darkColorScheme(
+    private val loadedThemes = mutableMapOf<ThemeType, ThemeDefinition>()
+
+    fun init(context: Context) {
+        try {
+            val defaultJsonStr = context.assets.open("themes/default.json").bufferedReader().use { it.readText() }
+            val halloweenJsonStr = context.assets.open("themes/halloween.json").bufferedReader().use { it.readText() }
+            val winterJsonStr = context.assets.open("themes/winter.json").bufferedReader().use { it.readText() }
+
+            loadedThemes[ThemeType.DEFAULT] = parseThemeDefinition(defaultJsonStr)
+            loadedThemes[ThemeType.HALLOWEEN] = parseThemeDefinition(halloweenJsonStr)
+            loadedThemes[ThemeType.WINTER] = parseThemeDefinition(winterJsonStr)
+            Log.d("ThemeManager", "Themes loaded successfully")
+        } catch (e: Exception) {
+            Log.e("ThemeManager", "Error loading themes from JSON: ${e.message}")
+        }
+    }
+
+    private fun parseThemeDefinition(jsonStr: String): ThemeDefinition {
+        val jsonObj = JSONObject(jsonStr)
+        val colorsObj = jsonObj.getJSONObject("colors")
+        val graphicsObj = jsonObj.getJSONObject("graphics")
+
+        return ThemeDefinition(
+            name = jsonObj.getString("name"),
+            colors = ThemeColors(
+                primary = colorsObj.getString("primary"),
+                secondary = colorsObj.getString("secondary"),
+                tertiary = colorsObj.getString("tertiary"),
+                background = colorsObj.getString("background"),
+                surface = colorsObj.getString("surface"),
+                surfaceVariant = colorsObj.getString("surfaceVariant"),
+                onPrimary = colorsObj.getString("onPrimary"),
+                onSecondary = colorsObj.getString("onSecondary"),
+                onTertiary = colorsObj.getString("onTertiary"),
+                onBackground = colorsObj.getString("onBackground"),
+                onSurface = colorsObj.getString("onSurface"),
+                onSurfaceVariant = colorsObj.getString("onSurfaceVariant")
+            ),
+            graphics = GraphicsConfig(
+                outlineStrokeWidth = graphicsObj.getDouble("outlineStrokeWidth").toFloat(),
+                planetShadowAlpha = graphicsObj.getDouble("planetShadowAlpha").toFloat(),
+                blurRadius = graphicsObj.getDouble("blurRadius").toFloat(),
+                particleCountMultiplier = graphicsObj.getDouble("particleCountMultiplier").toFloat()
+            )
+        )
+    }
+
+    private fun parseColor(colorString: String): Color {
+        return Color(android.graphics.Color.parseColor(colorString))
+    }
+
+    private val fallbackColorScheme = darkColorScheme(
         primary = NeonCyan,
         secondary = NeonRed,
         tertiary = NeonOrange,
@@ -21,42 +75,31 @@ object ThemeManager {
         onSurfaceVariant = TextSecondary
     )
 
-    val HALLOWEEN = darkColorScheme(
-        primary = Color(0xFFD35400),
-        secondary = Color(0xFF8E44AD),
-        tertiary = Color(0xFFF39C12),
-        background = Color(0xFF1A0F0A),
-        surface = Color(0xFF2E190E),
-        surfaceVariant = Color(0xFF452410),
-        onPrimary = Color(0xFFFFDAB9),
-        onSecondary = Color(0xFFFFDAB9),
-        onTertiary = Color(0xFFFFDAB9),
-        onBackground = Color(0xFFFFDAB9),
-        onSurface = Color(0xFFFFDAB9),
-        onSurfaceVariant = Color(0xFFB09989)
-    )
-
-    val WINTER = darkColorScheme(
-        primary = Color(0xFF85C1E9),
-        secondary = Color(0xFF3498DB),
-        tertiary = Color(0xFFD6EAF8),
-        background = Color(0xFF0F1A24),
-        surface = Color(0xFF1B2A38),
-        surfaceVariant = Color(0xFF2C3E50),
-        onPrimary = Color(0xFFEBF5FB),
-        onSecondary = Color(0xFFEBF5FB),
-        onTertiary = Color(0xFFEBF5FB),
-        onBackground = Color(0xFFEBF5FB),
-        onSurface = Color(0xFFEBF5FB),
-        onSurfaceVariant = Color(0xFFA9C2D4)
-    )
-
     fun getColorSchemeForTheme(themeType: ThemeType): androidx.compose.material3.ColorScheme {
-        return when (themeType) {
-            ThemeType.HALLOWEEN -> HALLOWEEN
-            ThemeType.WINTER -> WINTER
-            else -> DEFAULT
+        val def = loadedThemes[themeType] ?: loadedThemes[ThemeType.DEFAULT]
+
+        return if (def != null) {
+            darkColorScheme(
+                primary = parseColor(def.colors.primary),
+                secondary = parseColor(def.colors.secondary),
+                tertiary = parseColor(def.colors.tertiary),
+                background = parseColor(def.colors.background),
+                surface = parseColor(def.colors.surface),
+                surfaceVariant = parseColor(def.colors.surfaceVariant),
+                onPrimary = parseColor(def.colors.onPrimary),
+                onSecondary = parseColor(def.colors.onSecondary),
+                onTertiary = parseColor(def.colors.onTertiary),
+                onBackground = parseColor(def.colors.onBackground),
+                onSurface = parseColor(def.colors.onSurface),
+                onSurfaceVariant = parseColor(def.colors.onSurfaceVariant)
+            )
+        } else {
+            fallbackColorScheme
         }
+    }
+
+    fun getGraphicsConfig(themeType: ThemeType): GraphicsConfig {
+        return loadedThemes[themeType]?.graphics ?: GraphicsConfig(3f, 0.7f, 12f, 1f)
     }
 
     fun getActiveTheme(savedTheme: ThemeType? = null): ThemeType {
