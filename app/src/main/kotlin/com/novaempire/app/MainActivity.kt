@@ -71,6 +71,7 @@ fun computeEndTurnSummary(state: GameState): EndTurnSummary {
 
 enum class AppScreen {
     MAIN_MENU,
+    CAMPAIGN_SELECTION,
     FACTION_SELECTION,
     GAME,
     VICTORY,
@@ -115,7 +116,10 @@ class MainActivity : ComponentActivity() {
                             val hasSave = gameViewModel.hasSavedGame()
                             MainMenuScreen(
                                 hasSavedGame = hasSave,
-                                onNewGameClick = {
+                                onCampaignClick = {
+                                    currentScreen = AppScreen.CAMPAIGN_SELECTION
+                                },
+                                onSkirmishClick = {
                                     currentScreen = AppScreen.FACTION_SELECTION
                                 },
                                 onResumeGameClick = {
@@ -127,6 +131,15 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onSettingsClick = { currentScreen = AppScreen.SETTINGS }
+                            )
+                        }
+                        AppScreen.CAMPAIGN_SELECTION -> {
+                            CampaignSelectionScreen(
+                                onStartMission = { mission ->
+                                    gameViewModel.startCampaignMission(mission)
+                                    currentScreen = AppScreen.GAME
+                                },
+                                onBackClick = { currentScreen = AppScreen.MAIN_MENU }
                             )
                         }
                         AppScreen.FACTION_SELECTION -> {

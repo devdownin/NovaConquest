@@ -313,8 +313,16 @@ fun TacticalMapScreen(
                                     onClearSelection()
                                 }
                                 // Any other second tap → reselect new tile
+                                else -> {
+                                    selectedHex = coord
+                                    onHexClick(coord)
+                                }
                             }
                             // No friendly unit selected → select tile
+                            else -> {
+                                selectedHex = coord
+                                onHexClick(coord)
+                            }
                         }
                     }
                 }

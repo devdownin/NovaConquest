@@ -115,7 +115,9 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         if (_isAiThinking.value &&
             intent !is GameIntent.LoadGame &&
             intent !is GameIntent.StartNewGame &&
-            intent !is GameIntent.StartNewGameWithSize
+            intent !is GameIntent.StartNewGameWithSize &&
+            intent !is GameIntent.StartCampaign &&
+            intent !is GameIntent.SelectFaction
         ) {
             _errors.emit("AI is thinking, please wait.")
             return
@@ -215,6 +217,8 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
             GameResult(createInitialState(intent.mapSize, intent.archetype))
         is GameIntent.LoadGame ->
             GameResult(updateVision(intent.loadedState))
+        is GameIntent.StartCampaign ->
+            GameResult(state.copy(campaignState = state.campaignState?.copy(activeMissionId = intent.missionId) ?: com.novaempire.core.domain.state.CampaignState(activeMissionId = intent.missionId)))
         is GameIntent.EndTurn ->
             GameResult(updateVision(TurnManager.advanceTurn(state)))
         is GameIntent.SelectFaction ->
@@ -257,4 +261,5 @@ sealed class GameIntent {
     data class LoadUnit(val carrierCoord: HexCoord, val unitCoord: HexCoord) : GameIntent()
     data class DeployUnit(val carrierCoord: HexCoord, val deployCoord: HexCoord, val unitIndex: Int = 0) : GameIntent()
     data class UseHeroAbility(val heroId: String) : GameIntent()
+    data class StartCampaign(val missionId: String) : GameIntent()
 }

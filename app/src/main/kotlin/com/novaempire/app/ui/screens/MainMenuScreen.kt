@@ -27,7 +27,8 @@ import com.novaempire.app.ui.theme.NeonCyan
 @Composable
 fun MainMenuScreen(
     hasSavedGame: Boolean,
-    onNewGameClick: () -> Unit,
+    onCampaignClick: () -> Unit,
+    onSkirmishClick: () -> Unit,
     onResumeGameClick: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
@@ -96,8 +97,16 @@ fun MainMenuScreen(
                     ) {
                         IndustrialButton(
                             text = "NEW CAMPAIGN",
-                            onClick = onNewGameClick,
+                            onClick = onCampaignClick,
                             isPrimary = true,
+                            icon = { Icon(Icons.Default.PlayArrow, contentDescription = null, tint = NeonCyan) }
+                        )
+
+                        IndustrialButton(
+                            text = "SKIRMISH",
+                            onClick = onSkirmishClick,
+                            isPrimary = false,
+                            color = NeonCyan,
                             icon = { Icon(Icons.Default.PlayArrow, contentDescription = null, tint = NeonCyan) }
                         )
 

@@ -118,4 +118,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         engine.processIntent(GameIntent.StartNewGameWithSize(mapSize, archetype))
     }
+
+    fun startCampaignMission(mission: com.novaempire.core.domain.models.CampaignMission) {
+        // Start a new game with mission parameters
+        engine.processIntent(GameIntent.StartNewGameWithSize(com.novaempire.core.domain.models.MapSize.MEDIUM, mission.mapArchetype))
+
+        // Select the correct faction
+        engine.processIntent(GameIntent.SelectFaction(mission.playerFaction))
+
+        // Apply campaign state
+        engine.processIntent(GameIntent.StartCampaign(mission.id))
+    }
 }
