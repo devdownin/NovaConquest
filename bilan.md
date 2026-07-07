@@ -107,9 +107,13 @@
 
   - **Domain Models:** Added `CampaignMission` and `CampaignObjective` models to define specific scenarios with unique victory conditions (e.g., Survive X turns, Accumulate Y credits, Defeat Faction).
   - **Registry:** Created `CampaignRegistry` inside `:core:domain` to store predefined missions (e.g., "The Awakening", "Stolen Riches").
-  - **State:** Extended `GameState` with `CampaignState` to track the active mission ID.
+  - **State:** Extended `GameState` with `CampaignState` to track the active mission ID and current objective.
   - **Engine:** Updated `GameEngine` to handle the `GameIntent.StartCampaign` intent, which applies the scenario configuration to the new game state.
   - **Victory Conditions:** Modified `VictoryChecker.kt` to evaluate campaign objectives. If a campaign is active, standard victory conditions are ignored. Added a specific check to ensure the player loses if all their units and planets are destroyed during a campaign.
   - **UI Integration:** Added a "SKIRMISH" button to the `MainMenuScreen` to preserve the standard game mode. Changed the "NEW CAMPAIGN" button to navigate to the new `CampaignSelectionScreen`.
   - **Selection Screen:** Implemented `CampaignSelectionScreen.kt` to display the list of available missions from the registry and allow the user to launch them.
   - **View Model:** Added `startCampaignMission` to `GameViewModel` to handle the specific sequence of intents required to initialize a scenario.
+  - **Sequential Objectives:** `CampaignMission` now supports multi-phase objectives tracked by `currentObjectiveIndex`.
+  - **Custom Starting Conditions:** Missions can specify `playerStartingCredits`, `playerStartingTechs`, `playerExtraFleet`, and heroes.
+  - **Hero Integration:** Heroes can be auto-recruited at the start of a mission.
+  - **Continuity:** Progress (credits, tech, heroes) carries over to the next mission if `allowCarryOver` is true, supported by a "NEXT MISSION" button.
