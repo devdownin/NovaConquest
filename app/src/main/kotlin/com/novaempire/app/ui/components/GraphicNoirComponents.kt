@@ -14,6 +14,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -80,10 +82,20 @@ fun IndustrialPanel(
     content: @Composable BoxScope.() -> Unit
 ) {
     Surface(
-        modifier = modifier,
+        modifier = modifier.then(
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                Modifier.graphicsLayer {
+                    renderEffect = androidx.compose.ui.graphics.BlurEffect(com.novaempire.app.ui.theme.ThemeManager.getGraphicsConfig(com.novaempire.app.ui.theme.ThemeManager.getActiveTheme()).blurRadius, com.novaempire.app.ui.theme.ThemeManager.getGraphicsConfig(com.novaempire.app.ui.theme.ThemeManager.getActiveTheme()).blurRadius, androidx.compose.ui.graphics.TileMode.Clamp)
+                    clip = true
+                    this.shape = shape
+                }
+            } else {
+                Modifier
+            }
+        ),
         color = backgroundColor,
         shape = shape,
-        border = BorderStroke(2.dp, borderColor)  // 2dp encre épaisse
+        border = BorderStroke(2.dp, borderColor)
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             content()

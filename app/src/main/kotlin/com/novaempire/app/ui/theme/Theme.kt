@@ -10,27 +10,14 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-private val DarkColorScheme = darkColorScheme(
-    primary = NeonCyan,
-    secondary = NeonRed,
-    tertiary = NeonOrange,
-    background = VoidBlack,
-    surface = SurfaceDark,
-    surfaceVariant = SurfaceLight,
-    onPrimary = TextPrimary,
-    onSecondary = TextPrimary,
-    onTertiary = TextPrimary,
-    onBackground = TextPrimary,
-    onSurface = TextPrimary,
-    onSurfaceVariant = TextSecondary
-)
 
 @Composable
 fun NovaEmpireTheme(
+    themeType: com.novaempire.core.domain.models.ThemeType = com.novaempire.core.domain.models.ThemeType.DEFAULT,
     darkTheme: Boolean = true, // Force dark theme for Noir Futurism
     content: @Composable () -> Unit
 ) {
-    val colorScheme = DarkColorScheme
+    val colorScheme = ThemeManager.getColorSchemeForTheme(ThemeManager.getActiveTheme(themeType))
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {

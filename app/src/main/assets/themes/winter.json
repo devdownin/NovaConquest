@@ -1,0 +1,23 @@
+{
+  "name": "WINTER",
+  "colors": {
+    "primary": "#FF85C1E9",
+    "secondary": "#FF3498DB",
+    "tertiary": "#FFD6EAF8",
+    "background": "#FF0F1A24",
+    "surface": "#FF1B2A38",
+    "surfaceVariant": "#FF2C3E50",
+    "onPrimary": "#FFEBF5FB",
+    "onSecondary": "#FFEBF5FB",
+    "onTertiary": "#FFEBF5FB",
+    "onBackground": "#FFEBF5FB",
+    "onSurface": "#FFEBF5FB",
+    "onSurfaceVariant": "#FFA9C2D4"
+  },
+  "graphics": {
+    "outlineStrokeWidth": 2.5,
+    "planetShadowAlpha": 0.5,
+    "blurRadius": 15.0,
+    "particleCountMultiplier": 1.5
+  }
+}

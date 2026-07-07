@@ -1,6 +1,7 @@
 package com.novaempire.core.domain.state
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import com.novaempire.core.domain.models.ThemeConfig
 
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.GalacticEvent
@@ -19,10 +20,12 @@ data class CombatEvent(
 @Serializable
 data class GameState(
     val version: Int = 1,
+    val themeConfig: ThemeConfig = ThemeConfig(),
     val turn: Int = 1,
     val activeFaction: Faction = Faction.DOMINION,
     val humanFaction: Faction = Faction.DOMINION,
     val playerStates: Map<Faction, PlayerState> = emptyMap(),
+    val campaignState: com.novaempire.core.domain.state.CampaignState = com.novaempire.core.domain.state.CampaignState(),
     val map: GameMap = GameMap(),
     val units: Map<HexCoord, GameUnit> = emptyMap(),
     val activeEvent: GalacticEvent = GalacticEvent.NONE,

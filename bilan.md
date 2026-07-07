@@ -78,3 +78,42 @@
 
   - 4 factions sur 6 (Synth/Nomads/Kaelen/Xylar) restent inertes : pas de capitale ni d'unités instanciées — décision de design, pas un bug.
   - Garantie de mobilité : elle porte sur le **terrain** (région connexe + spawn jamais encerclé). Un blocage *tactique* par d'autres unités reste possible et relève du gameplay.
+
+## Audit - Bug fixes & UI optimisations
+
+  - **Bug in `HexCoord` rounding:** `java.lang.Math.round` was incorrectly rounding negative numbers like -0.5 to 0.0 (half-up) instead of half-to-even, creating asymmetry in hexagonal tie-breaking. Replaced all occurrences in `HexCoord.kt` and `TacticalMapScreen.kt` with `kotlin.math.roundToInt()`.
+  - **Dead Code / UI simplification:** Cleaned up unused `else ->` block inside `TacticalMapScreen` `drawUnit()` function, removed unreachable warning branches.
+  - **Replaced `Math.PI`:** Adjusted standard `Math.PI` calls to `kotlin.math.PI`.
+  - **Adjusted Top Navigation Bar:** Adjusted the `padding` to match `8.dp` vertical padding, maintaining symmetry across UI bars as per design guidelines.
+
+## Graphics Enhancements (Graphic Noir Futurism)
+
+  - **UI Frosted Glass Effect:** Added a `BlurEffect` via `graphicsLayer` rendering to `IndustrialPanel` to simulate frosted glass on the HUD elements for devices running Android S and above.
+  - **Unit Details:** Upgraded the custom Canvas vector shapes in `drawUnit` with more technical components (antennas, sensor dishes, engine glow, thrusters, and cockpit glass) following the comic-book style lines and proportions.
+  - **Comic-book Style Inking:** Added heavy, textured comic-book style outlines (`StrokeWidth = 4f, StrokeCap.Round, StrokeJoin.Round`) to planets, replacing simple radial gradients with cross-hatching shading.
+  - **Typography (Monospace):** Replaced default Inter/Rajdhani fallback fonts with `FontFamily.Monospace` to increase the technical, industrial look across coordinate overlays and the entire HUD.
+
+## Theming Architecture (Graphic Noir Futurism)
+
+  - **Theme Config & State:** Added a `ThemeConfig` data model directly inside `GameState` holding the `currentTheme` (`DEFAULT`, `HALLOWEEN`, `WINTER`).
+  - **Dynamic Theme Loading:** Built `ThemeManager` inside `:app` exposing `getColorSchemeForTheme` to retrieve alternate dark color palettes (`HALLOWEEN` and `WINTER`) alongside the `DEFAULT`.
+  - **Automatic Date Detection:** Implemented `getActiveTheme` which falls back to reading the system calendar (October 25 to Nov 5 for Halloween, Dec 20 to Jan 5 for Winter) if the state's `currentTheme` is `DEFAULT`. The state will now pass the resolved theme to the UI's `NovaEmpireTheme(themeType = ...)` wrapper in `MainActivity`.
+  - **Environment & Unit Renderers:** Introduced `UnitRenderer` and `EnvironmentRenderer` interfaces to abstract away the direct drawing logic. This provides the architectural foundation necessary to later swap out the current "Canvas Vector" pack with external `VectorDrawable` XMLs or rasterized "Texture Packs" dynamically.
+  - **JSON Theming Architecture:** Themes are now completely decoupled from hardcoded Kotlin strings and extracted into the `assets/themes/` directory as editable `JSON` files.
+  - **Graphics Config Extraction:** Along with colors, visual multipliers (such as `outlineStrokeWidth`, `blurRadius`, `planetShadowAlpha` and `particleCountMultiplier`) have been extracted into the JSON theme file for live adjustment by artists.
+  - **Graphic Designer Documentation:** Rewrote `THEME_GUIDE_FR.md` to instruct graphic designers on using the `Material Theme Builder` web tool, generating `.json` files, and tweaking game visual effects without touching the codebase.
+
+## Campaign Mode
+
+  - **Domain Models:** Added `CampaignMission` and `CampaignObjective` models to define specific scenarios with unique victory conditions (e.g., Survive X turns, Accumulate Y credits, Defeat Faction).
+  - **Registry:** Created `CampaignRegistry` inside `:core:domain` to store predefined missions (e.g., "The Awakening", "Stolen Riches").
+  - **State:** Extended `GameState` with `CampaignState` to track the active mission ID and current objective.
+  - **Engine:** Updated `GameEngine` to handle the `GameIntent.StartCampaign` intent, which applies the scenario configuration to the new game state.
+  - **Victory Conditions:** Modified `VictoryChecker.kt` to evaluate campaign objectives. If a campaign is active, standard victory conditions are ignored. Added a specific check to ensure the player loses if all their units and planets are destroyed during a campaign.
+  - **UI Integration:** Added a "SKIRMISH" button to the `MainMenuScreen` to preserve the standard game mode. Changed the "NEW CAMPAIGN" button to navigate to the new `CampaignSelectionScreen`.
+  - **Selection Screen:** Implemented `CampaignSelectionScreen.kt` to display the list of available missions from the registry and allow the user to launch them.
+  - **View Model:** Added `startCampaignMission` to `GameViewModel` to handle the specific sequence of intents required to initialize a scenario.
+  - **Sequential Objectives:** `CampaignMission` now supports multi-phase objectives tracked by `currentObjectiveIndex`.
+  - **Custom Starting Conditions:** Missions can specify `playerStartingCredits`, `playerStartingTechs`, `playerExtraFleet`, and heroes.
+  - **Hero Integration:** Heroes can be auto-recruited at the start of a mission.
+  - **Continuity:** Progress (credits, tech, heroes) carries over to the next mission if `allowCarryOver` is true, supported by a "NEXT MISSION" button.
