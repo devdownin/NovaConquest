@@ -82,22 +82,31 @@ fun IndustrialPanel(
     content: @Composable BoxScope.() -> Unit
 ) {
     Surface(
-        modifier = modifier.then(
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                Modifier.graphicsLayer {
-                    renderEffect = androidx.compose.ui.graphics.BlurEffect(com.novaempire.app.ui.theme.ThemeManager.getGraphicsConfig(com.novaempire.app.ui.theme.ThemeManager.getActiveTheme()).blurRadius, com.novaempire.app.ui.theme.ThemeManager.getGraphicsConfig(com.novaempire.app.ui.theme.ThemeManager.getActiveTheme()).blurRadius, androidx.compose.ui.graphics.TileMode.Clamp)
-                    clip = true
-                    this.shape = shape
-                }
-            } else {
-                Modifier
-            }
-        ),
-        color = backgroundColor,
+        modifier = modifier,
+        color = Color.Transparent,
         shape = shape,
         border = BorderStroke(2.dp, borderColor)
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .then(
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                            Modifier.graphicsLayer {
+                                val radius = com.novaempire.app.ui.theme.ThemeManager.getGraphicsConfig(com.novaempire.app.ui.theme.ThemeManager.getActiveTheme()).blurRadius
+                                renderEffect = androidx.compose.ui.graphics.BlurEffect(
+                                    radius, radius, androidx.compose.ui.graphics.TileMode.Clamp
+                                )
+                                clip = true
+                                this.shape = shape
+                            }
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .background(backgroundColor, shape)
+            )
             content()
             MountingBolt(Modifier.padding(5.dp).align(Alignment.TopStart))
             MountingBolt(Modifier.padding(5.dp).align(Alignment.TopEnd))
