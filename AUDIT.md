@@ -11,21 +11,34 @@
 | # | Sévérité | Domaine | Constat |
 |---|----------|---------|---------|
 | B1 | 🟢 Ajusté | Build | Config **fonctionnelle en CI** (mon 1ᵉʳ diagnostic « bloquant » était faux). Vraie incohérence corrigée : wrapper Gradle `9.4.1`→`9.6.1` (requis par AGP 9.2.1) ; `local.properties` Windows dé-suivi ; doc resynchronisée (voir §3) |
-| B2 | 🟠 Élevé | Combat | Siège et capture de planète **sans contrôle d'adjacence** — possibles depuis n'importe où sur la carte |
-| B3 | 🟠 Élevé | Combat | La riposte s'applique même quand l'attaquant est **hors de portée** du défenseur — annule l'avantage des unités à distance |
-| B4 | 🟠 Élevé | Combat | `AttackUnit` n'interdit ni le tir ami ni l'attaque d'un allié (aucun contrôle de faction/relation) |
-| B5 | 🟠 Élevé | Sauvegarde | L'auto-save capture l'état **avant** la résolution asynchrone du tour → sauvegarde périmée |
-| B6 | 🟡 Moyen | Équilibrage | L'IA débloque les technologies **instantanément** (paye le coût, ignore le temps de recherche) |
-| B7 | 🟡 Moyen | Pureté | `Random` global utilisé dans le réducteur (censé être pur) → non déterministe/non testable |
-| B8 | 🟡 Moyen | Cohérence | `ECONOMIC_BOOM` : la description dit « +3 par système » mais le code applique un +3 forfaitaire |
-| B9 | 🟡 Moyen | Combat | La riposte ignore tous les bonus du défenseur (tech/héros/terrain) — asymétrie non documentée |
-| B10 | 🟢 Faible | Propreté | 13 fichiers `.kt` de debug à la racine, hors source-set (orphelins) |
+| B2 | ✅ Corrigé | Combat | Siège et capture de planète **sans contrôle d'adjacence** — possibles depuis n'importe où sur la carte |
+| B3 | ✅ Corrigé | Combat | La riposte s'applique même quand l'attaquant est **hors de portée** du défenseur — annule l'avantage des unités à distance |
+| B4 | ✅ Corrigé | Combat | `AttackUnit` n'interdit pas le tir ami (attaque de ses propres unités) |
+| B5 | ✅ Corrigé | Sauvegarde | L'auto-save capture l'état **avant** la résolution asynchrone du tour → sauvegarde périmée |
+| B6 | ✅ Corrigé | Équilibrage | L'IA débloque les technologies **instantanément** (paye le coût, ignore le temps de recherche) |
+| B7 | ✅ Corrigé | Pureté | `Random` global utilisé dans le réducteur (censé être pur) → non déterministe/non testable |
+| B8 | ✅ Corrigé | Cohérence | `ECONOMIC_BOOM` : la description dit « +3 par système » mais le code applique un +3 forfaitaire |
+| B9 | ✅ Corrigé | Combat | La riposte ignore tous les bonus du défenseur (tech/héros/terrain) — asymétrie non documentée |
+| B10 | ✅ Corrigé | Propreté | 47 fichiers `.kt`/`.java` de debug à la racine, hors source-set (orphelins) |
 | B11 | 🟢 Faible | Doc | `CLAUDE.md` décrit des versions obsolètes (AGP 8.4.1, Kotlin 1.9.23, Compose compiler 1.5.11) |
 | B12 | 🟢 Faible | Gameplay | Héros non liés à leur faction (`targetFaction` défini mais jamais vérifié) |
 
 ---
 
 ## 2. Bugs de logique et de gameplay
+
+> **✅ Correctifs B2–B10 appliqués.** Résumé de l'implémentation :
+> - **B2** : `handleSiegePlanet` / `handleCapturePlanet` exigent désormais l'adjacence (`distanceTo ≤ 1`).
+> - **B3** : la riposte n'a lieu que si `attaquant.distanceTo(défenseur) ≤ défenseur.range` (`CombatResolver`).
+> - **B4** : `handleAttackUnit` rejette l'attaque d'une unité de sa propre faction.
+> - **B5** : l'auto-save écoute désormais l'incrément de `turn` (état résolu) au lieu d'un instantané synchrone.
+> - **B6** : l'IA passe par `researchInProgress` (mêmes tours de recherche que le joueur).
+> - **B7** : `Random` est injecté via `GameEngineDependencies.rng` et propagé à `handleMoveUnit`.
+> - **B8** : description d'`ECONOMIC_BOOM` alignée sur l'effet réel (+3 forfaitaire).
+> - **B9** : la riposte applique les bonus d'attaque et le terrain du défenseur (formule miroir).
+> - **B10** : 47 fichiers de debug orphelins supprimés de la racine.
+>
+> Tests ajoutés : `CombatResolverTest` (B3, B9) et `IntentReducerTest` (B2, B4).
 
 ### B2 — Siège et capture sans contrôle d'adjacence 🟠
 `core/engine/IntentHandlers.kt:141` (`handleSiegePlanet`) et `:151` (`handleCapturePlanet`).

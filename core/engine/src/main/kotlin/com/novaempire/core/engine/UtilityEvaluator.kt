@@ -7,6 +7,7 @@ import com.novaempire.core.domain.models.TechRegistry
 import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.state.BuildOrder
 import com.novaempire.core.domain.state.GameState
+import com.novaempire.core.domain.state.ResearchProgress
 import com.novaempire.core.domain.models.BonusType
 import com.novaempire.core.hex.HexCoord
 
@@ -207,22 +208,22 @@ object UtilityEvaluator : AIStrategy {
 
     private fun evaluateEconomyAndTech(state: GameState, faction: Faction): GameState {
         val playerState = state.playerStates[faction] ?: return state
+        // Route the AI through the same research pipeline as the player: queue one tech and pay
+        // its cost, then let TurnManager tick it down over turns — no more instant unlocks.
+        if (playerState.researchInProgress != null) return state
         val affordableTech = TechRegistry.ALL_TECHS.find { tech ->
             val isAvailable = tech.requiresTechId == null || playerState.techUnlocked.contains(tech.requiresTechId)
             val isUnlocked = playerState.techUnlocked.contains(tech.id)
             val cost = CostCalculator.techCost(tech.id, playerState.techUnlocked, playerState, state.activeEvent)
             isAvailable && !isUnlocked && playerState.credits >= cost
-        }
+        } ?: return state
 
-        if (affordableTech != null) {
-            val cost = CostCalculator.techCost(affordableTech.id, playerState.techUnlocked, playerState, state.activeEvent)
-            val newPlayerStates = state.playerStates.toMutableMap()
-            newPlayerStates[faction] = playerState.copy(
-                credits = playerState.credits - cost,
-                techUnlocked = playerState.techUnlocked + affordableTech.id
-            )
-            return state.copy(playerStates = newPlayerStates)
-        }
-        return state
+        val cost = CostCalculator.techCost(affordableTech.id, playerState.techUnlocked, playerState, state.activeEvent)
+        val newPlayerStates = state.playerStates.toMutableMap()
+        newPlayerStates[faction] = playerState.copy(
+            credits = playerState.credits - cost,
+            researchInProgress = ResearchProgress(affordableTech.id, affordableTech.tier + 1)
+        )
+        return state.copy(playerStates = newPlayerStates)
     }
 }

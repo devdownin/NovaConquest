@@ -223,7 +223,7 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
             GameResult(updateVision(TurnManager.advanceTurn(state)))
         is GameIntent.SelectFaction ->
             GameResult(state.copy(activeFaction = intent.faction, humanFaction = intent.faction))
-        is GameIntent.MoveUnit     -> handleMoveUnit(state, intent)
+        is GameIntent.MoveUnit     -> handleMoveUnit(state, intent, deps)
         is GameIntent.AttackUnit   -> handleAttackUnit(state, intent, deps)
         is GameIntent.ResearchTech -> handleResearchTech(state, intent)
         is GameIntent.BuildUnit    -> handleBuildUnit(state, intent)

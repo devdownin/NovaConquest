@@ -54,6 +54,20 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
         */
 
+        // Auto-save once an end-of-turn cycle has actually settled. EndTurn is processed
+        // asynchronously (AI turns can take seconds), so saving the snapshot synchronously in
+        // dispatch() persisted the *pre*-turn state. Observing the turn counter instead captures
+        // the fully-resolved state after every completed turn.
+        viewModelScope.launch {
+            var lastSavedTurn = engine.state.value.turn
+            engine.state.collect { state ->
+                if (state.turn != lastSavedTurn) {
+                    lastSavedTurn = state.turn
+                    withContext(Dispatchers.IO) { saveRepository.saveGame(state) }
+                }
+            }
+        }
+
         // Observe game effects (new architectural approach)
         viewModelScope.launch {
             engine.effects.collect { effect ->
@@ -83,11 +97,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         
         engine.processIntent(intent)
 
-        // Auto-save and sound on EndTurn
+        // Sound on EndTurn. The autosave itself happens in the turn-counter observer above,
+        // once the (asynchronous) end-of-turn processing has fully settled.
         if (intent is GameIntent.EndTurn) {
             AudioManager.playSound(SoundType.END_TURN)
-            val snapshot = engine.state.value
-            viewModelScope.launch(Dispatchers.IO) { saveRepository.saveGame(snapshot) }
         }
     }
 

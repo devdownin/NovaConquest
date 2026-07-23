@@ -40,14 +40,31 @@ object CombatResolver : CombatSystem {
             newUnits.remove(defenderCoord)
             newUnits[attackerCoord] = updatedAttacker
         } else {
-            val counterVariance = 0.8f + rng.nextFloat() * 0.4f
-            val damageToAttacker = max(1, (defender.type.attack * counterVariance).toInt())
-            val attackerRemainingHp = max(0, attacker.currentHp - damageToAttacker)
+            // The defender retaliates only if the attacker is within ITS weapon range —
+            // striking from beyond the enemy's reach (a longer-ranged ship) is safe.
+            val defenderCanRetaliate = attackerCoord.distanceTo(defenderCoord) <= defender.type.range
+            if (defenderCanRetaliate) {
+                // Mirror the attacker's damage formula so the defender's own tech/hero
+                // bonuses and terrain apply on the counter-strike.
+                val defenderPlayer = state.playerStates[defender.faction]
+                val counterPct = BonusRegistry.sum(BonusType.ATTACK_PERCENT, defenderPlayer, state.activeEvent)
+                val counterFlat = BonusRegistry.sum(BonusType.ATTACK_FLAT, defenderPlayer, state.activeEvent)
+                val counterPercentBonus = if (counterPct > 0) max(1, (defender.type.attack * counterPct / 100.0).toInt()) else 0
+                val counterTotalBonus = counterPercentBonus + counterFlat
+                // Terrain is mirrored: the defender now fires from its own tile, the attacker defends on its.
+                val defenderCounterMult = if (defenderTerrain == TerrainType.BLACK_HOLE) 0.75f else 1.0f
+                val attackerDefenseMult = if (attackerTerrain == TerrainType.NEBULA) 0.8f else 1.0f
+                val counterVariance = 0.8f + rng.nextFloat() * 0.4f
+                val damageToAttacker = max(1, ((defender.type.attack + counterTotalBonus) * defenderCounterMult * counterVariance * attackerDefenseMult).toInt())
+                val attackerRemainingHp = max(0, attacker.currentHp - damageToAttacker)
 
-            if (attackerRemainingHp <= 0) {
-                newUnits.remove(attackerCoord)
+                if (attackerRemainingHp <= 0) {
+                    newUnits.remove(attackerCoord)
+                } else {
+                    updatedAttacker = updatedAttacker.copy(currentHp = attackerRemainingHp)
+                    newUnits[attackerCoord] = updatedAttacker
+                }
             } else {
-                updatedAttacker = updatedAttacker.copy(currentHp = attackerRemainingHp)
                 newUnits[attackerCoord] = updatedAttacker
             }
 
