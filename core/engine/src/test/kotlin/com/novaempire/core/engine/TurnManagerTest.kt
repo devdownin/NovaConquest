@@ -131,6 +131,50 @@ class TurnManagerTest {
     }
 
     @Test
+    fun xylarProductionSpeedFinishesTwoTurnOrderInOne() {
+        // XYLAR has +1 PRODUCTION_SPEED, so buildTick = 1 (base) + 1 = 2: a 2-turn order completes now.
+        val planetCoord = HexCoord(0, 0, 0)
+        val spawnCoord = HexCoord(1, -1, 0)
+        val map = GameMap(tiles = mapOf(
+            planetCoord to HexTile(planetCoord, TerrainType.PLANET, systemLevel = 1, owner = Faction.XYLAR),
+            spawnCoord to HexTile(spawnCoord, TerrainType.EMPTY)
+        ))
+        val state = GameState(
+            activeFaction = Faction.XYLAR,
+            map = map,
+            units = mapOf(planetCoord to GameUnit(type = UnitType.CRUISER, faction = Faction.XYLAR, position = planetCoord, currentHp = UnitType.CRUISER.maxHp)),
+            playerStates = mapOf(
+                Faction.XYLAR to PlayerState(Faction.XYLAR, buildQueue = listOf(BuildOrder(UnitType.SCOUT, planetCoord, turnsRemaining = 2)))
+            )
+        )
+        val next = TurnManager.advanceTurn(state)
+        assertTrue("Order should complete this turn", next.playerStates[Faction.XYLAR]!!.buildQueue.isEmpty())
+        assertTrue("Scout should have spawned", next.units.values.any { it.type == UnitType.SCOUT && it.faction == Faction.XYLAR })
+    }
+
+    @Test
+    fun nomadsPayLessUpkeepThanFactionsWithoutTheBonus() {
+        // Same 2-cruiser fleet, no planets: NOMADS (-1 upkeep/unit) must end richer than a faction
+        // with no upkeep bonus. Choose the 'active' faction so the tested one is next to play.
+        fun creditsAfterStartingTurn(active: Faction, tested: Faction): Int {
+            val u1 = HexCoord(0, 0, 0)
+            val u2 = HexCoord(1, -1, 0)
+            val state = GameState(
+                activeFaction = active,
+                playerStates = mapOf(tested to PlayerState(tested, credits = 100)),
+                units = mapOf(
+                    u1 to GameUnit(type = UnitType.CRUISER, faction = tested, position = u1, currentHp = 25),
+                    u2 to GameUnit(type = UnitType.CRUISER, faction = tested, position = u2, currentHp = 25)
+                )
+            )
+            return TurnManager.advanceTurn(state).playerStates[tested]!!.credits
+        }
+        val nomads = creditsAfterStartingTurn(Faction.SYNTH, Faction.NOMADS)   // next faction = NOMADS
+        val synth = creditsAfterStartingTurn(Faction.TRADERS, Faction.SYNTH)   // next faction = SYNTH (no upkeep bonus)
+        assertTrue("NOMADS keep more credits thanks to reduced upkeep", nomads > synth)
+    }
+
+    @Test
     fun buildOrderSpawnsUnitAfterOneTurn() {
         // Scout has turnsRemaining=1; after DOMINION ends its turn a Scout should spawn
         val planetCoord = HexCoord(0, 0, 0)

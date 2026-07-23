@@ -231,9 +231,19 @@ valables, impact balance) : non appliqués unilatéralement — à cadrer avant 
 
 - **Feedback tactique de portée** *(UI)* : afficher les cases atteignables (`findReachable`) et
   les cibles à portée avant l'ordre, pour rendre lisibles les corrections B2/B3.
-- **Différenciation des factions plus marquée** : les bonus (`Faction.kt`) sont faibles et
-  uniquement numériques ; mécaniques uniques envisageables (ex. Xylar : coût de production réduit,
-  Kaelen : révélation d'anomalies).
+- **Différenciation des factions** : **✅ Appliqué**. Chaque faction a désormais une identité
+  distincte et non redondante via un champ `extraBonuses` (les 5 champs numériques hérités restent
+  pour les aperçus UI) :
+  - **DOMINION** — flotte d'élite : +10% attaque **+ 3 PV** sur les unités construites.
+  - **TRADERS** — marchands : +5 crédits/tour **+ 15% de revenu**.
+  - **SYNTH** — recherche : −15% coût tech **+ 1 vitesse de recherche**.
+  - **NOMADS** — nomades : +1 déplacement **+ entretien de flotte réduit** (`UPKEEP_MODIFIER`).
+  - **KAELEN** — voyants : +2 vision **+ mondes capturés à un niveau supérieur**.
+  - **XYLAR** — essaim : +1 déplacement, +5% attaque **+ production plus rapide** (`PRODUCTION_SPEED`).
+
+  Deux nouveaux `BonusType` (`PRODUCTION_SPEED`, `UPKEEP_MODIFIER`) câblés dans `TurnManager` ;
+  les autres réutilisent des types déjà en place. Tests : `TurnManagerTest` (production XYLAR,
+  upkeep NOMADS).
 - **Boucle économique** : l'upkeep (`UnitType.upkeepCost`) peut rendre le revenu négatif ; ajouter
   un plancher/alerte et un coût d'entretien visible dans l'UI.
 - **Événements galactiques ciblés** : effets par faction plutôt que globaux, pour de l'asymétrie.

@@ -233,6 +233,17 @@ fun FactionDetailPanel(selectedFaction: Faction) {
                 if (selectedFaction.bonusTechDiscount > 0) bonuses.add("-${(selectedFaction.bonusTechDiscount * 100).toInt()}% Tech Cost")
                 if (selectedFaction.bonusMovement > 0) bonuses.add("+${selectedFaction.bonusMovement} Movement")
                 if (selectedFaction.bonusVision > 0) bonuses.add("+${selectedFaction.bonusVision} Vision Range")
+                selectedFaction.extraBonuses.forEach { bonus ->
+                    bonuses.add(when (bonus.type) {
+                        com.novaempire.core.domain.models.BonusType.UNIT_HP_ON_SPAWN -> "+${bonus.value} HP on new units"
+                        com.novaempire.core.domain.models.BonusType.INCOME_PERCENT -> "+${bonus.value}% Income"
+                        com.novaempire.core.domain.models.BonusType.RESEARCH_SPEED -> "+${bonus.value} Research Speed"
+                        com.novaempire.core.domain.models.BonusType.UPKEEP_MODIFIER -> "${bonus.value} Upkeep/unit"
+                        com.novaempire.core.domain.models.BonusType.CAPTURE_START_LEVEL -> "Captured worlds +${bonus.value} level"
+                        com.novaempire.core.domain.models.BonusType.PRODUCTION_SPEED -> "+${bonus.value} Production Speed"
+                        else -> bonus.type.name
+                    })
+                }
 
                 Box(modifier = Modifier.widthIn(min = 200.dp).weight(1f, fill = false).padding(12.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
                     Column {

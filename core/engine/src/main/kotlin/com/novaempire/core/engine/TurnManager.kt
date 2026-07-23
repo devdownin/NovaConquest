@@ -62,7 +62,9 @@ object TurnManager {
             income += (income * incomePct / 100.0).toInt() + incomeFlat
             income += ownedPlanets.count { it.specialty == PlanetSpecialty.TRADE_POST } * 8
 
-            val upkeep = nextState.units.values.filter { it.faction == nextFaction }.sumOf { it.type.upkeepCost }
+            val upkeepMod = BonusRegistry.sum(BonusType.UPKEEP_MODIFIER, nextPlayerState, nextState.activeEvent)
+            val upkeep = nextState.units.values.filter { it.faction == nextFaction }
+                .sumOf { maxOf(0, it.type.upkeepCost + upkeepMod) }
             income -= upkeep
 
             val newPlayerStates = nextState.playerStates.toMutableMap()
@@ -80,8 +82,10 @@ object TurnManager {
                 it.terrain == TerrainType.PLANET && it.owner == state.activeFaction &&
                 it.specialty == PlanetSpecialty.FORGE_WORLD
             }
+            val productionBonus = BonusRegistry.sum(BonusType.PRODUCTION_SPEED, buildingFactionState, nextState.activeEvent)
             for (order in buildingFactionState.buildQueue) {
-                val buildTick = if (forgeWorldCount > 0 && nextState.map.tiles[order.planetCoord]?.specialty == PlanetSpecialty.FORGE_WORLD) 2 else 1
+                val forgeTick = if (forgeWorldCount > 0 && nextState.map.tiles[order.planetCoord]?.specialty == PlanetSpecialty.FORGE_WORLD) 2 else 1
+                val buildTick = forgeTick + productionBonus
                 val newTurns = order.turnsRemaining - buildTick
                 if (newTurns <= 0) {
                     val gridMap = GameGridMap(stateAfterBuilds)
