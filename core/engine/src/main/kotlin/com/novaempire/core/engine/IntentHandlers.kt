@@ -93,7 +93,7 @@ internal fun handleResearchTech(state: GameState, intent: GameIntent.ResearchTec
         return GameResult(state, "Prerequisite technology not researched.")
     if (playerState.techUnlocked.contains(intent.techId))
         return GameResult(state, "Technology already researched.")
-    val cost = CostCalculator.techCost(intent.techId, playerState.techUnlocked, playerState, state.activeEvent)
+    val cost = CostCalculator.techCost(intent.techId, playerState.techUnlocked, playerState, state.activeEvent, state.eventTargetFaction)
     IntentValidator.canAfford(playerState, cost)?.let { return GameResult(state, it) }
     return GameResult(state.withUpdatedPlayer(playerState.copy(
         credits = playerState.credits - cost,

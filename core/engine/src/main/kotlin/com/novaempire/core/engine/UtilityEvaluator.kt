@@ -306,11 +306,11 @@ object UtilityEvaluator : AIStrategy {
         val affordableTech = TechRegistry.ALL_TECHS.find { tech ->
             val isAvailable = tech.requiresTechId == null || playerState.techUnlocked.contains(tech.requiresTechId)
             val isUnlocked = playerState.techUnlocked.contains(tech.id)
-            val cost = CostCalculator.techCost(tech.id, playerState.techUnlocked, playerState, state.activeEvent)
+            val cost = CostCalculator.techCost(tech.id, playerState.techUnlocked, playerState, state.activeEvent, state.eventTargetFaction)
             isAvailable && !isUnlocked && playerState.credits >= cost
         } ?: return state
 
-        val cost = CostCalculator.techCost(affordableTech.id, playerState.techUnlocked, playerState, state.activeEvent)
+        val cost = CostCalculator.techCost(affordableTech.id, playerState.techUnlocked, playerState, state.activeEvent, state.eventTargetFaction)
         val newPlayerStates = state.playerStates.toMutableMap()
         newPlayerStates[faction] = playerState.copy(
             credits = playerState.credits - cost,

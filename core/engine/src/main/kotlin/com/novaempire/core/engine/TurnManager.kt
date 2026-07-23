@@ -57,8 +57,8 @@ object TurnManager {
             }
             var income = 6 + ownedPlanets.sumOf { 5 + it.systemLevel * 2 }
 
-            val incomePct = BonusRegistry.sum(BonusType.INCOME_PERCENT, nextPlayerState, nextState.activeEvent)
-            val incomeFlat = BonusRegistry.sum(BonusType.INCOME_FLAT, nextPlayerState, nextState.activeEvent)
+            val incomePct = BonusRegistry.sum(BonusType.INCOME_PERCENT, nextPlayerState, nextState.activeEvent, nextState.eventTargetFaction)
+            val incomeFlat = BonusRegistry.sum(BonusType.INCOME_FLAT, nextPlayerState, nextState.activeEvent, nextState.eventTargetFaction)
             income += (income * incomePct / 100.0).toInt() + incomeFlat
             income += ownedPlanets.count { it.specialty == PlanetSpecialty.TRADE_POST } * 8
 
@@ -125,7 +125,7 @@ object TurnManager {
                 it.terrain == TerrainType.PLANET && it.owner == state.activeFaction &&
                 it.specialty == PlanetSpecialty.RESEARCH_HUB
             }
-            val researchTick = 1 + researchHubCount + BonusRegistry.sum(BonusType.RESEARCH_SPEED, researchingState, nextState.activeEvent)
+            val researchTick = 1 + researchHubCount + BonusRegistry.sum(BonusType.RESEARCH_SPEED, researchingState, nextState.activeEvent, nextState.eventTargetFaction)
             val newTurns = prog.turnsRemaining - researchTick
             val updatedResearcher = if (newTurns <= 0) {
                 researchingState.copy(

@@ -229,8 +229,11 @@ initial « build bloquant » était donc **erroné** sur les points suivants :
 Les points suivants sont des **décisions de design / d'équilibrage** (plusieurs directions
 valables, impact balance) : non appliqués unilatéralement — à cadrer avant implémentation.
 
-- **Feedback tactique de portée** *(UI)* : afficher les cases atteignables (`findReachable`) et
-  les cibles à portée avant l'ordre, pour rendre lisibles les corrections B2/B3.
+- **Feedback tactique de portée** *(UI)* : **✅ Appliqué**. `TacticalMapScreen` affiche désormais,
+  pour l'unité sélectionnée : l'**anneau de portée d'attaque** (remplissage rouge léger), les cibles
+  **sans riposte** en vert (l'unité surclasse la portée ennemie — rend B3 lisible) vs **avec riposte**
+  en rouge, et les planètes adjacentes **capturables** (or) / **assiégeables** (orange) — rend B2
+  lisible. S'ajoute au surlignage de déplacement (cyan) déjà présent.
 - **Différenciation des factions** : **✅ Appliqué**. Chaque faction a désormais une identité
   distincte et non redondante via un champ `extraBonuses` (les 5 champs numériques hérités restent
   pour les aperçus UI) :
@@ -246,7 +249,12 @@ valables, impact balance) : non appliqués unilatéralement — à cadrer avant 
   upkeep NOMADS).
 - **Boucle économique** : l'upkeep (`UnitType.upkeepCost`) peut rendre le revenu négatif ; ajouter
   un plancher/alerte et un coût d'entretien visible dans l'UI.
-- **Événements galactiques ciblés** : effets par faction plutôt que globaux, pour de l'asymétrie.
+- **Événements galactiques ciblés** : **✅ Appliqué**. Les événements économiques/technologiques
+  (`ECONOMIC_BOOM`, `PIRATE_RAID`, `ANCIENT_SIGNAL`, `TECH_RUSH`) frappent désormais **une seule
+  faction** tirée au sort (`GameState.eventTargetFaction`) au lieu de tout le monde ; les événements
+  « météo » (`ION_STORM`, `SOLAR_FLARE`) restent globaux. `BonusRegistry.sum` n'applique le bonus
+  d'événement qu'à la faction ciblée (ou globalement si non ciblé), et la notification nomme la cible.
+  Tests : `EventTargetingTest`.
 - **IA — évaluation d'utilité réelle** : **✅ Appliqué**. La couche tactique de `UtilityEvaluator`
   ne fait plus des heuristiques greedy séquentielles : chaque unité génère des **actions candidates
   scorées** (attaque, capture, siège, déplacement, repli, regroupement) et exécute la meilleure via

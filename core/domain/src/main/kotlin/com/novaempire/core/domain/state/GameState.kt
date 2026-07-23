@@ -30,6 +30,8 @@ data class GameState(
     val units: Map<HexCoord, GameUnit> = emptyMap(),
     val activeEvent: GalacticEvent = GalacticEvent.NONE,
     val eventDurationRemaining: Int = 0,
+    /** For a targeted event, the single faction it affects; null for global events / no event. */
+    val eventTargetFaction: Faction? = null,
     val winner: Faction? = null,
     val victoryReason: String? = null,
     val dominationTurns: Map<Faction, Int> = emptyMap(),

@@ -147,9 +147,7 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
 
             if (prevState.activeEvent != currentState.activeEvent &&
                 currentState.activeEvent != com.novaempire.core.domain.models.GalacticEvent.NONE) {
-                _effects.emit(GameEffect.ShowNotification(
-                    "${currentState.activeEvent.displayName}: ${currentState.activeEvent.description}", "ORANGE"
-                ))
+                _effects.emit(GameEffect.ShowNotification(eventBanner(currentState), "ORANGE"))
             }
 
             while (currentState.activeFaction != humanFaction) {
@@ -207,6 +205,13 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
 
             _state.value = checkVictoryConditions(nextState)
         }
+    }
+
+    private fun eventBanner(state: GameState): String {
+        val e = state.activeEvent
+        val target = state.eventTargetFaction
+        return if (target != null) "${e.displayName} → ${target.displayName}: ${e.description}"
+               else "${e.displayName}: ${e.description}"
     }
 
     // ── Reducer dispatcher ────────────────────────────────────────────────────
