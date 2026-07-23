@@ -247,8 +247,15 @@ valables, impact balance) : non appliqués unilatéralement — à cadrer avant 
 - **Boucle économique** : l'upkeep (`UnitType.upkeepCost`) peut rendre le revenu négatif ; ajouter
   un plancher/alerte et un coût d'entretien visible dans l'UI.
 - **Événements galactiques ciblés** : effets par faction plutôt que globaux, pour de l'asymétrie.
-- **IA — évaluation d'utilité réelle** : `UtilityEvaluator` applique surtout des heuristiques
-  séquentielles ; scoring des cibles, regroupement de flotte, défense des planètes menacées.
+- **IA — évaluation d'utilité réelle** : **✅ Appliqué**. La couche tactique de `UtilityEvaluator`
+  ne fait plus des heuristiques greedy séquentielles : chaque unité génère des **actions candidates
+  scorées** (attaque, capture, siège, déplacement, repli, regroupement) et exécute la meilleure via
+  `reduce`. Le scoring récompense l'achèvement des cibles blessées, le tir **hors de portée ennemie**
+  (dégâts sans riposte, exploite B3), pénalise les attaques/sièges suicidaires, priorise la **défense
+  des planètes menacées**, fait **avancer** les unités vers des objectifs lointains (au-delà d'un
+  tour de mouvement) et **regroupe** les unités isolées vers le centroïde de la flotte. Reste
+  déterministe (sans RNG). Tests : `UtilityEvaluatorTest`. Les phases stratégiques (diplomatie,
+  économie/tech, héros, production) sont conservées.
 
 ---
 
