@@ -140,6 +140,28 @@ internal fun handleChangeRelation(state: GameState, intent: GameIntent.ChangeRel
     return GameResult(state.copy(playerStates = newPlayerStates))
 }
 
+internal fun handleStartCampaign(state: GameState, intent: GameIntent.StartCampaign): GameResult {
+    var next = state.copy(campaignState = state.campaignState.copy(activeMissionId = intent.missionId))
+    val mission = com.novaempire.core.domain.models.CampaignRegistry.MISSIONS.find { it.id == intent.missionId }
+    // A campaign mission is a duel: the scripted enemy must actually be at war, otherwise the
+    // utility AI (which only engages WAR / NPC targets) stays passive and the mission is trivial.
+    if (mission != null && mission.playerFaction != mission.enemyFaction) {
+        val players = next.playerStates.toMutableMap()
+        players[mission.playerFaction]?.let { p ->
+            players[mission.playerFaction] = p.copy(
+                relations = p.relations.toMutableMap().also { it[mission.enemyFaction] = DiplomaticRelation.WAR }
+            )
+        }
+        players[mission.enemyFaction]?.let { e ->
+            players[mission.enemyFaction] = e.copy(
+                relations = e.relations.toMutableMap().also { it[mission.playerFaction] = DiplomaticRelation.WAR }
+            )
+        }
+        next = next.copy(playerStates = players)
+    }
+    return GameResult(next)
+}
+
 internal fun handleSiegePlanet(state: GameState, intent: GameIntent.SiegePlanet, deps: GameEngineDependencies): GameResult {
     val unit = state.units[intent.attackerCoord] ?: return GameResult(state, "Attacker not found.")
     IntentValidator.ownedByActive(unit, state.activeFaction)?.let { return GameResult(state, it) }

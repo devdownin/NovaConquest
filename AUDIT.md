@@ -183,69 +183,62 @@ initial « build bloquant » était donc **erroné** sur les points suivants :
 ## 4. Performance / optimisations
 
 - **Recalcul complet de la vision à chaque sous-tour IA** :
-  `GameEngine.handleIntent` appelle `updateVision(currentState)` (toutes factions) à chaque
-  itération de la boucle IA (`GameEngine.kt:168`). `VisionSystem.calculateVisibleHexes` est en
-  O(unités × rayon² × distance) à cause du contrôle de ligne de vue par interpolation
-  (`VisionSystem.kt:40-79`). Sur grande carte × 5 IA × 6 factions, cela se cumule. Ne recalculer
-  que pour la faction qui vient de jouer (comme le fait déjà `handleMoveUnit` via
-  `updateVision(state, setOf(unit.faction))`).
-- **`VictoryChecker.check`** (`VictoryChecker.kt`) et **`TurnManager.advanceTurn`** re-parcourent
-  plusieurs fois `map.tiles.values` (comptage de planètes par faction, domination…). Mutualiser
-  en un seul passage (par ex. un `groupingBy { owner }.eachCount()`).
-- **Pathfinding** : `HexPathfinder.findPath` (`HexPathfinder.kt`) utilise une `PriorityQueue` de
-  `Pair` sans suppression paresseuse des entrées périmées ni cache. Correct mais réinstancié à
-  chaque déplacement IA. Pour de grandes cartes, envisager `findReachable` (déjà présent) pour
-  précalculer l'ensemble atteignable d'une unité une seule fois par tour.
-- **Rendu** : le commit `c1e0319` a déjà séparé terrain statique / overlay dynamique sur la carte
-  tactique — bonne direction ; vérifier que les `Canvas` lourds sont bien `remember`isés et que
-  la LoS n'est pas recalculée côté UI.
+  `GameEngine.handleIntent` appelait `updateVision(currentState)` (toutes factions) à chaque
+  itération de la boucle IA, **juste avant** un `reduce(EndTurn)` qui recalcule déjà toute la
+  vision — recompute redondant. **✅ Corrigé** : l'appel redondant a été retiré (`GameEngine.kt`).
+- **`TurnManager.advanceTurn`** comptait les planètes par faction en `N` scans (`allFactions.size`
+  appels à `count`). **✅ Corrigé** : un seul passage `groupingBy { owner }.eachCount()`.
+  (`VictoryChecker.check` reparcourt encore plusieurs fois `map.tiles` — mutualisable de même,
+  laissé de côté car non chaud.)
+- **Pathfinding** *(proposition)* : `HexPathfinder.findPath` utilise une `PriorityQueue` de
+  `Pair` sans suppression paresseuse ni cache, réinstanciée à chaque déplacement IA. Pour de
+  grandes cartes, envisager `findReachable` (déjà présent) pour précalculer l'ensemble atteignable
+  une fois par tour. *(non appliqué — le pathfinder fonctionne, changement risqué.)*
+- **Rendu** *(proposition)* : le commit `c1e0319` a déjà séparé terrain statique / overlay
+  dynamique ; vérifier que les `Canvas` lourds sont `remember`isés et que la LoS n'est pas
+  recalculée côté UI. *(module `:app`, non vérifiable par la CI ici.)*
 
 ---
 
 ## 5. Qualité de code / maintenance
 
-- **B10 — Fichiers orphelins à la racine** : `CheckFloatBug.kt`, `TestDiff.kt`,
-  `TestHexCoordRoundBug.kt`, `TestMathRoundKotlin.kt`, `TestRounding.kt`,
-  `TestRoundingExhaustive.kt`, `TestRoundingKotlin.kt`, `test_bug.kt`, `test_kotlin_round.kt`,
-  `test_math.kt`, `test_pixel_to_hex.kt`, `test_round.kt`, `test_rounding_kotlin.kt`.
-  Aucun n'appartient à un source-set (cf. `settings.gradle`), aucun n'est référencé : reliquats
-  de debug de l'arrondi cube (`HexCoord.round`, qui est **correct**, conforme à l'algorithme de
-  Red Blob Games). **À supprimer.**
-- **B7 — `Random` global dans le réducteur** : `handleMoveUnit` (`IntentHandlers.kt:66`) et
-  `applyExplorationDiscovery` (`:189-207`) appellent `Random.nextFloat()/nextInt()` global. Le
-  réducteur est censé pur (cf. `CLAUDE.md`, « Never mutate GameState »). Injecter un `Random`
-  (comme le font déjà `CombatResolver.resolveCombatWithRng` et `TurnManager.advanceTurn(rng)`)
-  pour la reproductibilité et la testabilité.
-- **`kotlinx.coroutines.delay(0)`** inutile en tête de `UtilityEvaluator.executeAITurn`
-  (`UtilityEvaluator.kt:20`).
-- **Nullabilité incohérente de `campaignState`** : non-nullable dans `GameState.kt:28`, mais
-  traité comme nullable (`?.`, `?:`) dans `GameEngine.reduce` (`:221`) et `CampaignManager`
-  (`:11,15`). Harmoniser.
-- **`lastCombatEvent` jamais remis à null côté moteur** : `@Transient` (`GameState.kt:36`),
-  positionné par le combat mais jamais nettoyé ; l'UI le neutralise localement
-  (`TacticalMapScreen.kt:188`). Deux combats identiques consécutifs (mêmes coords, même issue)
-  ne re-déclencheront pas le `LaunchedEffect` (clé égale). Envisager un identifiant/compteur
-  unique par événement, ou le passage à un `SharedFlow` d'effets (déjà amorcé via `GameEffect`).
-- **Code mort** : bloc d'observation audio commenté dans `GameViewModel.kt:43-55`.
+- **B10 — Fichiers orphelins à la racine** : **✅ Corrigé** (47 fichiers `.kt`/`.java` de debug
+  d'arrondi supprimés ; `HexCoord.round` est **correct**, conforme à Red Blob Games).
+- **B7 — `Random` global dans le réducteur** : **✅ Corrigé** (injecté via
+  `GameEngineDependencies.rng`, propagé à `handleMoveUnit`/`applyExplorationDiscovery`).
+- **`kotlinx.coroutines.delay(0)`** inutile en tête de `UtilityEvaluator.executeAITurn` :
+  **✅ Corrigé** (retiré).
+- **Nullabilité incohérente de `campaignState`** : **✅ Corrigé** (`GameEngine.reduce` et
+  `CampaignManager` traitent désormais le champ comme non-nullable).
+- **Code mort** : bloc d'observation audio commenté dans `GameViewModel` : **✅ Corrigé** (retiré).
+- **`lastCombatEvent` jamais remis à null côté moteur** *(proposition)* : `@Transient`, positionné
+  par le combat mais jamais nettoyé ; deux combats identiques consécutifs (mêmes coords, même issue)
+  ne re-déclenchent pas le `LaunchedEffect` (clé égale). Le vrai correctif est architectural — router
+  les effets ponctuels via le `SharedFlow` `GameEffect` (déjà amorcé) plutôt que via l'état ; touche
+  le module `:app`. *(non appliqué : refonte UI hors périmètre sûr.)*
 
 ---
 
 ## 6. Pistes d'amélioration gameplay
 
-- **Feedback tactique de portée** : afficher les cases atteignables (`findReachable`) et les
-  cibles à portée avant l'ordre, pour rendre lisibles les corrections B2/B3.
+- **Campagne — ennemi scénarisé passif** : **✅ Corrigé**. `handleStartCampaign` met désormais
+  le couple joueur ↔ ennemi de la mission en `WAR` au lancement, sinon l'IA (qui n'engage que les
+  cibles `WAR`/`NPC`) restait passive et les missions étaient triviales. Enrichir davantage
+  l'initialisation (forces scénarisées, objectif `CAPTURE_SPECIFIC_PLANET` non géré) reste ouvert.
+
+Les points suivants sont des **décisions de design / d'équilibrage** (plusieurs directions
+valables, impact balance) : non appliqués unilatéralement — à cadrer avant implémentation.
+
+- **Feedback tactique de portée** *(UI)* : afficher les cases atteignables (`findReachable`) et
+  les cibles à portée avant l'ordre, pour rendre lisibles les corrections B2/B3.
 - **Différenciation des factions plus marquée** : les bonus (`Faction.kt`) sont faibles et
-  uniquement numériques ; envisager des mécaniques uniques (ex. Xylar : coût de production réduit,
-  Kaelen : révélation d'anomalies) pour la rejouabilité.
-- **Boucle économique** : l'upkeep (`UnitType.upkeepCost`) peut rendre le revenu négatif sans
-  garde-fou ; ajouter un plancher/alerte et un vrai coût d'entretien visible dans l'UI.
-- **Événements galactiques** : rendre certains effets ciblés (aléatoire par faction) plutôt que
-  globaux pour créer de l'asymétrie et des décisions.
-- **IA** : au-delà des corrections, ajouter une évaluation d'utilité réelle (le fichier s'appelle
-  `UtilityEvaluator` mais applique surtout des heuristiques séquentielles) : scoring des cibles,
-  regroupement de flotte, défense des planètes menacées (le repli existe déjà, `:44-64`).
-- **Campagne** : `CampaignManager` est minimal ; les missions ne configurent ni relations de
-  départ (ennemi non mis en `WAR`) ni forces scénarisées. Enrichir l'initialisation de mission.
+  uniquement numériques ; mécaniques uniques envisageables (ex. Xylar : coût de production réduit,
+  Kaelen : révélation d'anomalies).
+- **Boucle économique** : l'upkeep (`UnitType.upkeepCost`) peut rendre le revenu négatif ; ajouter
+  un plancher/alerte et un coût d'entretien visible dans l'UI.
+- **Événements galactiques ciblés** : effets par faction plutôt que globaux, pour de l'asymétrie.
+- **IA — évaluation d'utilité réelle** : `UtilityEvaluator` applique surtout des heuristiques
+  séquentielles ; scoring des cibles, regroupement de flotte, défense des planètes menacées.
 
 ---
 

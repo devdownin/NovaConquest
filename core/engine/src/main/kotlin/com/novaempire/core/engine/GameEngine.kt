@@ -165,7 +165,8 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
                     _effects.emit(GameEffect.ShowNotification("IA : tour forcé (délai dépassé)", "ORANGE"))
                     currentState
                 }
-                currentState = updateVision(currentState)
+                // No explicit updateVision here: the reduce(EndTurn) below recomputes vision for
+                // every faction via advanceTurn, so an extra full recompute would be pure waste.
                 val prevForAI = currentState
                 currentState = reduce(currentState, GameIntent.EndTurn).newState
                 if (prevForAI.activeEvent != currentState.activeEvent &&
@@ -217,8 +218,7 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
             GameResult(createInitialState(intent.mapSize, intent.archetype))
         is GameIntent.LoadGame ->
             GameResult(updateVision(intent.loadedState))
-        is GameIntent.StartCampaign ->
-            GameResult(state.copy(campaignState = state.campaignState?.copy(activeMissionId = intent.missionId) ?: com.novaempire.core.domain.state.CampaignState(activeMissionId = intent.missionId)))
+        is GameIntent.StartCampaign -> handleStartCampaign(state, intent)
         is GameIntent.EndTurn ->
             GameResult(updateVision(TurnManager.advanceTurn(state)))
         is GameIntent.SelectFaction ->

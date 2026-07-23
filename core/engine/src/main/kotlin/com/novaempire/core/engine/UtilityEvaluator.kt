@@ -18,7 +18,6 @@ object UtilityEvaluator : AIStrategy {
         faction: Faction,
         reduce: (GameState, GameIntent) -> GameState
     ): GameState {
-        kotlinx.coroutines.delay(0)
         val aiFaction = faction
         var currentState = state
 

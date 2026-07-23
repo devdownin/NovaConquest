@@ -39,21 +39,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         saveRepository = SaveManager(saveDir)
         AudioManager.init(application)
 
-        // Observe game state for audio events (legacy - now moving to effects)
-        /*
-        viewModelScope.launch {
-            gameState.collectLatest { state ->
-                state.lastCombatEvent?.let { event ->
-                    if (event.targetDestroyed) {
-                        AudioManager.playSound(SoundType.COMBAT_EXPLOSION)
-                    } else {
-                        AudioManager.playSound(SoundType.COMBAT_LASER)
-                    }
-                }
-            }
-        }
-        */
-
         // Auto-save once an end-of-turn cycle has actually settled. EndTurn is processed
         // asynchronously (AI turns can take seconds), so saving the snapshot synchronously in
         // dispatch() persisted the *pre*-turn state. Observing the turn counter instead captures

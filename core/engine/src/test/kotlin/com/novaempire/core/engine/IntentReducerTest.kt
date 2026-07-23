@@ -233,6 +233,18 @@ class IntentReducerTest {
     }
 
     @Test
+    fun startCampaignPutsScriptedEnemyAtWar() = runBlocking {
+        val e = engine()
+        // mission_1: player DOMINION vs enemy XYLAR
+        e.processIntent(GameIntent.StartCampaign("mission_1"))
+        delay(100)
+        val s = e.state.value
+        assertEquals("mission_1", s.campaignState.activeMissionId)
+        assertEquals(DiplomaticRelation.WAR, s.playerStates[Faction.DOMINION]!!.relations[Faction.XYLAR])
+        assertEquals(DiplomaticRelation.WAR, s.playerStates[Faction.XYLAR]!!.relations[Faction.DOMINION])
+    }
+
+    @Test
     fun attackFailsOnOwnUnit() = runBlocking {
         val e = engine()
         val a = HexCoord(0, 0, 0)

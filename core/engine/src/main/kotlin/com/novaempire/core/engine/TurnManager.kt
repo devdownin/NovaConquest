@@ -21,12 +21,16 @@ object TurnManager {
         if (nextIndex == 0) {
             nextState = nextState.copy(turn = state.turn + 1)
             nextState = EventSystem.tick(nextState, rng)
-            // Domination tracking: count planets per faction; update dominationTurns.
-            val totalPlanets = nextState.map.tiles.values.count { it.terrain == TerrainType.PLANET }
+            // Domination tracking: count planets per faction in a single pass; update dominationTurns.
+            val planetsByOwner = nextState.map.tiles.values
+                .filter { it.terrain == TerrainType.PLANET }
+                .groupingBy { it.owner }
+                .eachCount()
+            val totalPlanets = planetsByOwner.values.sum()
             if (totalPlanets > 0) {
                 val newDomTurns = nextState.dominationTurns.toMutableMap()
                 for (f in allFactions) {
-                    val owned = nextState.map.tiles.values.count { it.terrain == TerrainType.PLANET && it.owner == f }
+                    val owned = planetsByOwner[f] ?: 0
                     newDomTurns[f] = if (owned * 100 / totalPlanets >= 60) (newDomTurns[f] ?: 0) + 1 else 0
                 }
                 nextState = nextState.copy(dominationTurns = newDomTurns)

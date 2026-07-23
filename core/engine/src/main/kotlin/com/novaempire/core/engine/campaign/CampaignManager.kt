@@ -8,11 +8,11 @@ object CampaignManager {
     // Simple state-less operations to query or initialize campaign
 
     fun isMissionActive(state: GameState): Boolean {
-        return state.campaignState?.activeMissionId != null
+        return state.campaignState.activeMissionId != null
     }
 
     fun getActiveMission(state: GameState): CampaignMission? {
-        val missionId = state.campaignState?.activeMissionId ?: return null
+        val missionId = state.campaignState.activeMissionId ?: return null
         return CampaignRegistry.MISSIONS.find { it.id == missionId }
     }
 }
