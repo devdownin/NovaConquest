@@ -10,7 +10,7 @@
 
 | # | Sévérité | Domaine | Constat |
 |---|----------|---------|---------|
-| B1 | 🔴 Bloquant | Build | Versions Kotlin mélangées (2.2.10 Android / 1.9.23 JVM+serialization) + AGP `9.2.1` + Gradle `9.4.1` non résolus |
+| B1 | ✅ Corrigé | Build | Versions Kotlin mélangées (2.2.10 Android / 1.9.23 JVM+serialization) + AGP `9.2.1` + Gradle `9.4.1` non résolus — **résolu** (voir §3) |
 | B2 | 🟠 Élevé | Combat | Siège et capture de planète **sans contrôle d'adjacence** — possibles depuis n'importe où sur la carte |
 | B3 | 🟠 Élevé | Combat | La riposte s'applique même quand l'attaquant est **hors de portée** du défenseur — annule l'avantage des unités à distance |
 | B4 | 🟠 Élevé | Combat | `AttackUnit` n'interdit ni le tir ami ni l'attaque d'un allié (aucun contrôle de faction/relation) |
@@ -162,6 +162,26 @@ Wrapper : `gradle-9.4.1-bin.zip`.
 8.13` qui précédait le commit), via le version-catalog `gradle/libs.versions.toml` pour éviter
 toute dérive. Vérifier la matrice AGP↔Gradle↔Kotlin avant de committer, puis relancer
 `gradle :core:hex:test :core:domain:test :core:engine:test` et `:app:assembleDebug`.
+
+### ✅ Correctif appliqué
+Retour à une pile unique, cohérente et alignée sur la CI (JDK 17) et sur `CLAUDE.md` :
+- **Kotlin `1.9.23`** pour tous les plugins (`android`, `jvm`, `serialization`) ; suppression du
+  plugin `org.jetbrains.kotlin.plugin.compose` (spécifique à Kotlin 2.x) et **restauration de
+  `composeOptions { kotlinCompilerExtensionVersion = "1.5.11" }`** (couple documenté Kotlin
+  1.9.23 ↔ Compose compiler 1.5.11).
+- **AGP `8.13.2` + Gradle `8.13`** (la paire que le dépôt utilisait avant la migration à moitié
+  faite).
+- **Java 17** rétabli dans les 4 modules (`sourceCompatibility`/`targetCompatibility`/`jvmTarget`/
+  `jvmToolchain`) — évite l'échec de provisionnement de toolchain JDK 21 sur la CI (JDK 17, sans
+  résolveur Foojay configuré).
+- Nettoyage de `gradle.properties` (retrait des flags spécifiques AGP 9 : `android.builtInKotlin`,
+  `android.newDsl`, etc.) et de `gradle/libs.versions.toml`.
+- **`local.properties` retiré du suivi git et ajouté au `.gitignore`** : il contenait un
+  `sdk.dir` Windows (`C:\Users\...`) qui aurait cassé le build `:app` sur la CI Linux.
+
+> Le build n'a pas pu être exécuté dans l'environnement d'audit (pas de SDK Android, `dl.google.com`
+> bloqué par le proxy, wrapper Gradle non téléchargeable). La validation finale s'effectue via la
+> CI, déclenchée par le push sur la branche `claude/**`.
 
 ---
 

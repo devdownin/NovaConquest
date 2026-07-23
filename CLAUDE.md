@@ -50,7 +50,7 @@ Four Gradle modules with a strict one-way dependency chain — keep edges going 
 - **`:core:engine`** — pure Kotlin. The reducer + side-effect machinery. Houses `GameEngine` (StateFlow holder), `MapFactory`, `CombatResolver`, `VisionSystem`, `UtilityEvaluator` (AI), `GameGridMap` (adapter so `HexPathfinder` can query the live `GameState`), and `save/` (`SaveManager`, `SavedGameSnapshotCodec`). **No Android imports.** Tests against this module run on the JVM and are what CI actually exercises.
 - **`:app`** — the only Android module. Single-activity Compose UI (`MainActivity`), per-screen Composables under `ui/screens/`, shared widgets under `ui/components/`, theming under `ui/theme/`, `audio/AudioManager`, and `ui/viewmodels/GameViewModel` (`AndroidViewModel`) which owns a `GameEngine` and a `SaveManager`. Auto-saves on every `EndTurn`.
 
-JVM target is 17 across every module. Compose compiler 1.5.11, Kotlin 1.9.23, AGP 8.4.1, `compileSdk/targetSdk` 34, `minSdk` 26. The Compose BOM is `2024.05.00`.
+JVM target is 17 across every module. Compose compiler 1.5.11, Kotlin 1.9.23, AGP 8.13.2, Gradle 8.13, `compileSdk/targetSdk` 34, `minSdk` 26. The Compose BOM is `2024.05.00`.
 
 ## Unidirectional data flow — the single most important pattern
 
