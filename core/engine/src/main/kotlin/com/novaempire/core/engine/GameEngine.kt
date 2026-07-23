@@ -147,9 +147,7 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
 
             if (prevState.activeEvent != currentState.activeEvent &&
                 currentState.activeEvent != com.novaempire.core.domain.models.GalacticEvent.NONE) {
-                _effects.emit(GameEffect.ShowNotification(
-                    "${currentState.activeEvent.displayName}: ${currentState.activeEvent.description}", "ORANGE"
-                ))
+                _effects.emit(GameEffect.ShowNotification(eventBanner(currentState), "ORANGE"))
             }
 
             while (currentState.activeFaction != humanFaction) {
@@ -165,7 +163,8 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
                     _effects.emit(GameEffect.ShowNotification("IA : tour forcé (délai dépassé)", "ORANGE"))
                     currentState
                 }
-                currentState = updateVision(currentState)
+                // No explicit updateVision here: the reduce(EndTurn) below recomputes vision for
+                // every faction via advanceTurn, so an extra full recompute would be pure waste.
                 val prevForAI = currentState
                 currentState = reduce(currentState, GameIntent.EndTurn).newState
                 if (prevForAI.activeEvent != currentState.activeEvent &&
@@ -208,6 +207,13 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         }
     }
 
+    private fun eventBanner(state: GameState): String {
+        val e = state.activeEvent
+        val target = state.eventTargetFaction
+        return if (target != null) "${e.displayName} → ${target.displayName}: ${e.description}"
+               else "${e.displayName}: ${e.description}"
+    }
+
     // ── Reducer dispatcher ────────────────────────────────────────────────────
 
     internal fun reduce(state: GameState, intent: GameIntent): GameResult = when (intent) {
@@ -217,13 +223,12 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
             GameResult(createInitialState(intent.mapSize, intent.archetype))
         is GameIntent.LoadGame ->
             GameResult(updateVision(intent.loadedState))
-        is GameIntent.StartCampaign ->
-            GameResult(state.copy(campaignState = state.campaignState?.copy(activeMissionId = intent.missionId) ?: com.novaempire.core.domain.state.CampaignState(activeMissionId = intent.missionId)))
+        is GameIntent.StartCampaign -> handleStartCampaign(state, intent)
         is GameIntent.EndTurn ->
             GameResult(updateVision(TurnManager.advanceTurn(state)))
         is GameIntent.SelectFaction ->
             GameResult(state.copy(activeFaction = intent.faction, humanFaction = intent.faction))
-        is GameIntent.MoveUnit     -> handleMoveUnit(state, intent)
+        is GameIntent.MoveUnit     -> handleMoveUnit(state, intent, deps)
         is GameIntent.AttackUnit   -> handleAttackUnit(state, intent, deps)
         is GameIntent.ResearchTech -> handleResearchTech(state, intent)
         is GameIntent.BuildUnit    -> handleBuildUnit(state, intent)

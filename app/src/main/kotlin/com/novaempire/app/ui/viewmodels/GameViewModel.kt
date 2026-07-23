@@ -39,20 +39,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         saveRepository = SaveManager(saveDir)
         AudioManager.init(application)
 
-        // Observe game state for audio events (legacy - now moving to effects)
-        /*
+        // Auto-save once an end-of-turn cycle has actually settled. EndTurn is processed
+        // asynchronously (AI turns can take seconds), so saving the snapshot synchronously in
+        // dispatch() persisted the *pre*-turn state. Observing the turn counter instead captures
+        // the fully-resolved state after every completed turn.
         viewModelScope.launch {
-            gameState.collectLatest { state ->
-                state.lastCombatEvent?.let { event ->
-                    if (event.targetDestroyed) {
-                        AudioManager.playSound(SoundType.COMBAT_EXPLOSION)
-                    } else {
-                        AudioManager.playSound(SoundType.COMBAT_LASER)
-                    }
+            var lastSavedTurn = engine.state.value.turn
+            engine.state.collect { state ->
+                if (state.turn != lastSavedTurn) {
+                    lastSavedTurn = state.turn
+                    withContext(Dispatchers.IO) { saveRepository.saveGame(state) }
                 }
             }
         }
-        */
 
         // Observe game effects (new architectural approach)
         viewModelScope.launch {
@@ -83,11 +82,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         
         engine.processIntent(intent)
 
-        // Auto-save and sound on EndTurn
+        // Sound on EndTurn. The autosave itself happens in the turn-counter observer above,
+        // once the (asynchronous) end-of-turn processing has fully settled.
         if (intent is GameIntent.EndTurn) {
             AudioManager.playSound(SoundType.END_TURN)
-            val snapshot = engine.state.value
-            viewModelScope.launch(Dispatchers.IO) { saveRepository.saveGame(snapshot) }
         }
     }
 

@@ -173,6 +173,49 @@ fun TacticalMapScreen(
             .toSet()
     }
 
+    // The selected unit's full attack reach (every in-range hex), so the player can read its range.
+    val attackRangeHexes = remember(selectedHex, gameState.units, gameState.map.tiles, gameState.activeFaction) {
+        val sel = selectedHex ?: return@remember emptySet<HexCoord>()
+        val unit = gameState.units[sel] ?: return@remember emptySet<HexCoord>()
+        if (unit.faction != gameState.activeFaction || unit.hasAttacked) return@remember emptySet<HexCoord>()
+        gameState.map.tiles.keys.filter { it != sel && sel.distanceTo(it) <= unit.type.range }.toSet()
+    }
+
+    // Targets that cannot retaliate (attacker sits beyond their weapon range) — a free hit (see B3).
+    val safeTargetCoords = remember(selectedHex, gameState.units, gameState.activeFaction) {
+        val sel = selectedHex ?: return@remember emptySet<HexCoord>()
+        val unit = gameState.units[sel] ?: return@remember emptySet<HexCoord>()
+        if (unit.faction != gameState.activeFaction || unit.hasAttacked) return@remember emptySet<HexCoord>()
+        gameState.units.values
+            .filter { it.faction != gameState.activeFaction &&
+                sel.distanceTo(it.position) <= unit.type.range &&
+                sel.distanceTo(it.position) > it.type.range }
+            .map { it.position }
+            .toSet()
+    }
+
+    // Adjacent enemy planets the selected unit can capture (level 0) or siege (level > 0) — see B2.
+    val capturableCoords = remember(selectedHex, gameState.units, gameState.map.tiles, gameState.activeFaction) {
+        val sel = selectedHex ?: return@remember emptySet<HexCoord>()
+        val unit = gameState.units[sel] ?: return@remember emptySet<HexCoord>()
+        if (unit.faction != gameState.activeFaction || unit.hasAttacked) return@remember emptySet<HexCoord>()
+        gameState.map.tiles.values
+            .filter { it.terrain == TerrainType.PLANET && it.owner != gameState.activeFaction &&
+                it.systemLevel == 0 && sel.distanceTo(it.coord) <= 1 }
+            .map { it.coord }
+            .toSet()
+    }
+    val siegeableCoords = remember(selectedHex, gameState.units, gameState.map.tiles, gameState.activeFaction) {
+        val sel = selectedHex ?: return@remember emptySet<HexCoord>()
+        val unit = gameState.units[sel] ?: return@remember emptySet<HexCoord>()
+        if (unit.faction != gameState.activeFaction || unit.hasAttacked) return@remember emptySet<HexCoord>()
+        gameState.map.tiles.values
+            .filter { it.terrain == TerrainType.PLANET && it.owner != gameState.activeFaction &&
+                it.systemLevel > 0 && sel.distanceTo(it.coord) <= 1 }
+            .map { it.coord }
+            .toSet()
+    }
+
     LaunchedEffect(gameState.lastCombatEvent) {
         gameState.lastCombatEvent?.let { combat ->
             activeCombatEvent = combat
@@ -476,11 +519,35 @@ fun TacticalMapScreen(
                             )
                         }
 
-                        // Attack range overlay (red outline on enemy units)
-                        if (attackableCoords.contains(tile.coord)) {
+                        // Attack reach: faint red fill on every in-range hex (shows the unit's range)
+                        if (attackRangeHexes.contains(tile.coord)) {
                             drawHexagonPath(
                                 centerX = x, centerY = y, radius = hexRadius,
+                                color = NeonRed.copy(alpha = 0.10f), fill = true
+                            )
+                        }
+
+                        // Target outline: green = no retaliation (out-ranges the enemy), red = will be countered
+                        when {
+                            safeTargetCoords.contains(tile.coord) -> drawHexagonPath(
+                                centerX = x, centerY = y, radius = hexRadius,
+                                color = NeonGreen.copy(alpha = 0.85f), strokeWidth = 3.5f
+                            )
+                            attackableCoords.contains(tile.coord) -> drawHexagonPath(
+                                centerX = x, centerY = y, radius = hexRadius,
                                 color = NeonRed.copy(alpha = 0.55f), strokeWidth = 3f
+                            )
+                        }
+
+                        // Adjacent enemy planets: gold = capturable (level 0), orange = siegeable
+                        when {
+                            capturableCoords.contains(tile.coord) -> drawHexagonPath(
+                                centerX = x, centerY = y, radius = hexRadius,
+                                color = NeonGold.copy(alpha = 0.85f), strokeWidth = 3.5f
+                            )
+                            siegeableCoords.contains(tile.coord) -> drawHexagonPath(
+                                centerX = x, centerY = y, radius = hexRadius,
+                                color = NeonOrange.copy(alpha = 0.85f), strokeWidth = 3f
                             )
                         }
 

@@ -2,114 +2,46 @@ package com.novaempire.core.engine
 
 import com.novaempire.core.domain.models.DiplomaticRelation
 import com.novaempire.core.domain.models.Faction
+import com.novaempire.core.domain.models.GameUnit
 import com.novaempire.core.domain.models.HeroRegistry
+import com.novaempire.core.domain.models.HexTile
 import com.novaempire.core.domain.models.TechRegistry
+import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.state.BuildOrder
 import com.novaempire.core.domain.state.GameState
+import com.novaempire.core.domain.state.ResearchProgress
 import com.novaempire.core.domain.models.BonusType
 import com.novaempire.core.hex.HexCoord
+import com.novaempire.core.hex.HexPathfinder
 
 object UtilityEvaluator : AIStrategy {
+
+    /** A candidate action for a unit, ranked by its estimated utility. */
+    private data class ScoredAction(val score: Double, val intent: GameIntent)
+
+    /** Below this score an action isn't worth taking (the unit moves/regroups instead). */
+    private const val ACTION_THRESHOLD = 1.0
 
     override suspend fun executeAITurn(
         state: GameState,
         faction: Faction,
         reduce: (GameState, GameIntent) -> GameState
     ): GameState {
-        kotlinx.coroutines.delay(0)
         val aiFaction = faction
         var currentState = state
 
+        // Strategic layer.
         currentState = evaluateDiplomacy(currentState, aiFaction, reduce)
         currentState = evaluateEconomyAndTech(currentState, aiFaction)
         currentState = evaluateHeroes(currentState, aiFaction)
         currentState = evaluateProduction(currentState, aiFaction)
 
-        val aiPlayerState = currentState.playerStates[aiFaction]
-        val myUnits = currentState.units.values.filter { it.faction == aiFaction && (!it.hasMoved || !it.hasAttacked) }
-
-        for (unit in myUnits) {
-            val possibleTargets = currentState.units.values.filter {
-                it.faction != aiFaction &&
-                (aiPlayerState?.relations?.get(it.faction) == DiplomaticRelation.WAR || it.faction == Faction.ANCIENT_NPC)
-            }
-
-            val targetPlanets = currentState.map.tiles.values.filter {
-                it.terrain == com.novaempire.core.domain.models.TerrainType.PLANET &&
-                it.owner != aiFaction &&
-                (it.owner == null || aiPlayerState?.relations?.get(it.owner) != DiplomaticRelation.ALLIANCE)
-            }
-
-            val hpCritical = unit.currentHp.toFloat() / unit.type.maxHp < 0.30f
-            val threatNearby = possibleTargets.any { it.position.distanceTo(unit.position) <= 2 }
-            if (hpCritical && !unit.hasMoved && threatNearby && unit.type.movement > 0) {
-                val ownedPlanets = currentState.map.tiles.values.filter { it.owner == aiFaction }
-                val retreatTarget = ownedPlanets.minByOrNull { it.coord.distanceTo(unit.position) }
-                if (retreatTarget != null && retreatTarget.coord != unit.position) {
-                    val gridMap = GameGridMap(currentState, aiFaction)
-                    val totalMovement = effectiveMovement(currentState, aiFaction, unit.type.movement)
-                    val path = com.novaempire.core.hex.HexPathfinder.findPath(
-                        start = unit.position, goal = retreatTarget.coord,
-                        gridMap = gridMap, maxCost = totalMovement
-                    )
-                    if (path != null && path.isNotEmpty()) {
-                        val destination = path.take(totalMovement).lastOrNull { currentState.units[it] == null }
-                        if (destination != null) {
-                            currentState = reduce(currentState, GameIntent.MoveUnit(unit.position, destination))
-                            continue
-                        }
-                    }
-                }
-            }
-
-            val adjacentPlanet = targetPlanets.find { it.coord.distanceTo(unit.position) <= 1 }
-            if (adjacentPlanet != null && !unit.hasAttacked) {
-                currentState = if (adjacentPlanet.systemLevel == 0) {
-                    reduce(currentState, GameIntent.CapturePlanet(unit.position, adjacentPlanet.coord))
-                } else {
-                    reduce(currentState, GameIntent.SiegePlanet(unit.position, adjacentPlanet.coord))
-                }
-                continue
-            }
-
-            val adjacentTarget = possibleTargets.find { it.position.distanceTo(unit.position) <= unit.type.range }
-            if (adjacentTarget != null && !unit.hasAttacked) {
-                currentState = reduce(currentState, GameIntent.AttackUnit(unit.position, adjacentTarget.position))
-            } else if (!unit.hasMoved && unit.type.movement > 0) {
-                val closestUnit = possibleTargets.minByOrNull { it.position.distanceTo(unit.position) }
-                val closestPlanet = targetPlanets.minByOrNull { it.coord.distanceTo(unit.position) }
-
-                val goal = when {
-                    closestPlanet != null && (closestUnit == null ||
-                        closestPlanet.coord.distanceTo(unit.position) < closestUnit.position.distanceTo(unit.position)) ->
-                        closestPlanet.coord
-                    closestUnit != null -> closestUnit.position
-                    else -> null
-                }
-
-                if (goal != null) {
-                    val gridMap = GameGridMap(currentState, aiFaction)
-                    val approachGoal = HexCoord.directions
-                        .map { goal + it }
-                        .filter { gridMap.isPassable(it) }
-                        .minByOrNull { it.distanceTo(unit.position) }
-
-                    if (approachGoal != null) {
-                        val totalMovement = effectiveMovement(currentState, aiFaction, unit.type.movement)
-                        val path = com.novaempire.core.hex.HexPathfinder.findPath(
-                            start = unit.position, goal = approachGoal,
-                            gridMap = gridMap, maxCost = totalMovement
-                        )
-                        if (path != null && path.isNotEmpty()) {
-                            val destination = path.take(totalMovement).lastOrNull { currentState.units[it] == null }
-                            if (destination != null) {
-                                currentState = reduce(currentState, GameIntent.MoveUnit(unit.position, destination))
-                            }
-                        }
-                    }
-                }
-            }
+        // Tactical layer: score candidate actions per unit and take the best. Iterate over a stable
+        // snapshot of unit ids and re-fetch each unit from the live state (it may move or die mid-turn).
+        val unitIds = currentState.units.values.filter { it.faction == aiFaction }.map { it.id }
+        for (id in unitIds) {
+            currentState = actUnit(currentState, id, aiFaction, reduce)
         }
 
         val refreshedUnits = currentState.units.mapValues {
@@ -117,6 +49,167 @@ object UtilityEvaluator : AIStrategy {
             else it.value
         }
         return currentState.copy(units = refreshedUnits)
+    }
+
+    /** Decide and execute one unit's turn: strike if worthwhile, else reposition then strike. */
+    private fun actUnit(
+        state: GameState,
+        unitId: String,
+        aiFaction: Faction,
+        reduce: (GameState, GameIntent) -> GameState
+    ): GameState {
+        var s = state
+        var unit = s.units.values.find { it.id == unitId } ?: return s
+
+        // 1. Best combat action from the current position.
+        if (!unit.hasAttacked) {
+            val best = bestCombatAction(s, unit, aiFaction)
+            if (best != null && best.score >= ACTION_THRESHOLD) {
+                return reduce(s, best.intent) // combat consumes the whole turn (sets hasMoved + hasAttacked)
+            }
+        }
+
+        // 2. Reposition: retreat if wounded & threatened, advance on the best objective, else regroup.
+        unit = s.units.values.find { it.id == unitId } ?: return s
+        if (!unit.hasMoved && unit.type.movement > 0) {
+            val dest = chooseDestination(s, unit, aiFaction)
+            if (dest != null && dest != unit.position) {
+                s = reduce(s, GameIntent.MoveUnit(unit.position, dest))
+                // 3. Opportunistic strike from the new position.
+                val moved = s.units.values.find { it.id == unitId }
+                if (moved != null && !moved.hasAttacked) {
+                    val best = bestCombatAction(s, moved, aiFaction)
+                    if (best != null && best.score >= ACTION_THRESHOLD) {
+                        s = reduce(s, best.intent)
+                    }
+                }
+            }
+        }
+        return s
+    }
+
+    /** Highest-utility attack / capture / siege the unit can perform right now, or null. */
+    private fun bestCombatAction(state: GameState, unit: GameUnit, aiFaction: Faction): ScoredAction? {
+        val actions = mutableListOf<ScoredAction>()
+        val myDamage = estimatedAttack(state, unit, aiFaction)
+
+        for (target in enemyUnitsOf(state, aiFaction)) {
+            val dist = unit.position.distanceTo(target.position)
+            if (dist > unit.type.range) continue
+            var score = 8.0
+            val kills = myDamage >= target.currentHp
+            if (kills) score += 45.0 + target.type.cost
+            else score += 18.0 * (myDamage.toDouble() / target.currentHp).coerceAtMost(1.0)
+            score += (1.0 - target.currentHp.toDouble() / target.type.maxHp) * 12.0 // finish the wounded
+            val countered = dist <= target.type.range
+            if (!countered) score += 15.0 // out-ranging the enemy = free damage
+            else if (!kills && target.type.attack >= unit.currentHp) score -= 30.0 // avoid suicidal chip
+            actions += ScoredAction(score, GameIntent.AttackUnit(unit.position, target.position))
+        }
+
+        for (planet in enemyPlanetsOf(state, aiFaction)) {
+            if (unit.position.distanceTo(planet.coord) > 1) continue
+            if (planet.systemLevel == 0) {
+                actions += ScoredAction(70.0, GameIntent.CapturePlanet(unit.position, planet.coord))
+            } else {
+                var score = 22.0 + planet.systemLevel * 4.0
+                if (planet.systemLevel * 2 >= unit.currentHp) score -= 35.0 // don't die to planetary defences
+                actions += ScoredAction(score, GameIntent.SiegePlanet(unit.position, planet.coord))
+            }
+        }
+        return actions.maxByOrNull { it.score }
+    }
+
+    /** Deterministic damage estimate (mid-variance, no terrain) used for scoring. */
+    private fun estimatedAttack(state: GameState, unit: GameUnit, faction: Faction): Int {
+        val ps = state.playerStates[faction]
+        val pct = BonusRegistry.sum(BonusType.ATTACK_PERCENT, ps, state.activeEvent)
+        val flat = BonusRegistry.sum(BonusType.ATTACK_FLAT, ps, state.activeEvent)
+        val percentBonus = if (pct > 0) maxOf(1, (unit.type.attack * pct / 100.0).toInt()) else 0
+        return unit.type.attack + percentBonus + flat
+    }
+
+    /** Where should this unit move? Retreat > advance-on-objective > regroup. */
+    private fun chooseDestination(state: GameState, unit: GameUnit, aiFaction: Faction): HexCoord? {
+        val gridMap = GameGridMap(state, aiFaction)
+        val movement = effectiveMovement(state, aiFaction, unit.type.movement)
+        val enemies = enemyUnitsOf(state, aiFaction)
+
+        val hpFrac = unit.currentHp.toFloat() / unit.type.maxHp
+        val threatened = enemies.any { it.position.distanceTo(unit.position) <= 2 }
+        if (hpFrac < 0.30f && threatened) {
+            val haven = state.map.tiles.values
+                .filter { it.owner == aiFaction && it.coord != unit.position }
+                .minByOrNull { it.coord.distanceTo(unit.position) }
+            if (haven != null) stepToward(state, unit, haven.coord, gridMap, movement)?.let { return it }
+        }
+
+        bestObjective(state, unit, aiFaction)?.let { objective ->
+            stepToward(state, unit, objective, gridMap, movement)?.let { return it }
+        }
+
+        // Regroup toward the fleet centroid so lone units don't wander off to die.
+        val allies = state.units.values.filter { it.faction == aiFaction && it.id != unit.id }
+        if (allies.isNotEmpty()) {
+            val centroid = fleetCentroid(allies)
+            if (centroid != unit.position) stepToward(state, unit, centroid, gridMap, movement)?.let { return it }
+        }
+        return null
+    }
+
+    /** The most attractive objective coord (enemy planet / enemy unit / threatened own planet). */
+    private fun bestObjective(state: GameState, unit: GameUnit, aiFaction: Faction): HexCoord? {
+        data class Obj(val coord: HexCoord, val value: Double)
+        val objs = mutableListOf<Obj>()
+
+        for (planet in enemyPlanetsOf(state, aiFaction)) {
+            objs += Obj(planet.coord, if (planet.systemLevel == 0) 65.0 else 30.0 + planet.systemLevel * 3.0)
+        }
+        for (target in enemyUnitsOf(state, aiFaction)) {
+            val wounded = (1.0 - target.currentHp.toDouble() / target.type.maxHp) * 10.0
+            objs += Obj(target.position, 12.0 + target.type.cost + wounded)
+        }
+        val enemies = enemyUnitsOf(state, aiFaction)
+        for (planet in state.map.tiles.values.filter { it.owner == aiFaction }) {
+            if (enemies.any { it.position.distanceTo(planet.coord) <= 2 }) objs += Obj(planet.coord, 45.0)
+        }
+        if (objs.isEmpty()) return null
+        // Trade value off against distance so nearby, valuable objectives win.
+        return objs.maxByOrNull { it.value - unit.position.distanceTo(it.coord) * 2.0 }?.coord
+    }
+
+    /** Walk as far along the path toward [goal] as this turn's movement allows. */
+    private fun stepToward(state: GameState, unit: GameUnit, goal: HexCoord, gridMap: GameGridMap, movement: Int): HexCoord? {
+        val approach = if (gridMap.isPassable(goal)) goal
+        else HexCoord.directions.map { goal + it }
+            .filter { gridMap.isPassable(it) }
+            .minByOrNull { it.distanceTo(unit.position) } ?: return null
+        if (approach == unit.position) return null
+        val path = HexPathfinder.findPath(unit.position, approach, gridMap) ?: return null
+        return path.take(movement).lastOrNull { state.units[it] == null }
+    }
+
+    private fun fleetCentroid(allies: List<GameUnit>): HexCoord =
+        HexCoord.round(
+            allies.map { it.position.q }.average(),
+            allies.map { it.position.r }.average(),
+            allies.map { it.position.s }.average()
+        )
+
+    private fun enemyUnitsOf(state: GameState, aiFaction: Faction): List<GameUnit> {
+        val rel = state.playerStates[aiFaction]?.relations
+        return state.units.values.filter {
+            it.faction != aiFaction &&
+            (rel?.get(it.faction) == DiplomaticRelation.WAR || it.faction == Faction.ANCIENT_NPC)
+        }
+    }
+
+    private fun enemyPlanetsOf(state: GameState, aiFaction: Faction): List<HexTile> {
+        val rel = state.playerStates[aiFaction]?.relations
+        return state.map.tiles.values.filter {
+            it.terrain == TerrainType.PLANET && it.owner != aiFaction &&
+            (it.owner == null || rel?.get(it.owner) != DiplomaticRelation.ALLIANCE)
+        }
     }
 
     private fun effectiveMovement(state: GameState, faction: Faction, baseMovement: Int): Int =
@@ -207,22 +300,22 @@ object UtilityEvaluator : AIStrategy {
 
     private fun evaluateEconomyAndTech(state: GameState, faction: Faction): GameState {
         val playerState = state.playerStates[faction] ?: return state
+        // Route the AI through the same research pipeline as the player: queue one tech and pay
+        // its cost, then let TurnManager tick it down over turns — no more instant unlocks.
+        if (playerState.researchInProgress != null) return state
         val affordableTech = TechRegistry.ALL_TECHS.find { tech ->
             val isAvailable = tech.requiresTechId == null || playerState.techUnlocked.contains(tech.requiresTechId)
             val isUnlocked = playerState.techUnlocked.contains(tech.id)
-            val cost = CostCalculator.techCost(tech.id, playerState.techUnlocked, playerState, state.activeEvent)
+            val cost = CostCalculator.techCost(tech.id, playerState.techUnlocked, playerState, state.activeEvent, state.eventTargetFaction)
             isAvailable && !isUnlocked && playerState.credits >= cost
-        }
+        } ?: return state
 
-        if (affordableTech != null) {
-            val cost = CostCalculator.techCost(affordableTech.id, playerState.techUnlocked, playerState, state.activeEvent)
-            val newPlayerStates = state.playerStates.toMutableMap()
-            newPlayerStates[faction] = playerState.copy(
-                credits = playerState.credits - cost,
-                techUnlocked = playerState.techUnlocked + affordableTech.id
-            )
-            return state.copy(playerStates = newPlayerStates)
-        }
-        return state
+        val cost = CostCalculator.techCost(affordableTech.id, playerState.techUnlocked, playerState, state.activeEvent, state.eventTargetFaction)
+        val newPlayerStates = state.playerStates.toMutableMap()
+        newPlayerStates[faction] = playerState.copy(
+            credits = playerState.credits - cost,
+            researchInProgress = ResearchProgress(affordableTech.id, affordableTech.tier + 1)
+        )
+        return state.copy(playerStates = newPlayerStates)
     }
 }

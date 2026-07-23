@@ -185,4 +185,86 @@ class IntentReducerTest {
         // Owner must be unchanged
         assertEquals(Faction.TRADERS, e.state.value.map.tiles[planetCoord]!!.owner)
     }
+
+    // ── Adjacency & friendly-fire guards ───────────────────────────────────────
+
+    /** DOMINION unit at (0,0,0) with an enemy planet placed [distance] hexes along the q-axis. */
+    private fun stateWithPlanetAtDistance(distance: Int, planetLevel: Int, planetOwner: Faction?): GameState {
+        val unitCoord = HexCoord(0, 0, 0)
+        val planetCoord = HexCoord(distance, -distance, 0)
+        return GameState(
+            activeFaction = Faction.DOMINION,
+            humanFaction = Faction.DOMINION,
+            playerStates = mapOf(Faction.DOMINION to PlayerState(Faction.DOMINION, credits = 100, capitalCoord = unitCoord)),
+            map = GameMap(
+                tiles = mapOf(
+                    unitCoord to HexTile(unitCoord, TerrainType.EMPTY),
+                    planetCoord to HexTile(planetCoord, TerrainType.PLANET, planetLevel, planetOwner)
+                )
+            ),
+            units = mapOf(
+                unitCoord to GameUnit(type = UnitType.CRUISER, faction = Faction.DOMINION, position = unitCoord, currentHp = 25)
+            )
+        )
+    }
+
+    @Test
+    fun siegeFailsWhenNotAdjacent() = runBlocking {
+        val e = engine()
+        e.processIntent(GameIntent.LoadGame(stateWithPlanetAtDistance(distance = 2, planetLevel = 3, planetOwner = Faction.TRADERS)))
+        delay(50)
+        val planetCoord = HexCoord(2, -2, 0)
+        e.processIntent(GameIntent.SiegePlanet(HexCoord(0, 0, 0), planetCoord))
+        delay(100)
+        // Level unchanged: siege rejected from 2 hexes away
+        assertEquals(3, e.state.value.map.tiles[planetCoord]!!.systemLevel)
+    }
+
+    @Test
+    fun captureFailsWhenNotAdjacent() = runBlocking {
+        val e = engine()
+        e.processIntent(GameIntent.LoadGame(stateWithPlanetAtDistance(distance = 2, planetLevel = 0, planetOwner = Faction.TRADERS)))
+        delay(50)
+        val planetCoord = HexCoord(2, -2, 0)
+        e.processIntent(GameIntent.CapturePlanet(HexCoord(0, 0, 0), planetCoord))
+        delay(100)
+        // Owner unchanged: capture rejected from 2 hexes away
+        assertEquals(Faction.TRADERS, e.state.value.map.tiles[planetCoord]!!.owner)
+    }
+
+    @Test
+    fun startCampaignPutsScriptedEnemyAtWar() = runBlocking {
+        val e = engine()
+        // mission_1: player DOMINION vs enemy XYLAR
+        e.processIntent(GameIntent.StartCampaign("mission_1"))
+        delay(100)
+        val s = e.state.value
+        assertEquals("mission_1", s.campaignState.activeMissionId)
+        assertEquals(DiplomaticRelation.WAR, s.playerStates[Faction.DOMINION]!!.relations[Faction.XYLAR])
+        assertEquals(DiplomaticRelation.WAR, s.playerStates[Faction.XYLAR]!!.relations[Faction.DOMINION])
+    }
+
+    @Test
+    fun attackFailsOnOwnUnit() = runBlocking {
+        val e = engine()
+        val a = HexCoord(0, 0, 0)
+        val b = HexCoord(1, -1, 0)
+        val friendly = GameState(
+            activeFaction = Faction.DOMINION,
+            humanFaction = Faction.DOMINION,
+            playerStates = mapOf(Faction.DOMINION to PlayerState(Faction.DOMINION, credits = 100)),
+            map = GameMap(tiles = mapOf(a to HexTile(a, TerrainType.EMPTY), b to HexTile(b, TerrainType.EMPTY))),
+            units = mapOf(
+                a to GameUnit(type = UnitType.CRUISER, faction = Faction.DOMINION, position = a, currentHp = 25),
+                b to GameUnit(type = UnitType.FIGHTER, faction = Faction.DOMINION, position = b, currentHp = UnitType.FIGHTER.maxHp)
+            )
+        )
+        e.processIntent(GameIntent.LoadGame(friendly))
+        delay(50)
+        e.processIntent(GameIntent.AttackUnit(a, b))
+        delay(100)
+        // Friendly unit untouched and the attacker's action was not consumed
+        assertEquals(UnitType.FIGHTER.maxHp, e.state.value.units[b]?.currentHp)
+        assertEquals(false, e.state.value.units[a]?.hasAttacked)
+    }
 }

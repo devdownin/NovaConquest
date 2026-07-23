@@ -45,7 +45,7 @@ private fun GameState.withUpdatedPlayer(player: PlayerState): GameState {
 
 // ── Intent handlers ───────────────────────────────────────────────────────────
 
-internal fun handleMoveUnit(state: GameState, intent: GameIntent.MoveUnit): GameResult {
+internal fun handleMoveUnit(state: GameState, intent: GameIntent.MoveUnit, deps: GameEngineDependencies): GameResult {
     val unit = state.units[intent.from] ?: return GameResult(state, "No unit at selected position.")
     IntentValidator.ownedByActive(unit, state.activeFaction)?.let { return GameResult(state, it) }
     IntentValidator.notMoved(unit)?.let { return GameResult(state, it) }
@@ -63,8 +63,8 @@ internal fun handleMoveUnit(state: GameState, intent: GameIntent.MoveUnit): Game
     updatedUnits[intent.to] = unit.copy(position = intent.to, hasMoved = true)
     val movedState = updateVision(state.copy(units = updatedUnits), setOf(unit.faction))
     val freshHexes = (movedState.playerStates[unit.faction]?.exploredHexes ?: emptySet()) - preExplored
-    return if (freshHexes.isNotEmpty() && Random.nextFloat() < 0.3f) {
-        applyExplorationDiscovery(movedState, unit.faction)
+    return if (freshHexes.isNotEmpty() && deps.rng.nextFloat() < 0.3f) {
+        applyExplorationDiscovery(movedState, unit.faction, deps.rng)
     } else {
         GameResult(movedState)
     }
@@ -75,6 +75,8 @@ internal fun handleAttackUnit(state: GameState, intent: GameIntent.AttackUnit, d
     IntentValidator.ownedByActive(unit, state.activeFaction)?.let { return GameResult(state, it) }
     IntentValidator.notAttacked(unit)?.let { return GameResult(state, it) }
     val defender = state.units[intent.defender] ?: return GameResult(state, "Target not found.")
+    if (defender.faction == unit.faction)
+        return GameResult(state, "You cannot attack your own units.")
     if (intent.attacker.distanceTo(intent.defender) > unit.type.range)
         return GameResult(state, "Target is out of range.")
     return GameResult(updateVision(
@@ -91,7 +93,7 @@ internal fun handleResearchTech(state: GameState, intent: GameIntent.ResearchTec
         return GameResult(state, "Prerequisite technology not researched.")
     if (playerState.techUnlocked.contains(intent.techId))
         return GameResult(state, "Technology already researched.")
-    val cost = CostCalculator.techCost(intent.techId, playerState.techUnlocked, playerState, state.activeEvent)
+    val cost = CostCalculator.techCost(intent.techId, playerState.techUnlocked, playerState, state.activeEvent, state.eventTargetFaction)
     IntentValidator.canAfford(playerState, cost)?.let { return GameResult(state, it) }
     return GameResult(state.withUpdatedPlayer(playerState.copy(
         credits = playerState.credits - cost,
@@ -138,11 +140,35 @@ internal fun handleChangeRelation(state: GameState, intent: GameIntent.ChangeRel
     return GameResult(state.copy(playerStates = newPlayerStates))
 }
 
+internal fun handleStartCampaign(state: GameState, intent: GameIntent.StartCampaign): GameResult {
+    var next = state.copy(campaignState = state.campaignState.copy(activeMissionId = intent.missionId))
+    val mission = com.novaempire.core.domain.models.CampaignRegistry.MISSIONS.find { it.id == intent.missionId }
+    // A campaign mission is a duel: the scripted enemy must actually be at war, otherwise the
+    // utility AI (which only engages WAR / NPC targets) stays passive and the mission is trivial.
+    if (mission != null && mission.playerFaction != mission.enemyFaction) {
+        val players = next.playerStates.toMutableMap()
+        players[mission.playerFaction]?.let { p ->
+            players[mission.playerFaction] = p.copy(
+                relations = p.relations.toMutableMap().also { it[mission.enemyFaction] = DiplomaticRelation.WAR }
+            )
+        }
+        players[mission.enemyFaction]?.let { e ->
+            players[mission.enemyFaction] = e.copy(
+                relations = e.relations.toMutableMap().also { it[mission.playerFaction] = DiplomaticRelation.WAR }
+            )
+        }
+        next = next.copy(playerStates = players)
+    }
+    return GameResult(next)
+}
+
 internal fun handleSiegePlanet(state: GameState, intent: GameIntent.SiegePlanet, deps: GameEngineDependencies): GameResult {
     val unit = state.units[intent.attackerCoord] ?: return GameResult(state, "Attacker not found.")
     IntentValidator.ownedByActive(unit, state.activeFaction)?.let { return GameResult(state, it) }
     IntentValidator.notAttacked(unit)?.let { return GameResult(state, it) }
     IntentValidator.isPlanet(state, intent.planetCoord)?.let { return GameResult(state, it) }
+    if (intent.attackerCoord.distanceTo(intent.planetCoord) > 1)
+        return GameResult(state, "You must be adjacent to the planet to siege it.")
     if (state.map.tiles[intent.planetCoord]?.owner == state.activeFaction)
         return GameResult(state, "You cannot siege your own planet.")
     return GameResult(deps.combatSystem.siegePlanet(state, intent.attackerCoord, intent.planetCoord))
@@ -153,6 +179,8 @@ internal fun handleCapturePlanet(state: GameState, intent: GameIntent.CapturePla
     IntentValidator.ownedByActive(unit, state.activeFaction)?.let { return GameResult(state, it) }
     IntentValidator.notAttacked(unit)?.let { return GameResult(state, it) }
     IntentValidator.isPlanet(state, intent.planetCoord)?.let { return GameResult(state, it) }
+    if (intent.unitCoord.distanceTo(intent.planetCoord) > 1)
+        return GameResult(state, "You must be adjacent to the planet to capture it.")
     val tile = state.map.tiles[intent.planetCoord]!!
     if (tile.systemLevel > 0) return GameResult(state, "Planet must be at level 0 to be captured.")
     if (tile.owner == state.activeFaction) return GameResult(state, "You already own this planet.")
@@ -186,9 +214,9 @@ internal fun handleCancelBuild(state: GameState, intent: GameIntent.CancelBuild)
 
 // ── Exploration discovery ─────────────────────────────────────────────────────
 
-private fun applyExplorationDiscovery(state: GameState, faction: Faction): GameResult {
+private fun applyExplorationDiscovery(state: GameState, faction: Faction, rng: Random): GameResult {
     val playerState = state.playerStates[faction] ?: return GameResult(state)
-    return when (Random.nextInt(3)) {
+    return when (rng.nextInt(3)) {
         0 -> {
             val newPStates = state.playerStates.toMutableMap()
             newPStates[faction] = playerState.copy(credits = playerState.credits + 30)

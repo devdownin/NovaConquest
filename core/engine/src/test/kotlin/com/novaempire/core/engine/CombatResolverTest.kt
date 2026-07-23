@@ -92,6 +92,39 @@ class CombatResolverTest {
         assertEquals(false, resultState.lastCombatEvent?.targetDestroyed)
     }
 
+    @Test
+    fun rangedAttackerTakesNoCounterWhenOutOfDefenderRange() {
+        // BATTLESHIP (range 2) strikes a CRUISER (range 1) from 2 hexes away.
+        // The Cruiser cannot reach back, so the attacker must be unharmed.
+        val attackerCoord = HexCoord(0, 0, 0)
+        val defenderCoord = HexCoord(2, -2, 0) // distance 2
+        val attacker = GameUnit(type = UnitType.BATTLESHIP, faction = Faction.DOMINION, position = attackerCoord, currentHp = UnitType.BATTLESHIP.maxHp)
+        val defender = GameUnit(type = UnitType.CRUISER, faction = Faction.TRADERS, position = defenderCoord, currentHp = UnitType.CRUISER.maxHp)
+        val state = baseState(attackerCoord, defenderCoord, attacker, defender)
+
+        val resultState = CombatResolver.resolveCombatWithRng(state, attackerCoord, defenderCoord, fixedRng)
+
+        assertEquals("Attacker keeps full HP (no counter from out-of-range defender)",
+            UnitType.BATTLESHIP.maxHp, resultState.units[attackerCoord]?.currentHp)
+        assertTrue("Attacker marked as attacked", resultState.units[attackerCoord]?.hasAttacked == true)
+        assertTrue("Defender took damage", resultState.units[defenderCoord]!!.currentHp < UnitType.CRUISER.maxHp)
+    }
+
+    @Test
+    fun counterAttackAppliesDefenderAttackBonus() {
+        // TRADERS FIGHTER (4 ATK, no bonus) hits a DOMINION CRUISER (6 ATK + 10% faction bonus).
+        // With variance = 1.0, the counter is (6 + 1) = 7, not the un-bonused 6 → attacker 12-7 = 5 HP.
+        val attackerCoord = HexCoord(0, 0, 0)
+        val defenderCoord = HexCoord(1, -1, 0)
+        val attacker = GameUnit(type = UnitType.FIGHTER, faction = Faction.TRADERS, position = attackerCoord, currentHp = UnitType.FIGHTER.maxHp)
+        val defender = GameUnit(type = UnitType.CRUISER, faction = Faction.DOMINION, position = defenderCoord, currentHp = UnitType.CRUISER.maxHp)
+        val state = baseState(attackerCoord, defenderCoord, attacker, defender)
+
+        val resultState = CombatResolver.resolveCombatWithRng(state, attackerCoord, defenderCoord, fixedRng)
+
+        assertEquals("Counter uses the defender's +10% attack bonus", 5, resultState.units[attackerCoord]?.currentHp)
+    }
+
     // ── Siege / Capture ──────────────────────────────────────────────────────
 
     private fun stateWithPlanet(

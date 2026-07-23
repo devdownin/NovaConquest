@@ -21,12 +21,16 @@ object TurnManager {
         if (nextIndex == 0) {
             nextState = nextState.copy(turn = state.turn + 1)
             nextState = EventSystem.tick(nextState, rng)
-            // Domination tracking: count planets per faction; update dominationTurns.
-            val totalPlanets = nextState.map.tiles.values.count { it.terrain == TerrainType.PLANET }
+            // Domination tracking: count planets per faction in a single pass; update dominationTurns.
+            val planetsByOwner = nextState.map.tiles.values
+                .filter { it.terrain == TerrainType.PLANET }
+                .groupingBy { it.owner }
+                .eachCount()
+            val totalPlanets = planetsByOwner.values.sum()
             if (totalPlanets > 0) {
                 val newDomTurns = nextState.dominationTurns.toMutableMap()
                 for (f in allFactions) {
-                    val owned = nextState.map.tiles.values.count { it.terrain == TerrainType.PLANET && it.owner == f }
+                    val owned = planetsByOwner[f] ?: 0
                     newDomTurns[f] = if (owned * 100 / totalPlanets >= 60) (newDomTurns[f] ?: 0) + 1 else 0
                 }
                 nextState = nextState.copy(dominationTurns = newDomTurns)
@@ -53,12 +57,14 @@ object TurnManager {
             }
             var income = 6 + ownedPlanets.sumOf { 5 + it.systemLevel * 2 }
 
-            val incomePct = BonusRegistry.sum(BonusType.INCOME_PERCENT, nextPlayerState, nextState.activeEvent)
-            val incomeFlat = BonusRegistry.sum(BonusType.INCOME_FLAT, nextPlayerState, nextState.activeEvent)
+            val incomePct = BonusRegistry.sum(BonusType.INCOME_PERCENT, nextPlayerState, nextState.activeEvent, nextState.eventTargetFaction)
+            val incomeFlat = BonusRegistry.sum(BonusType.INCOME_FLAT, nextPlayerState, nextState.activeEvent, nextState.eventTargetFaction)
             income += (income * incomePct / 100.0).toInt() + incomeFlat
             income += ownedPlanets.count { it.specialty == PlanetSpecialty.TRADE_POST } * 8
 
-            val upkeep = nextState.units.values.filter { it.faction == nextFaction }.sumOf { it.type.upkeepCost }
+            val upkeepMod = BonusRegistry.sum(BonusType.UPKEEP_MODIFIER, nextPlayerState, nextState.activeEvent)
+            val upkeep = nextState.units.values.filter { it.faction == nextFaction }
+                .sumOf { maxOf(0, it.type.upkeepCost + upkeepMod) }
             income -= upkeep
 
             val newPlayerStates = nextState.playerStates.toMutableMap()
@@ -76,8 +82,10 @@ object TurnManager {
                 it.terrain == TerrainType.PLANET && it.owner == state.activeFaction &&
                 it.specialty == PlanetSpecialty.FORGE_WORLD
             }
+            val productionBonus = BonusRegistry.sum(BonusType.PRODUCTION_SPEED, buildingFactionState, nextState.activeEvent)
             for (order in buildingFactionState.buildQueue) {
-                val buildTick = if (forgeWorldCount > 0 && nextState.map.tiles[order.planetCoord]?.specialty == PlanetSpecialty.FORGE_WORLD) 2 else 1
+                val forgeTick = if (forgeWorldCount > 0 && nextState.map.tiles[order.planetCoord]?.specialty == PlanetSpecialty.FORGE_WORLD) 2 else 1
+                val buildTick = forgeTick + productionBonus
                 val newTurns = order.turnsRemaining - buildTick
                 if (newTurns <= 0) {
                     val gridMap = GameGridMap(stateAfterBuilds)
@@ -117,7 +125,7 @@ object TurnManager {
                 it.terrain == TerrainType.PLANET && it.owner == state.activeFaction &&
                 it.specialty == PlanetSpecialty.RESEARCH_HUB
             }
-            val researchTick = 1 + researchHubCount + BonusRegistry.sum(BonusType.RESEARCH_SPEED, researchingState, nextState.activeEvent)
+            val researchTick = 1 + researchHubCount + BonusRegistry.sum(BonusType.RESEARCH_SPEED, researchingState, nextState.activeEvent, nextState.eventTargetFaction)
             val newTurns = prog.turnsRemaining - researchTick
             val updatedResearcher = if (newTurns <= 0) {
                 researchingState.copy(

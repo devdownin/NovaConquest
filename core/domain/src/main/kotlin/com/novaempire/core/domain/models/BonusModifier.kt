@@ -16,6 +16,10 @@ enum class BonusType {
     CAPTURE_START_LEVEL,
     RESEARCH_SPEED,
     MOVEMENT_MODIFIER,
+    /** Extra progress per turn on every build order (adds to the base 1, like a Forge World). */
+    PRODUCTION_SPEED,
+    /** Flat delta applied to each unit's per-turn upkeep (negative = cheaper). Floored at 0/unit. */
+    UPKEEP_MODIFIER,
 }
 
 data class BonusModifier(val type: BonusType, val value: Int)
