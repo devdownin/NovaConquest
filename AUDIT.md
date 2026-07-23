@@ -10,7 +10,7 @@
 
 | # | Sévérité | Domaine | Constat |
 |---|----------|---------|---------|
-| B1 | ✅ Corrigé | Build | Versions Kotlin mélangées (2.2.10 Android / 1.9.23 JVM+serialization) + AGP `9.2.1` + Gradle `9.4.1` non résolus — **résolu** (voir §3) |
+| B1 | 🟢 Ajusté | Build | Config **fonctionnelle en CI** (mon 1ᵉʳ diagnostic « bloquant » était faux). Vraie incohérence corrigée : wrapper Gradle `9.4.1`→`9.6.1` (requis par AGP 9.2.1) ; `local.properties` Windows dé-suivi ; doc resynchronisée (voir §3) |
 | B2 | 🟠 Élevé | Combat | Siège et capture de planète **sans contrôle d'adjacence** — possibles depuis n'importe où sur la carte |
 | B3 | 🟠 Élevé | Combat | La riposte s'applique même quand l'attaquant est **hors de portée** du défenseur — annule l'avantage des unités à distance |
 | B4 | 🟠 Élevé | Combat | `AttackUnit` n'interdit ni le tir ami ni l'attaque d'un allié (aucun contrôle de faction/relation) |
@@ -130,58 +130,40 @@ contrôle ; sinon retirer le champ pour éviter la confusion.
 
 ---
 
-## 3. Configuration de build (bloquant) — B1 🔴
+## 3. Configuration de build — B1 (mise au point)
 
-`build.gradle.kts` (racine), introduit par le commit `8b3c44c "fix start"` :
+**Le build n'est PAS cassé en CI.** Vérification faite via GitHub Actions : le run CI sur la
+config d'origine (AGP `9.2.1`, Kotlin `2.2.10` Android + `1.9.23` JVM, wrapper Gradle `9.4.1`,
+Java 21) **passe intégralement**, y compris `:app:assembleDebug`. L'échec observé pendant l'audit
+était **spécifique à l'environnement d'audit** : `dl.google.com` bloqué par le proxy (donc AGP
+irrésolvable), aucun SDK Android, et un `gradle` système trop ancien (8.14.3). Mon diagnostic
+initial « build bloquant » était donc **erroné** sur les points suivants :
 
-```kotlin
-id("com.android.application") version "9.2.1"  apply false
-id("com.android.library")     version "9.2.1"  apply false
-id("org.jetbrains.kotlin.android")            version "2.2.10" apply false
-id("org.jetbrains.kotlin.jvm")                version "1.9.23" apply false   // ← incohérent
-id("org.jetbrains.kotlin.plugin.serialization") version "1.9.23" apply false // ← incohérent
-alias(libs.plugins.kotlin.compose) apply false   // = 2.2.10 via libs.versions.toml
-```
-Wrapper : `gradle-9.4.1-bin.zip`.
+- **AGP `9.2.1` existe et est requis.** La CI n'exécute pas `./gradlew` mais le `gradle` **système
+  (9.6.x)**. Or l'AGP **8.x** utilise une API interne (`org.gradle.api.problems.internal.InternalProblems`)
+  **supprimée dans Gradle 9.6.0** → seule une AGP **9.x** fonctionne sur cette CI. (Un essai de
+  retour à AGP 8.13.2 a d'ailleurs cassé la CI avec exactement cette erreur, confirmant le point.)
+- **Les deux versions de Kotlin coexistent volontairement** : Gradle isole le classpath de plugins
+  par sous-projet, donc `:app` en `2.2.10` (+ plugin Compose) et les modules JVM en `1.9.23`
+  compilent sans conflit. Ce n'est pas idéal (fragile, à surveiller) mais ce n'est pas bloquant.
 
-**Problèmes :**
-1. **Versions du Kotlin Gradle Plugin mélangées dans le même build** : `2.2.10` (module `:app`
-   + compose) contre `1.9.23` (modules JVM + serialization). Le KGP doit être unique sur
-   l'ensemble du build ; ce mélange n'est pas supporté (« Kotlin Gradle plugin loaded multiple
-   times »). Pire, dans `:app`, `kotlin.android`=2.2.10 mais `kotlin.plugin.serialization`=1.9.23
-   cohabitent : le plugin serialization doit suivre la version de Kotlin du module.
-2. **AGP `9.2.1` et Gradle `9.4.1` non résolus** dans l'environnement d'audit (téléchargement
-   du wrapper en 403, artefact AGP `9.2.1` introuvable via Google/MavenCentral). À vérifier que
-   ces versions existent réellement et sont mutuellement compatibles ; l'AGP 9.x exige Gradle 9.x
-   et JDK adapté.
-3. `CLAUDE.md` (§module graph) affirme AGP 8.4.1 / Kotlin 1.9.23 / Compose compiler 1.5.11 :
-   **désynchronisé** avec le build réel.
+### Vraie incohérence corrigée
+- **Wrapper Gradle `9.4.1` → `9.6.1`.** AGP 9.2.1 exige Gradle ≥ 9.6 ; le wrapper pinné à `9.4.1`
+  n'était jamais exercé par la CI (qui utilise le `gradle` système 9.6.x), mais un développeur
+  lançant `./gradlew` en local aurait échoué. Le wrapper pointe désormais sur la version que la CI
+  utilise réellement.
+- **`local.properties` retiré du suivi git + ajouté au `.gitignore`.** Il contenait un `sdk.dir`
+  Windows (`C:\Users\COMPAGNON\...`) qui n'a pas de sens hors de la machine d'origine. La CI n'en
+  dépend pas (elle résout le SDK via `ANDROID_SDK_ROOT`), mais un fichier machine-spécifique n'a
+  rien à faire dans le dépôt.
+- **`CLAUDE.md` resynchronisé** sur les versions réelles (AGP 9.2.1, Kotlin 2.2.10/1.9.23, Java 21,
+  Gradle 9.6.x, plugin Compose au lieu de `kotlinCompilerExtensionVersion`).
 
-**Recommandation** : figer **une seule** version de Kotlin partout (aligner `kotlin.jvm` et
-`kotlin.plugin.serialization` sur `2.2.10`, ou revenir à l'ensemble `8.13.2 / 1.9.23 / Gradle
-8.13` qui précédait le commit), via le version-catalog `gradle/libs.versions.toml` pour éviter
-toute dérive. Vérifier la matrice AGP↔Gradle↔Kotlin avant de committer, puis relancer
-`gradle :core:hex:test :core:domain:test :core:engine:test` et `:app:assembleDebug`.
-
-### ✅ Correctif appliqué
-Retour à une pile unique, cohérente et alignée sur la CI (JDK 17) et sur `CLAUDE.md` :
-- **Kotlin `1.9.23`** pour tous les plugins (`android`, `jvm`, `serialization`) ; suppression du
-  plugin `org.jetbrains.kotlin.plugin.compose` (spécifique à Kotlin 2.x) et **restauration de
-  `composeOptions { kotlinCompilerExtensionVersion = "1.5.11" }`** (couple documenté Kotlin
-  1.9.23 ↔ Compose compiler 1.5.11).
-- **AGP `8.13.2` + Gradle `8.13`** (la paire que le dépôt utilisait avant la migration à moitié
-  faite).
-- **Java 17** rétabli dans les 4 modules (`sourceCompatibility`/`targetCompatibility`/`jvmTarget`/
-  `jvmToolchain`) — évite l'échec de provisionnement de toolchain JDK 21 sur la CI (JDK 17, sans
-  résolveur Foojay configuré).
-- Nettoyage de `gradle.properties` (retrait des flags spécifiques AGP 9 : `android.builtInKotlin`,
-  `android.newDsl`, etc.) et de `gradle/libs.versions.toml`.
-- **`local.properties` retiré du suivi git et ajouté au `.gitignore`** : il contenait un
-  `sdk.dir` Windows (`C:\Users\...`) qui aurait cassé le build `:app` sur la CI Linux.
-
-> Le build n'a pas pu être exécuté dans l'environnement d'audit (pas de SDK Android, `dl.google.com`
-> bloqué par le proxy, wrapper Gradle non téléchargeable). La validation finale s'effectue via la
-> CI, déclenchée par le push sur la branche `claude/**`.
+### Pistes d'assainissement (non bloquantes, non appliquées ici pour ne rien casser)
+- Unifier Kotlin sur une seule version (idéalement `2.2.10` partout) et centraliser AGP/Kotlin/
+  Gradle dans `gradle/libs.versions.toml` pour éviter la dérive.
+- Faire lancer `./gradlew` par la CI (au lieu du `gradle` système) afin que la version testée soit
+  celle que voient les développeurs.
 
 ---
 
