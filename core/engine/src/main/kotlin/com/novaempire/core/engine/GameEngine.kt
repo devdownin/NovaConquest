@@ -63,7 +63,11 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
     }
 
     private fun createInitialState(mapSize: MapSize, archetype: MapArchetype): GameState {
-        val map = MapFactory.generateMap(radius = mapSize.radius, archetype = archetype)
+        // Draw a fresh seed from the injected RNG so every new game produces a different
+        // galaxy. Without this the factory falls back to its default fixed seed and every
+        // party — STANDARD or ZODIAC — would generate the exact same map. Tests inject a
+        // deterministic Random, keeping map generation reproducible where it matters.
+        val map = MapFactory.generateMap(radius = mapSize.radius, archetype = archetype, seed = deps.rng.nextLong())
         val spawnPoints = MapFactory.spawnPointsFor(mapSize.radius).filter { map.tiles.containsKey(it) }
         val units = mutableMapOf<HexCoord, GameUnit>()
         val playerStates = mutableMapOf<Faction, PlayerState>()
