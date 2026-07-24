@@ -2,6 +2,7 @@ package com.novaempire.core.engine
 
 import com.novaempire.core.domain.models.DiplomaticRelation
 import com.novaempire.core.domain.models.Faction
+import com.novaempire.core.domain.models.TechBranch
 import com.novaempire.core.domain.models.GameMap
 import com.novaempire.core.domain.models.GameUnit
 import com.novaempire.core.domain.models.HexTile
@@ -69,8 +70,29 @@ class UtilityEvaluatorTest {
             )
         )
         val result = UtilityEvaluator.executeAITurn(state, Faction.XYLAR, reduce)
-        // A Cruiser (~7 dmg) one-shots a 6-HP Scout.
-        assertTrue("Enemy scout should be destroyed", result.units.values.none { it.faction == Faction.TRADERS })
+        // The AI must engage the in-range enemy. Combat damage is randomised (variance 0.8–1.2),
+        // so a ~7-dmg Cruiser doesn't *always* one-shot a 6-HP Scout — assert the scout was
+        // attacked (destroyed or at least damaged) rather than relying on the roll.
+        val scout = result.units.values.firstOrNull { it.faction == Faction.TRADERS }
+        assertTrue(
+            "AI should have attacked the in-range enemy scout (destroyed or damaged)",
+            scout == null || scout.currentHp < UnitType.SCOUT.maxHp
+        )
+    }
+
+    @Test
+    fun aiAtWarPrefersMilitaryResearch() {
+        val ps = PlayerState(Faction.XYLAR, credits = 100,
+            relations = mapOf(Faction.TRADERS to DiplomaticRelation.WAR))
+        val state = GameState(activeFaction = Faction.XYLAR, playerStates = mapOf(Faction.XYLAR to ps))
+        assertEquals(TechBranch.MILITARY, UtilityEvaluator.chooseResearchTech(state, ps)?.branch)
+    }
+
+    @Test
+    fun aiAtPeacePrefersExpansionResearch() {
+        val ps = PlayerState(Faction.XYLAR, credits = 100) // no WAR relations
+        val state = GameState(activeFaction = Faction.XYLAR, playerStates = mapOf(Faction.XYLAR to ps))
+        assertEquals(TechBranch.EXPANSION, UtilityEvaluator.chooseResearchTech(state, ps)?.branch)
     }
 
     @Test

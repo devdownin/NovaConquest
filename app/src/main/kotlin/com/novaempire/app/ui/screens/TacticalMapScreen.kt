@@ -51,7 +51,9 @@ import com.novaempire.app.ui.theme.*
 import com.novaempire.core.domain.models.*
 import com.novaempire.core.domain.state.CombatEvent
 import com.novaempire.core.domain.state.GameState
+import com.novaempire.core.engine.AttackCalculator
 import com.novaempire.core.engine.GameGridMap
+import com.novaempire.core.engine.MovementCalculator
 import com.novaempire.core.hex.HexCoord
 import com.novaempire.core.hex.HexPathfinder
 import kotlin.math.cos
@@ -78,6 +80,8 @@ fun TacticalMapScreen(
     onDeployUnit: (HexCoord, HexCoord, Int) -> Unit = { _, _, _ -> },
     onOpenAcademy: () -> Unit,
     onClearSelection: () -> Unit,
+    // (coord, nonce): the Int is a monotonically increasing re-trigger counter — NOT a zoom
+    // level — so LaunchedEffect(centerRequest) re-fires even when re-focusing the same coord.
     centerRequest: Pair<HexCoord, Int>? = null,
     initialSelectedHex: HexCoord? = null,
     combatLog: List<Pair<String, String>> = emptyList(),
@@ -158,8 +162,7 @@ fun TacticalMapScreen(
         val sel = selectedHex ?: return@remember emptySet<HexCoord>()
         val unit = gameState.units[sel] ?: return@remember emptySet<HexCoord>()
         if (unit.faction != gameState.activeFaction || unit.hasMoved) return@remember emptySet<HexCoord>()
-        val ionPenalty = if (gameState.activeEvent == GalacticEvent.ION_STORM) 1 else 0
-        HexPathfinder.findReachable(sel, GameGridMap(gameState, gameState.activeFaction), (unit.type.movement + unit.faction.bonusMovement - ionPenalty).coerceAtLeast(1))
+        HexPathfinder.findReachable(sel, GameGridMap(gameState, gameState.activeFaction), MovementCalculator.effectiveMovement(gameState, unit))
     }
 
     // Enemy units the selected unit can attack this turn
@@ -252,7 +255,7 @@ fun TacticalMapScreen(
 
     // Center map on a coord when requested by SMART FOCUS
     LaunchedEffect(centerRequest) {
-        centerRequest?.let { (coord, _) ->
+        centerRequest?.let { (coord, _) ->  // second component is the re-trigger nonce, intentionally unused here
             val hSpacing = sqrt(3f) * HEX_RADIUS
             val vSpacing = 1.5f * HEX_RADIUS
             pan = Offset(
@@ -318,7 +321,12 @@ fun TacticalMapScreen(
                         val gs = currentGameState
                         val explored = gs.playerStates[gs.activeFaction]?.exploredHexes ?: emptySet()
                         if (!gs.map.tiles.containsKey(coord)) return@detectTapGestures
-                        if (!explored.contains(coord)) return@detectTapGestures
+                        // Tapping a fog-of-war hex does nothing — give a light haptic tick so the
+                        // tap doesn't feel dropped (A6).
+                        if (!explored.contains(coord)) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            return@detectTapGestures
+                        }
 
                         val prev = selectedHex
                         val prevUnit = prev?.let { gs.units[it] }
@@ -430,12 +438,12 @@ fun TacticalMapScreen(
                                 return@detectDragGesturesAfterLongPress
                             }
 
-                            val gridMap = GameGridMap(gs)
+                            val gridMap = GameGridMap(gs, gs.activeFaction)
                             val targetUnit = gs.units[coord]
                             val path = if (targetUnit != null && targetUnit.faction != gs.activeFaction) {
                                 if (start.distanceTo(coord) <= unit.type.range) listOf(coord) else null
                             } else {
-                                HexPathfinder.findPath(start, coord, gridMap, maxCost = unit.type.movement + unit.faction.bonusMovement)
+                                HexPathfinder.findPath(start, coord, gridMap, maxCost = MovementCalculator.effectiveMovement(gs, unit))
                             }
 
                             if (path != null && path != ghostPath) {
@@ -507,49 +515,9 @@ fun TacticalMapScreen(
                             strokeWidth = 2.5f  // contour encre épaisse BD
                         )
 
-                        // Movement range overlay (cyan fill + border)
-                        if (reachableHexes.contains(tile.coord)) {
-                            drawHexagonPath(
-                                centerX = x, centerY = y, radius = hexRadius,
-                                color = NeonCyan.copy(alpha = 0.25f), fill = true
-                            )
-                            drawHexagonPath(
-                                centerX = x, centerY = y, radius = hexRadius,
-                                color = NeonCyan.copy(alpha = 0.55f), strokeWidth = 2f
-                            )
-                        }
-
-                        // Attack reach: faint red fill on every in-range hex (shows the unit's range)
-                        if (attackRangeHexes.contains(tile.coord)) {
-                            drawHexagonPath(
-                                centerX = x, centerY = y, radius = hexRadius,
-                                color = NeonRed.copy(alpha = 0.10f), fill = true
-                            )
-                        }
-
-                        // Target outline: green = no retaliation (out-ranges the enemy), red = will be countered
-                        when {
-                            safeTargetCoords.contains(tile.coord) -> drawHexagonPath(
-                                centerX = x, centerY = y, radius = hexRadius,
-                                color = NeonGreen.copy(alpha = 0.85f), strokeWidth = 3.5f
-                            )
-                            attackableCoords.contains(tile.coord) -> drawHexagonPath(
-                                centerX = x, centerY = y, radius = hexRadius,
-                                color = NeonRed.copy(alpha = 0.55f), strokeWidth = 3f
-                            )
-                        }
-
-                        // Adjacent enemy planets: gold = capturable (level 0), orange = siegeable
-                        when {
-                            capturableCoords.contains(tile.coord) -> drawHexagonPath(
-                                centerX = x, centerY = y, radius = hexRadius,
-                                color = NeonGold.copy(alpha = 0.85f), strokeWidth = 3.5f
-                            )
-                            siegeableCoords.contains(tile.coord) -> drawHexagonPath(
-                                centerX = x, centerY = y, radius = hexRadius,
-                                color = NeonOrange.copy(alpha = 0.85f), strokeWidth = 3f
-                            )
-                        }
+                        // Selection-dependent overlays (movement/attack range, targets, selected
+                        // outline) are drawn in the separate overlay Canvas below, so selecting a
+                        // unit no longer invalidates this whole terrain layer — see O2 in AUDIT_CARTES.
 
                         // Sector ID (Blueprint style)
                         drawContext.canvas.nativeCanvas.drawText(
@@ -586,13 +554,6 @@ fun TacticalMapScreen(
                         if (unit != null && (isVisible || unit.faction == gameState.activeFaction)) {
                             drawUnit(x, y, unit)
                         }
-
-                        if (selectedHex == tile.coord) {
-                            drawHexagonPath(
-                                centerX = x, centerY = y, radius = hexRadius,
-                                color = NeonCyan, strokeWidth = 4f
-                            )
-                        }
                     } else {
                         drawHexagonPath(x, y, hexRadius, color = Color(0xFF0D0A07), fill = true)
                         drawHexagonPath(x, y, hexRadius, color = Color(0xFF130F0A), fill = false, strokeWidth = 2.5f)
@@ -615,6 +576,25 @@ fun TacticalMapScreen(
                 val hexHeight = 2f * hexRadius
                 val horizSpacing = hexWidth
                 val vertSpacing = 3f / 4f * hexHeight
+
+                // Selection-dependent overlays (moved off the terrain layer — O2). Iterating the
+                // precomputed coord sets is cheaper than scanning every tile, and it keeps the
+                // terrain Canvas from invalidating when the player just selects a unit.
+                fun overlayHex(coord: HexCoord, color: Color, fill: Boolean, strokeWidth: Float = 2f) {
+                    // Keep overlays out of the fog of war (matches the pre-O2 in-loop behaviour).
+                    if (coord !in exploredHexes) return
+                    val hx = centerX + horizSpacing * (coord.q + coord.r / 2f)
+                    val hy = centerY + vertSpacing * coord.r
+                    drawHexagonPath(centerX = hx, centerY = hy, radius = hexRadius, color = color, fill = fill, strokeWidth = strokeWidth)
+                }
+                reachableHexes.forEach { overlayHex(it, NeonCyan.copy(alpha = 0.25f), fill = true) }
+                reachableHexes.forEach { overlayHex(it, NeonCyan.copy(alpha = 0.55f), fill = false, strokeWidth = 2f) }
+                attackRangeHexes.forEach { overlayHex(it, NeonRed.copy(alpha = 0.10f), fill = true) }
+                safeTargetCoords.forEach { overlayHex(it, NeonGreen.copy(alpha = 0.85f), fill = false, strokeWidth = 3.5f) }
+                attackableCoords.forEach { if (it !in safeTargetCoords) overlayHex(it, NeonRed.copy(alpha = 0.55f), fill = false, strokeWidth = 3f) }
+                capturableCoords.forEach { overlayHex(it, NeonGold.copy(alpha = 0.85f), fill = false, strokeWidth = 3.5f) }
+                siegeableCoords.forEach { if (it !in capturableCoords) overlayHex(it, NeonOrange.copy(alpha = 0.85f), fill = false, strokeWidth = 3f) }
+                selectedHex?.let { overlayHex(it, NeonCyan, fill = false, strokeWidth = 4f) }
 
                 // Blueprint scanline sweep (animation — lives here to avoid terrain redraw)
                 val scanlineY = sweepProgress.value * size.height
@@ -1064,26 +1044,18 @@ fun TacticalMapScreen(
             val defender = gameState.units[defenderCoord]
 
             if (attacker != null && defender != null) {
-                val attackerPlayer = gameState.playerStates[attacker.faction]
-                val hasVance = attackerPlayer?.recruitedHeroes?.contains(HeroRegistry.VANCE) == true
-                val heroBonus = if (hasVance) maxOf(1, (attacker.type.attack * 0.15).toInt()) else 0
-                val factionBonus = if (attacker.faction.bonusAttack > 0) maxOf(1, (attacker.type.attack * attacker.faction.bonusAttack).toInt()) else 0
-                val plasmaBonus = if (attackerPlayer?.techUnlocked?.contains("tech_plasma_weapons") == true) 2 else 0
-                val totalBonus = heroBonus + factionBonus + plasmaBonus
+                // Damage ranges come from the shared AttackCalculator — same bonuses/terrain the
+                // engine applies — instead of re-deriving them here (which drifted from combat).
+                val (minDmg, maxDmg) = AttackCalculator.damageRange(gameState, attackerCoord, defenderCoord)
+                val (rawCounterMin, rawCounterMax) = AttackCalculator.damageRange(gameState, defenderCoord, attackerCoord)
+
+                // The counter only happens if the defender survives AND can reach back.
+                val defenderInRange = attackerCoord.distanceTo(defenderCoord) <= defender.type.range
+                val counterMin = if (minDmg >= defender.currentHp || !defenderInRange) 0 else rawCounterMin
+                val counterMax = if (maxDmg >= defender.currentHp || !defenderInRange) 0 else rawCounterMax
 
                 val atkTerrain = gameState.map.tiles[attackerCoord]?.terrain
                 val defTerrain = gameState.map.tiles[defenderCoord]?.terrain
-                val terrainAtkMult = if (atkTerrain == TerrainType.BLACK_HOLE) 0.75f else 1.0f
-                val terrainDefMult = if (defTerrain == TerrainType.NEBULA) 0.8f else 1.0f
-
-                val rawBase = (attacker.type.attack + totalBonus) * terrainAtkMult * terrainDefMult
-                val minDmg = maxOf(1, (rawBase * 0.8f).toInt())
-                val maxDmg = maxOf(1, (rawBase * 1.2f).toInt())
-
-                val guaranteed = minDmg >= defender.currentHp
-                val counterMin = if (guaranteed) 0 else maxOf(1, (defender.type.attack * 0.8f).toInt())
-                val counterMax = if (maxDmg >= defender.currentHp) 0 else maxOf(1, (defender.type.attack * 1.2f).toInt())
-
                 val notes = buildList {
                     if (atkTerrain == TerrainType.BLACK_HOLE) add("BLACK HOLE: -25% ATK")
                     if (defTerrain == TerrainType.NEBULA) add("NEBULA: -20% DMG")
@@ -1178,6 +1150,18 @@ fun TacticalMapScreen(
             } else {
                 siegePreviewData = null
             }
+        }
+
+        // Seed readout (A5) — lets a galaxy be identified / replayed. Unobtrusive corner label.
+        if (gameState.map.seed != 0L) {
+            Text(
+                text = "SEED ${gameState.map.seed}",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary.copy(alpha = 0.6f),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 12.dp, bottom = 8.dp)
+            )
         }
     }
 }
@@ -1608,11 +1592,11 @@ fun TerrainTooltipOverlay(
         TerrainType.PLANET -> "Planète habitée. Génère des crédits. Peut être capturée ou assiégée."
         TerrainType.ASTEROIDS -> "Champ d'astéroïdes. Impassable."
         TerrainType.NEBULA -> "Nébuleuse. Bloque la vision. Les flottes peuvent la traverser."
-        TerrainType.BLACK_HOLE -> "Trou noir. Danger extrême — les vaisseaux subissent des dommages."
+        TerrainType.BLACK_HOLE -> "Trou noir. Danger extrême — un vaisseau qui y stationne perd 3 PV en fin de tour et attaque à -25%."
         TerrainType.WORMHOLE -> "Ver de l'espace. Permet des déplacements longue distance."
-        TerrainType.PLASMA_CLOUD -> "Nuage de plasma. Bloque la vision et ralentit les déplacements."
-        TerrainType.ION_STORM -> "Tempête ionique. Réduit la portée de déplacement de 1."
-        TerrainType.ANOMALY -> "Anomalie galactique. Effets imprévisibles chaque tour."
+        TerrainType.PLASMA_CLOUD -> "Nuage de plasma. Bloque la vision et ralentit les flottes (coût de déplacement x2)."
+        TerrainType.ION_STORM -> "Champ ionique stationnaire. Bloque la vision et ralentit les flottes (coût de déplacement x2)."
+        TerrainType.ANOMALY -> "Anomalie galactique. Chaque fin de tour, un vaisseau qui y stationne subit une impulsion imprévisible (soin ou dégâts)."
     }
 
     Box(

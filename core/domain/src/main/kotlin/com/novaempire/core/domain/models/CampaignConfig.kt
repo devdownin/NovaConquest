@@ -23,6 +23,7 @@ data class CampaignMission(
     val name: String,
     val description: String,
     val mapArchetype: MapArchetype,
+    val mapSize: MapSize = MapSize.MEDIUM,
     val playerFaction: Faction,
     val enemyFaction: Faction,
     val enemyBonusCredits: Int = 0,

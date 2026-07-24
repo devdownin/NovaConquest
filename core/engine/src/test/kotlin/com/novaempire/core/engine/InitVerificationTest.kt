@@ -144,6 +144,27 @@ class InitVerificationTest {
     }
 
     @Test
+    fun newGamesProduceDifferentMaps() {
+        // Regression: createInitialState must draw a fresh seed from the injected RNG so
+        // every new game generates a different galaxy. Two engines seeded differently must
+        // not produce identical terrain layouts.
+        val a = GameEngine(GameEngineDependencies(rng = kotlin.random.Random(1)))
+        val b = GameEngine(GameEngineDependencies(rng = kotlin.random.Random(2)))
+        val terrainA = a.state.value.map.tiles.mapValues { it.value.terrain }
+        val terrainB = b.state.value.map.tiles.mapValues { it.value.terrain }
+        assertNotEquals("Two differently-seeded games generated identical maps", terrainA, terrainB)
+    }
+
+    @Test
+    fun mapGenerationIsDeterministicForSameSeed() {
+        // The seed comes from the injected RNG, so two engines sharing the same seed must
+        // generate byte-for-byte identical maps — keeps generation reproducible in tests.
+        val a = GameEngine(GameEngineDependencies(rng = kotlin.random.Random(42)))
+        val b = GameEngine(GameEngineDependencies(rng = kotlin.random.Random(42)))
+        assertEquals(a.state.value.map.tiles, b.state.value.map.tiles)
+    }
+
+    @Test
     fun saveManagerInitCreatesDir() {
         val tmpDir = createTempDir("nova_init_test")
         val saveDir = java.io.File(tmpDir, "saves")

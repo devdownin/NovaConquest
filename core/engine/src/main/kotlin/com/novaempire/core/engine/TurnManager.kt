@@ -11,6 +11,12 @@ import kotlin.random.Random
 
 object TurnManager {
 
+    /** Structural damage a ship takes at the end of its turn while sitting on a black hole. */
+    const val BLACK_HOLE_DAMAGE = 3
+
+    /** Magnitude of the anomaly pulse (heal or damage) applied at end of turn. */
+    const val ANOMALY_SURGE = 2
+
     fun advanceTurn(state: GameState, rng: Random = Random.Default): GameState {
         val allFactions = Faction.values().filter { it != Faction.ANCIENT_NPC }
         val nextIndex = (allFactions.indexOf(state.activeFaction) + 1) % allFactions.size
@@ -47,6 +53,48 @@ object TurnManager {
                     else unit
                 }
             )
+        }
+
+        // Black hole hazard: units of the faction that just ended its turn take structural
+        // damage while sitting on a black hole; destroyed ships are removed. Gives the
+        // "danger extrême" terrain a real cost and a reason not to camp the -25% ATK tile.
+        val hasBlackHoleUnit = nextState.units.values.any { unit ->
+            unit.faction == state.activeFaction &&
+                nextState.map.tiles[unit.position]?.terrain == TerrainType.BLACK_HOLE
+        }
+        if (hasBlackHoleUnit) {
+            val survivors = nextState.units
+                .mapValues { (_, unit) ->
+                    if (unit.faction == state.activeFaction &&
+                        nextState.map.tiles[unit.position]?.terrain == TerrainType.BLACK_HOLE) {
+                        unit.copy(currentHp = unit.currentHp - BLACK_HOLE_DAMAGE)
+                    } else unit
+                }
+                .filterValues { it.currentHp > 0 }
+            nextState = nextState.copy(units = survivors)
+        }
+
+        // Galactic anomaly: a unit of the faction ending its turn on an anomaly is hit by an
+        // unpredictable pulse — exotic energy (heal), radiation (damage), or nothing. Uses the
+        // injected rng so it stays deterministic under test; a unit reduced to 0 HP is removed.
+        val hasAnomalyUnit = nextState.units.values.any { unit ->
+            unit.faction == state.activeFaction &&
+                nextState.map.tiles[unit.position]?.terrain == TerrainType.ANOMALY
+        }
+        if (hasAnomalyUnit) {
+            val pulsed = nextState.units
+                .mapValues { (_, unit) ->
+                    if (unit.faction == state.activeFaction &&
+                        nextState.map.tiles[unit.position]?.terrain == TerrainType.ANOMALY) {
+                        when (rng.nextInt(3)) {
+                            0 -> unit.copy(currentHp = minOf(unit.type.maxHp, unit.currentHp + ANOMALY_SURGE))
+                            1 -> unit.copy(currentHp = unit.currentHp - ANOMALY_SURGE)
+                            else -> unit
+                        }
+                    } else unit
+                }
+                .filterValues { it.currentHp > 0 }
+            nextState = nextState.copy(units = pulsed)
         }
 
         // Income for the faction starting its turn

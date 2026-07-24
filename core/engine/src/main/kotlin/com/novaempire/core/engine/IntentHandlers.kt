@@ -1,6 +1,5 @@
 package com.novaempire.core.engine
 
-import com.novaempire.core.domain.models.BonusType
 import com.novaempire.core.domain.models.DiplomaticRelation
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.GameUnit
@@ -51,8 +50,7 @@ internal fun handleMoveUnit(state: GameState, intent: GameIntent.MoveUnit, deps:
     IntentValidator.notMoved(unit)?.let { return GameResult(state, it) }
 
     val gridMap = GameGridMap(state, state.activeFaction)
-    val moveMod = BonusRegistry.sum(BonusType.MOVEMENT_MODIFIER, state.activePlayer(), state.activeEvent)
-    val effectiveMovement = (unit.type.movement + moveMod).coerceAtLeast(1)
+    val effectiveMovement = MovementCalculator.effectiveMovement(state, unit)
     val path = HexPathfinder.findPath(intent.from, intent.to, gridMap, effectiveMovement)
 
     if (path == null || path.isEmpty()) return GameResult(state, "Target position is unreachable or too far.")
@@ -97,8 +95,19 @@ internal fun handleResearchTech(state: GameState, intent: GameIntent.ResearchTec
     IntentValidator.canAfford(playerState, cost)?.let { return GameResult(state, it) }
     return GameResult(state.withUpdatedPlayer(playerState.copy(
         credits = playerState.credits - cost,
-        researchInProgress = ResearchProgress(intent.techId, tech.tier + 1)
+        researchInProgress = ResearchProgress(intent.techId, tech.tier + 1, costPaid = cost)
     )))
+}
+
+internal fun handleCancelResearch(state: GameState): GameResult {
+    val playerState = state.activePlayer() ?: return GameResult(state, "Player state not found.")
+    val research = playerState.researchInProgress ?: return GameResult(state, "No research in progress.")
+    // Symmetric with CancelBuild: refund half the credits spent (rounded down).
+    val refund = research.costPaid / 2
+    return GameResult(state.withUpdatedPlayer(playerState.copy(
+        credits = playerState.credits + refund,
+        researchInProgress = null
+    )), notification = "Research cancelled — $refund credits refunded")
 }
 
 internal fun handleBuildUnit(state: GameState, intent: GameIntent.BuildUnit): GameResult {

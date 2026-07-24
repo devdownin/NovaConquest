@@ -5,6 +5,12 @@ import java.util.PriorityQueue
 interface GridMap {
     fun isPassable(coord: HexCoord): Boolean
     fun getNeighbors(coord: HexCoord): List<HexCoord>
+
+    /**
+     * Movement points consumed to ENTER [coord]. Defaults to 1; difficult terrain (plasma /
+     * ion fields) costs more, slowing fleets that cross it. Never called for the start hex.
+     */
+    fun enterCost(coord: HexCoord): Int = 1
 }
 
 object HexPathfinder {
@@ -34,8 +40,8 @@ object HexPathfinder {
             for (next in gridMap.getNeighbors(current)) {
                 if (!gridMap.isPassable(next)) continue
 
-                // Base movement cost is 1 for adjacent hexes
-                val newCost = costSoFar[current]!! + 1
+                // Cost to step into `next` — 1 for open space, more for difficult terrain.
+                val newCost = costSoFar[current]!! + gridMap.enterCost(next)
 
                 if (newCost > maxCost) continue
 
@@ -74,9 +80,9 @@ object HexPathfinder {
             val current = frontier.removeFirst()
             val cost = costSoFar[current]!!
             for (next in gridMap.getNeighbors(current)) {
-                val newCost = cost + 1
-                if (newCost > maxCost) continue
                 if (!gridMap.isPassable(next)) continue
+                val newCost = cost + gridMap.enterCost(next)
+                if (newCost > maxCost) continue
                 if (costSoFar.getOrDefault(next, Int.MAX_VALUE) <= newCost) continue
                 costSoFar[next] = newCost
                 reachable.add(next)

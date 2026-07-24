@@ -18,7 +18,12 @@ data class TechDefinition(
 )
 
 object TechRegistry {
-    const val DEEP_SCANNERS = "tech_deep_scanners"
+    // Base cost per tier — later, more powerful techs cost more before the per-branch scaling
+    // (`baseCost + 6 × unlocked-in-branch`) is applied. Tier 1 keeps the historical value of 8.
+    const val TIER_1_COST = 8
+    const val TIER_2_COST = 14
+    const val TIER_3_COST = 22
+    const val TIER_4_COST = 32
 
     val ALL_TECHS = listOf(
         // Military Branch
@@ -26,10 +31,12 @@ object TechRegistry {
             description = "+3 HP on newly built units",
             bonuses = listOf(BonusModifier(BonusType.UNIT_HP_ON_SPAWN, 3))),
         TechDefinition("tech_plasma_weapons", "Plasma Weapons", TechBranch.MILITARY, 2,
+            baseCost = TIER_2_COST,
             requiresTechId = "tech_hull_plating",
             description = "+2 attack damage per strike",
             bonuses = listOf(BonusModifier(BonusType.ATTACK_FLAT, 2))),
         TechDefinition("tech_siege_protocols", "Siege Protocols", TechBranch.MILITARY, 3,
+            baseCost = TIER_3_COST,
             requiresTechId = "tech_plasma_weapons",
             description = "+1 siege damage per attack",
             bonuses = listOf(BonusModifier(BonusType.SIEGE_DAMAGE, 1))),
@@ -39,10 +46,12 @@ object TechRegistry {
             description = "+1 vision range for all units",
             bonuses = listOf(BonusModifier(BonusType.VISION_RANGE, 1))),
         TechDefinition("tech_terraforming", "Terraforming", TechBranch.EXPANSION, 2,
+            baseCost = TIER_2_COST,
             requiresTechId = "tech_deep_scanners",
             description = "Captured planets start at Level 2",
             bonuses = listOf(BonusModifier(BonusType.CAPTURE_START_LEVEL, 1))),
         TechDefinition("tech_wormhole_nav", "Wormhole Navigation", TechBranch.EXPANSION, 3,
+            baseCost = TIER_3_COST,
             requiresTechId = "tech_terraforming",
             description = "Unlocks wormhole transit between distant systems"),
 
@@ -51,23 +60,28 @@ object TechRegistry {
             description = "+1 vision range for Scouts",
             bonuses = listOf(BonusModifier(BonusType.SCOUT_VISION_RANGE, 1))),
         TechDefinition("tech_anomaly_analysis", "Anomaly Analysis", TechBranch.EXPLORATION, 2,
+            baseCost = TIER_2_COST,
             requiresTechId = "tech_long_range_sensors",
-            description = "Galactic events end 2 turns sooner"),
+            description = "Targeted events on your empire decay twice as fast"),
 
         // Tier 4 techs — late-game specialisations
         TechDefinition("tech_nano_armor", "Nano Armor", TechBranch.MILITARY, 4,
+            baseCost = TIER_4_COST,
             requiresTechId = "tech_siege_protocols",
             description = "+5 HP on newly built units",
             bonuses = listOf(BonusModifier(BonusType.UNIT_HP_ON_SPAWN, 5))),
         TechDefinition("tech_stellar_mining", "Stellar Mining", TechBranch.EXPANSION, 4,
+            baseCost = TIER_4_COST,
             requiresTechId = "tech_wormhole_nav",
             description = "+15 credits income per turn",
             bonuses = listOf(BonusModifier(BonusType.INCOME_FLAT, 15))),
         TechDefinition("tech_dark_matter_scan", "Dark Matter Scanning", TechBranch.EXPLORATION, 3,
+            baseCost = TIER_3_COST,
             requiresTechId = "tech_anomaly_analysis",
             description = "+1 vision range for all units",
             bonuses = listOf(BonusModifier(BonusType.VISION_RANGE, 1))),
         TechDefinition("tech_quantum_relay", "Quantum Relay", TechBranch.EXPLORATION, 4,
+            baseCost = TIER_4_COST,
             requiresTechId = "tech_dark_matter_scan",
             description = "+20% credits income",
             bonuses = listOf(BonusModifier(BonusType.INCOME_PERCENT, 20))),

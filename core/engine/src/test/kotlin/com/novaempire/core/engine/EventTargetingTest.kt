@@ -36,6 +36,35 @@ class EventTargetingTest {
         assertEquals(-1, BonusRegistry.sum(BonusType.MOVEMENT_MODIFIER, b, GalacticEvent.ION_STORM, null))
     }
 
+    private fun tickDuration(target: Faction?, techOwner: Faction?, event: GalacticEvent): Int {
+        fun player(f: Faction) = PlayerState(
+            f, techUnlocked = if (f == techOwner) setOf("tech_anomaly_analysis") else emptySet()
+        )
+        val state = GameState(
+            playerStates = mapOf(Faction.DOMINION to player(Faction.DOMINION), Faction.TRADERS to player(Faction.TRADERS)),
+            activeEvent = event,
+            eventDurationRemaining = 4,
+            eventTargetFaction = target
+        )
+        return EventSystem.tick(state, Random(0)).eventDurationRemaining
+    }
+
+    @Test
+    fun anomalyAnalysisAcceleratesOnlyTheTargetedOwner() {
+        // PIRATE_RAID is targeted. The target owning the tech → decays twice as fast (4 → 2).
+        assertEquals(2, tickDuration(Faction.DOMINION, Faction.DOMINION, GalacticEvent.PIRATE_RAID))
+        // No owner → normal decay (4 → 3).
+        assertEquals(3, tickDuration(Faction.DOMINION, null, GalacticEvent.PIRATE_RAID))
+        // A non-target owning the tech must NOT accelerate the shared event (no leak).
+        assertEquals(3, tickDuration(Faction.DOMINION, Faction.TRADERS, GalacticEvent.PIRATE_RAID))
+    }
+
+    @Test
+    fun globalEventsDecayNormallyRegardlessOfAnomalyAnalysis() {
+        // ION_STORM is global (no target) — no single owner to analyse it, so it decays at 1/turn.
+        assertEquals(3, tickDuration(null, Faction.DOMINION, GalacticEvent.ION_STORM))
+    }
+
     @Test
     fun eventSystemSetsATargetExactlyForTargetedEvents() {
         val base = GameState(

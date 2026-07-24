@@ -35,6 +35,66 @@ class TurnManagerTest {
         assertEquals(Faction.TRADERS, next.activeFaction)
     }
 
+    private fun blackHoleState(unit: GameUnit, active: Faction = Faction.DOMINION): GameState {
+        val bh = HexCoord(0, 0, 0)
+        return GameState(
+            activeFaction = active,
+            playerStates = mapOf(
+                Faction.DOMINION to PlayerState(Faction.DOMINION, credits = 10),
+                Faction.TRADERS to PlayerState(Faction.TRADERS, credits = 10)
+            ),
+            units = mapOf(unit.position to unit),
+            map = GameMap(tiles = mapOf(bh to HexTile(bh, TerrainType.BLACK_HOLE)))
+        )
+    }
+
+    @Test
+    fun blackHoleDamagesUnitOfFactionEndingTurn() {
+        val bh = HexCoord(0, 0, 0)
+        val unit = GameUnit(type = UnitType.CRUISER, faction = Faction.DOMINION, position = bh, currentHp = 25)
+        val next = TurnManager.advanceTurn(blackHoleState(unit))
+        assertEquals(25 - TurnManager.BLACK_HOLE_DAMAGE, next.units[bh]!!.currentHp)
+    }
+
+    @Test
+    fun blackHoleDestroysUnitAtLowHp() {
+        val bh = HexCoord(0, 0, 0)
+        val unit = GameUnit(type = UnitType.SCOUT, faction = Faction.DOMINION, position = bh, currentHp = 2)
+        val next = TurnManager.advanceTurn(blackHoleState(unit))
+        assertNull("Unit at <= BLACK_HOLE_DAMAGE HP must be removed", next.units[bh])
+    }
+
+    @Test
+    fun blackHoleSparesUnitsOfOtherFactions() {
+        // Only the faction that just ended its turn takes hazard damage.
+        val bh = HexCoord(0, 0, 0)
+        val enemy = GameUnit(type = UnitType.CRUISER, faction = Faction.TRADERS, position = bh, currentHp = 25)
+        val next = TurnManager.advanceTurn(blackHoleState(enemy, active = Faction.DOMINION))
+        assertEquals(25, next.units[bh]!!.currentHp)
+    }
+
+    @Test
+    fun anomalyProducesVariableOutcomes() {
+        // Over many seeds the anomaly pulse must sometimes heal, sometimes damage, sometimes no-op.
+        val anomaly = HexCoord(0, 0, 0)
+        val outcomes = (0L until 40L).map { seed ->
+            val unit = GameUnit(type = UnitType.CRUISER, faction = Faction.DOMINION, position = anomaly, currentHp = 20)
+            val state = GameState(
+                activeFaction = Faction.DOMINION,
+                playerStates = mapOf(
+                    Faction.DOMINION to PlayerState(Faction.DOMINION, credits = 10),
+                    Faction.TRADERS to PlayerState(Faction.TRADERS, credits = 10)
+                ),
+                units = mapOf(anomaly to unit),
+                map = GameMap(tiles = mapOf(anomaly to HexTile(anomaly, TerrainType.ANOMALY)))
+            )
+            TurnManager.advanceTurn(state, Random(seed)).units[anomaly]?.currentHp ?: 0
+        }.toSet()
+        assertTrue("anomaly never healed", outcomes.any { it > 20 })
+        assertTrue("anomaly never damaged", outcomes.any { it in 1 until 20 })
+        assertTrue("anomaly never left a unit unchanged", outcomes.contains(20))
+    }
+
     @Test
     fun turnCounterIncrementsAfterFullRound() {
         val allActive = Faction.values().filter { it != Faction.ANCIENT_NPC }

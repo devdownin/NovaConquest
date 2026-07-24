@@ -51,6 +51,33 @@ class IntentReducerTest {
     }
 
     @Test
+    fun cancelResearchRefundsHalfAndClearsQueue() = runBlocking {
+        val e = engine()
+        val creditsBefore = e.state.value.playerStates[Faction.DOMINION]!!.credits
+        e.processIntent(GameIntent.ResearchTech("tech_hull_plating")) // base cost 8
+        delay(100)
+        assertEquals(creditsBefore - 8, e.state.value.playerStates[Faction.DOMINION]!!.credits)
+
+        e.processIntent(GameIntent.CancelResearch)
+        delay(100)
+        val player = e.state.value.playerStates[Faction.DOMINION]!!
+        assertNull("Cancelling clears the research queue", player.researchInProgress)
+        // Half of 8 refunded → net spend of 4.
+        assertEquals(creditsBefore - 4, player.credits)
+    }
+
+    @Test
+    fun cancelResearchWithoutQueueIsNoOp() = runBlocking {
+        val e = engine()
+        val creditsBefore = e.state.value.playerStates[Faction.DOMINION]!!.credits
+        e.processIntent(GameIntent.CancelResearch)
+        delay(100)
+        val player = e.state.value.playerStates[Faction.DOMINION]!!
+        assertNull(player.researchInProgress)
+        assertEquals("No refund when nothing is being researched", creditsBefore, player.credits)
+    }
+
+    @Test
     fun researchTechFailsWithoutPrerequisite() = runBlocking {
         val e = engine()
         // tech_plasma_weapons requires tech_hull_plating
