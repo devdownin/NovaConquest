@@ -51,6 +51,7 @@ import com.novaempire.app.ui.theme.*
 import com.novaempire.core.domain.models.*
 import com.novaempire.core.domain.state.CombatEvent
 import com.novaempire.core.domain.state.GameState
+import com.novaempire.core.engine.AttackCalculator
 import com.novaempire.core.engine.GameGridMap
 import com.novaempire.core.engine.MovementCalculator
 import com.novaempire.core.hex.HexCoord
@@ -1043,26 +1044,18 @@ fun TacticalMapScreen(
             val defender = gameState.units[defenderCoord]
 
             if (attacker != null && defender != null) {
-                val attackerPlayer = gameState.playerStates[attacker.faction]
-                val hasVance = attackerPlayer?.recruitedHeroes?.contains(HeroRegistry.VANCE) == true
-                val heroBonus = if (hasVance) maxOf(1, (attacker.type.attack * 0.15).toInt()) else 0
-                val factionBonus = if (attacker.faction.bonusAttack > 0) maxOf(1, (attacker.type.attack * attacker.faction.bonusAttack).toInt()) else 0
-                val plasmaBonus = if (attackerPlayer?.techUnlocked?.contains("tech_plasma_weapons") == true) 2 else 0
-                val totalBonus = heroBonus + factionBonus + plasmaBonus
+                // Damage ranges come from the shared AttackCalculator — same bonuses/terrain the
+                // engine applies — instead of re-deriving them here (which drifted from combat).
+                val (minDmg, maxDmg) = AttackCalculator.damageRange(gameState, attackerCoord, defenderCoord)
+                val (rawCounterMin, rawCounterMax) = AttackCalculator.damageRange(gameState, defenderCoord, attackerCoord)
+
+                // The counter only happens if the defender survives AND can reach back.
+                val defenderInRange = attackerCoord.distanceTo(defenderCoord) <= defender.type.range
+                val counterMin = if (minDmg >= defender.currentHp || !defenderInRange) 0 else rawCounterMin
+                val counterMax = if (maxDmg >= defender.currentHp || !defenderInRange) 0 else rawCounterMax
 
                 val atkTerrain = gameState.map.tiles[attackerCoord]?.terrain
                 val defTerrain = gameState.map.tiles[defenderCoord]?.terrain
-                val terrainAtkMult = if (atkTerrain == TerrainType.BLACK_HOLE) 0.75f else 1.0f
-                val terrainDefMult = if (defTerrain == TerrainType.NEBULA) 0.8f else 1.0f
-
-                val rawBase = (attacker.type.attack + totalBonus) * terrainAtkMult * terrainDefMult
-                val minDmg = maxOf(1, (rawBase * 0.8f).toInt())
-                val maxDmg = maxOf(1, (rawBase * 1.2f).toInt())
-
-                val guaranteed = minDmg >= defender.currentHp
-                val counterMin = if (guaranteed) 0 else maxOf(1, (defender.type.attack * 0.8f).toInt())
-                val counterMax = if (maxDmg >= defender.currentHp) 0 else maxOf(1, (defender.type.attack * 1.2f).toInt())
-
                 val notes = buildList {
                     if (atkTerrain == TerrainType.BLACK_HOLE) add("BLACK HOLE: -25% ATK")
                     if (defTerrain == TerrainType.NEBULA) add("NEBULA: -20% DMG")

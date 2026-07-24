@@ -5,11 +5,14 @@ import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.GameUnit
 import com.novaempire.core.domain.models.HeroRegistry
 import com.novaempire.core.domain.models.HexTile
+import com.novaempire.core.domain.models.TechBranch
+import com.novaempire.core.domain.models.TechDefinition
 import com.novaempire.core.domain.models.TechRegistry
 import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.state.BuildOrder
 import com.novaempire.core.domain.state.GameState
+import com.novaempire.core.domain.state.PlayerState
 import com.novaempire.core.domain.state.ResearchProgress
 import com.novaempire.core.domain.models.BonusType
 import com.novaempire.core.hex.HexCoord
@@ -312,19 +315,39 @@ object UtilityEvaluator : AIStrategy {
         // Route the AI through the same research pipeline as the player: queue one tech and pay
         // its cost, then let TurnManager tick it down over turns — no more instant unlocks.
         if (playerState.researchInProgress != null) return state
-        val affordableTech = TechRegistry.ALL_TECHS.find { tech ->
-            val isAvailable = tech.requiresTechId == null || playerState.techUnlocked.contains(tech.requiresTechId)
-            val isUnlocked = playerState.techUnlocked.contains(tech.id)
-            val cost = CostCalculator.techCost(tech.id, playerState.techUnlocked, playerState, state.activeEvent, state.eventTargetFaction)
-            isAvailable && !isUnlocked && playerState.credits >= cost
-        } ?: return state
+        val chosen = chooseResearchTech(state, playerState) ?: return state
 
-        val cost = CostCalculator.techCost(affordableTech.id, playerState.techUnlocked, playerState, state.activeEvent, state.eventTargetFaction)
+        val cost = CostCalculator.techCost(chosen.id, playerState.techUnlocked, playerState, state.activeEvent, state.eventTargetFaction)
         val newPlayerStates = state.playerStates.toMutableMap()
         newPlayerStates[faction] = playerState.copy(
             credits = playerState.credits - cost,
-            researchInProgress = ResearchProgress(affordableTech.id, affordableTech.tier + 1, costPaid = cost)
+            researchInProgress = ResearchProgress(chosen.id, chosen.tier + 1, costPaid = cost)
         )
         return state.copy(playerStates = newPlayerStates)
+    }
+
+    /**
+     * Picks the tech to research from those available and affordable, weighted by the AI's
+     * posture: a faction at war favours MILITARY, one at peace favours EXPANSION (economy);
+     * EXPLORATION sits in between. Cheaper techs break ties. Replaces the old "first in
+     * `ALL_TECHS`" pick that always rushed the military branch regardless of situation.
+     */
+    internal fun chooseResearchTech(state: GameState, playerState: PlayerState): TechDefinition? {
+        fun cost(tech: TechDefinition) =
+            CostCalculator.techCost(tech.id, playerState.techUnlocked, playerState, state.activeEvent, state.eventTargetFaction)
+        val candidates = TechRegistry.ALL_TECHS.filter { tech ->
+            val available = tech.requiresTechId == null || playerState.techUnlocked.contains(tech.requiresTechId)
+            val unlocked = playerState.techUnlocked.contains(tech.id)
+            available && !unlocked && playerState.credits >= cost(tech)
+        }
+        if (candidates.isEmpty()) return null
+        val atWar = playerState.relations.values.any { it == DiplomaticRelation.WAR }
+        return candidates.maxByOrNull { tech -> branchPriority(tech.branch, atWar) * 1000 - cost(tech) }
+    }
+
+    private fun branchPriority(branch: TechBranch, atWar: Boolean): Int = when (branch) {
+        TechBranch.MILITARY -> if (atWar) 3 else 1
+        TechBranch.EXPANSION -> if (atWar) 1 else 3
+        TechBranch.EXPLORATION -> 2
     }
 }

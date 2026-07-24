@@ -2,6 +2,7 @@ package com.novaempire.core.engine
 
 import com.novaempire.core.domain.models.DiplomaticRelation
 import com.novaempire.core.domain.models.Faction
+import com.novaempire.core.domain.models.TechBranch
 import com.novaempire.core.domain.models.GameMap
 import com.novaempire.core.domain.models.GameUnit
 import com.novaempire.core.domain.models.HexTile
@@ -77,6 +78,21 @@ class UtilityEvaluatorTest {
             "AI should have attacked the in-range enemy scout (destroyed or damaged)",
             scout == null || scout.currentHp < UnitType.SCOUT.maxHp
         )
+    }
+
+    @Test
+    fun aiAtWarPrefersMilitaryResearch() {
+        val ps = PlayerState(Faction.XYLAR, credits = 100,
+            relations = mapOf(Faction.TRADERS to DiplomaticRelation.WAR))
+        val state = GameState(activeFaction = Faction.XYLAR, playerStates = mapOf(Faction.XYLAR to ps))
+        assertEquals(TechBranch.MILITARY, UtilityEvaluator.chooseResearchTech(state, ps)?.branch)
+    }
+
+    @Test
+    fun aiAtPeacePrefersExpansionResearch() {
+        val ps = PlayerState(Faction.XYLAR, credits = 100) // no WAR relations
+        val state = GameState(activeFaction = Faction.XYLAR, playerStates = mapOf(Faction.XYLAR to ps))
+        assertEquals(TechBranch.EXPANSION, UtilityEvaluator.chooseResearchTech(state, ps)?.branch)
     }
 
     @Test

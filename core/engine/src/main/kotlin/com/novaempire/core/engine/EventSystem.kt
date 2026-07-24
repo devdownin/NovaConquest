@@ -13,8 +13,12 @@ object EventSystem {
         var target = state.eventTargetFaction
 
         if (activeEvent != GalacticEvent.NONE) {
-            val anomalyBonus = if (state.playerStates.values.any { it.techUnlocked.contains("tech_anomaly_analysis") }) 1 else 0
-            duration -= (1 + anomalyBonus)
+            // Anomaly Analysis accelerates decay only for the faction the event actually targets —
+            // no more leak where any player's tech shortened the shared event for everyone. Global
+            // (untargeted) events have no owner to analyse, so they decay at the normal rate.
+            val ownerHasAnalysis = target != null &&
+                state.playerStates[target]?.techUnlocked?.contains("tech_anomaly_analysis") == true
+            duration -= if (ownerHasAnalysis) 2 else 1
             if (duration <= 0) {
                 activeEvent = GalacticEvent.NONE
                 target = null

@@ -18,8 +18,6 @@ data class TechDefinition(
 )
 
 object TechRegistry {
-    const val DEEP_SCANNERS = "tech_deep_scanners"
-
     // Base cost per tier — later, more powerful techs cost more before the per-branch scaling
     // (`baseCost + 6 × unlocked-in-branch`) is applied. Tier 1 keeps the historical value of 8.
     const val TIER_1_COST = 8
@@ -64,7 +62,7 @@ object TechRegistry {
         TechDefinition("tech_anomaly_analysis", "Anomaly Analysis", TechBranch.EXPLORATION, 2,
             baseCost = TIER_2_COST,
             requiresTechId = "tech_long_range_sensors",
-            description = "Galactic events decay twice as fast"),
+            description = "Targeted events on your empire decay twice as fast"),
 
         // Tier 4 techs — late-game specialisations
         TechDefinition("tech_nano_armor", "Nano Armor", TechBranch.MILITARY, 4,

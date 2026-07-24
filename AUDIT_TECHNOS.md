@@ -20,9 +20,9 @@
 | T3 | 💡 Amélio — ✅ fait | Équilibrage | `baseCost` par tier (8/14/22/32) : les techs tardives coûtent plus |
 | T4 | 🟡 Faible — ✅ corrigé | UX | Bouton `RESEARCH` **cliquable même sans crédits** → erreur moteur au lieu d'un état désactivé |
 | T5 | 💡 Amélio — ✅ fait | Feature gap | `CancelResearch` avec remboursement 50 % (symétrique de `CancelBuild`) |
-| T6 | ⚪ Comportement | IA | Recherche IA **naïve** : toujours dans l'ordre de `ALL_TECHS` (militaire d'abord), sans stratégie |
-| T7 | 🟡 Design | Événements | `anomaly_analysis` est **global** : la tech de n'importe quel joueur raccourcit l'événement partagé pour tout le monde |
-| T8 | 🧹 Propreté | Mort‑code | Constante `TechRegistry.DEEP_SCANNERS` **jamais référencée** |
+| T6 | ⚪ Comportement — ✅ fait | IA | Recherche IA **stratégique** : pondérée par la posture (guerre → militaire, paix → expansion) |
+| T7 | 🟡 Design — ✅ fait | Événements | `anomaly_analysis` **scopé au propriétaire** de l'événement ciblé (fin du leak global) |
+| T8 | 🧹 Propreté — ✅ fait | Mort‑code | `DEEP_SCANNERS` supprimée + **calculateur d'attaque partagé** (fin de la divergence prévisualisation/combat) |
 
 ---
 
@@ -89,26 +89,39 @@ câblé dans `MainActivity`.
 
 ---
 
-## 3. Design / équilibrage / IA (signalés, non modifiés)
+## 3. Comportement IA / événements
 
-- **T6 — Recherche IA naïve.** `UtilityEvaluator.evaluateEconomyAndTech` prend la **première**
-  tech disponible et abordable dans l'ordre de `ALL_TECHS` (militaire → expansion →
-  exploration). L'IA ne priorise ni par valeur, ni selon sa posture (agressive/économique).
-  Fonctionnel mais prévisible.
-- **T7 — `anomaly_analysis` global.** `EventSystem.tick` teste `state.playerStates.values.any {
-    …contains("tech_anomaly_analysis") }` : la tech d'**un seul** joueur accélère la fin de
-  l'événement **partagé** pour tous. Comme l'état d'événement est unique et global, un
-  scope par faction demanderait un suivi d'événement par joueur (refactor). Signalé.
+### T6 — ⚪ Recherche IA stratégique  ✅ **fait**
+
+`UtilityEvaluator.evaluateEconomyAndTech` prenait la **première** tech disponible/abordable
+dans l'ordre de `ALL_TECHS` → toujours la branche militaire d'abord. **Correctif** — nouveau
+`chooseResearchTech(state, playerState)` (`internal`, testable) qui pondère les candidats par la
+**posture** : une faction en guerre privilégie `MILITARY`, en paix `EXPANSION` (économie),
+`EXPLORATION` au milieu ; le coût le moins élevé départage. **Tests** :
+`aiAtWarPrefersMilitaryResearch`, `aiAtPeacePrefersExpansionResearch`.
+
+### T7 — 🟡 `anomaly_analysis` scopé au propriétaire  ✅ **fait**
+
+`EventSystem.tick` testait `state.playerStates.values.any { …contains("tech_anomaly_analysis") }`
+→ la tech d'**un seul** joueur accélérait l'événement **partagé** pour tous (leak). **Correctif** —
+l'accélération ne s'applique qu'à la **faction ciblée** par un événement ciblé, si elle possède
+la tech ; les événements globaux (sans propriétaire) décroissent au rythme normal. Description
+alignée : *« Targeted events on your empire decay twice as fast »*. **Tests** :
+`anomalyAnalysisAcceleratesOnlyTheTargetedOwner`, `globalEventsDecayNormallyRegardlessOfAnomalyAnalysis`.
 
 ## 4. Propreté
 
-- **T8** — `TechRegistry.DEEP_SCANNERS` (constante publique) n'est référencée nulle part.
-  Laissée en place (API publique potentielle) mais candidate à suppression.
-- **Duplication de formule (rappel B3 côté cartes)** — la prévisualisation de combat
-  (`TacticalMapScreen`) **recalcule à la main** les bonus d'attaque (`tech_plasma_weapons` +2,
-  bonus de faction, héros Vance) au lieu d'appeler un calculateur partagé avec
-  `CombatResolver`. Même risque de divergence que pour le mouvement : un futur ajout de bonus
-  d'attaque devra être répliqué aux deux endroits.
+### T8 — 🧹 Nettoyage + calculateur d'attaque partagé  ✅ **fait**
+
+- **`DEEP_SCANNERS`** (constante inutilisée) supprimée.
+- **Duplication de formule** — la prévisualisation de combat recalculait à la main les bonus
+  d'attaque (Vance +15 %, bonus de faction, plasma +2) et **divergeait** de `CombatResolver`
+  (chaque source arrondie séparément via `max(1, …)` → total gonflé ; la riposte ignorait
+  aussi les bonus du défenseur **et** la portée). Nouveau `AttackCalculator.effectiveBase` /
+  `damageRange`, **source unique** utilisée par `CombatResolver` (attaque **et** riposte, la
+  fonction est symétrique) et par la prévisualisation UI. Parité de combat préservée (les
+  multiplicateurs de terrain valent 1.0 dans tous les tests existants). **Tests** :
+  `AttackCalculatorTest` (arrondi combiné, terrains, fourchette ±20 %).
 
 ---
 
