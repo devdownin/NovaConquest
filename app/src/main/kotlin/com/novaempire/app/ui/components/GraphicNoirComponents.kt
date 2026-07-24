@@ -124,11 +124,13 @@ fun IndustrialButton(
     modifier: Modifier = Modifier,
     color: Color = NeonCyan,
     isPrimary: Boolean = false,
+    enabled: Boolean = true,
     icon: (@Composable () -> Unit)? = null
 ) {
-    val backgroundColor = if (isPrimary) color.copy(alpha = 0.18f) else Color.Transparent
-    val textColor = if (isPrimary) color else MaterialTheme.colorScheme.onSurface
-    val borderColor = if (isPrimary) color else OutlineColor
+    val dim = if (enabled) 1f else 0.4f
+    val backgroundColor = (if (isPrimary) color.copy(alpha = 0.18f) else Color.Transparent)
+    val textColor = (if (isPrimary) color else MaterialTheme.colorScheme.onSurface).copy(alpha = dim)
+    val borderColor = (if (isPrimary) color else OutlineColor).copy(alpha = dim)
     val shape = CutCornerShape(topEnd = 10.dp, bottomStart = 10.dp)
 
     Box(
@@ -137,7 +139,7 @@ fun IndustrialButton(
             .clip(shape)
             .background(backgroundColor)
             .border(2.dp, borderColor, shape)   // 2dp encre
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 14.dp, horizontal = 22.dp),
         contentAlignment = Alignment.Center
     ) {

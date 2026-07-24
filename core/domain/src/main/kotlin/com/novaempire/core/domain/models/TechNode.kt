@@ -52,7 +52,7 @@ object TechRegistry {
             bonuses = listOf(BonusModifier(BonusType.SCOUT_VISION_RANGE, 1))),
         TechDefinition("tech_anomaly_analysis", "Anomaly Analysis", TechBranch.EXPLORATION, 2,
             requiresTechId = "tech_long_range_sensors",
-            description = "Galactic events end 2 turns sooner"),
+            description = "Galactic events decay twice as fast"),
 
         // Tier 4 techs — late-game specialisations
         TechDefinition("tech_nano_armor", "Nano Armor", TechBranch.MILITARY, 4,

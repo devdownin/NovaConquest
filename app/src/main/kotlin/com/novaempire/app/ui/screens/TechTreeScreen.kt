@@ -59,7 +59,12 @@ fun TechTreeScreen(
         val isAvailable = !isUnlocked && !isResearching &&
             research == null &&
             (tech.requiresTechId == null || unlockedTechs.contains(tech.requiresTechId))
-        val cost = CostCalculator.techCost(tech.id, unlockedTechs, playerState)
+        // Include the active galactic event (e.g. ANCIENT_SIGNAL's -25%) so the displayed cost
+        // and the affordability check match what the engine actually charges. Omitting it made a
+        // discounted tech look more expensive than it is (and wrongly flagged as unaffordable).
+        val cost = CostCalculator.techCost(
+            tech.id, unlockedTechs, playerState, gameState.activeEvent, gameState.eventTargetFaction
+        )
 
         val nodeState = when {
             isUnlocked -> TechNodeState.UNLOCKED
@@ -209,9 +214,10 @@ fun TechNodeCard(node: UiTechNode, onResearchClick: () -> Unit) {
                 TechNodeState.AVAILABLE -> {
                     Spacer(modifier = Modifier.height(12.dp))
                     IndustrialButton(
-                        text = "RESEARCH (${node.cost} C)",
+                        text = if (node.canAfford) "RESEARCH (${node.cost} C)" else "INSUFFICIENT (${node.cost} C)",
                         onClick = onResearchClick,
-                        color = if (node.canAfford) NeonCyan else NeonRed
+                        color = if (node.canAfford) NeonCyan else NeonRed,
+                        enabled = node.canAfford
                     )
                 }
                 TechNodeState.RESEARCHING -> {

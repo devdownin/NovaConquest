@@ -1,6 +1,7 @@
 package com.novaempire.core.engine
 
 import com.novaempire.core.domain.models.Faction
+import com.novaempire.core.domain.models.GalacticEvent
 import com.novaempire.core.domain.models.HeroRegistry
 import com.novaempire.core.domain.state.PlayerState
 import org.junit.Assert.assertEquals
@@ -40,6 +41,23 @@ class CostCalculatorTest {
             PlayerState(Faction.SYNTH) // SYNTH has 15% tech discount
         )
         assertTrue("SYNTH faction discount should reduce cost", discounted < base)
+    }
+
+    @Test
+    fun targetedEventDiscountAppliesOnlyToTargetFaction() {
+        // ANCIENT_SIGNAL (-25% tech cost) is a targeted event: only its target faction benefits.
+        // The tech-tree UI relies on this — it now passes the event + target into techCost.
+        val base = CostCalculator.techCost("tech_hull_plating", emptySet(), PlayerState(Faction.DOMINION))
+        val targeted = CostCalculator.techCost(
+            "tech_hull_plating", emptySet(), PlayerState(Faction.DOMINION),
+            GalacticEvent.ANCIENT_SIGNAL, Faction.DOMINION
+        )
+        val nonTarget = CostCalculator.techCost(
+            "tech_hull_plating", emptySet(), PlayerState(Faction.DOMINION),
+            GalacticEvent.ANCIENT_SIGNAL, Faction.TRADERS
+        )
+        assertTrue("ANCIENT_SIGNAL should discount the targeted faction", targeted < base)
+        assertEquals("A non-targeted faction pays full price", base, nonTarget)
     }
 
     @Test
