@@ -69,8 +69,14 @@ class UtilityEvaluatorTest {
             )
         )
         val result = UtilityEvaluator.executeAITurn(state, Faction.XYLAR, reduce)
-        // A Cruiser (~7 dmg) one-shots a 6-HP Scout.
-        assertTrue("Enemy scout should be destroyed", result.units.values.none { it.faction == Faction.TRADERS })
+        // The AI must engage the in-range enemy. Combat damage is randomised (variance 0.8–1.2),
+        // so a ~7-dmg Cruiser doesn't *always* one-shot a 6-HP Scout — assert the scout was
+        // attacked (destroyed or at least damaged) rather than relying on the roll.
+        val scout = result.units.values.firstOrNull { it.faction == Faction.TRADERS }
+        assertTrue(
+            "AI should have attacked the in-range enemy scout (destroyed or damaged)",
+            scout == null || scout.currentHp < UnitType.SCOUT.maxHp
+        )
     }
 
     @Test
