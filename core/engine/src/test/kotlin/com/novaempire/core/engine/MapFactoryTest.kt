@@ -63,6 +63,48 @@ class MapFactoryTest {
     }
 
     @Test
+    fun newArchetypesAreFullyConnected() {
+        val archetypes = listOf(MapArchetype.NEBULA_EXPANSE, MapArchetype.ASTEROID_BELT)
+        for (archetype in archetypes) {
+            for (radius in listOf(3, 5, 8, 12)) {
+                for (seed in 0L until 25L) {
+                    assertFullyConnected(radius, archetype, seed)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun nebulaExpanseGeneratesVisionBlockingTerrain() {
+        // Across a spread of seeds the nebula-heavy archetype must actually place the
+        // previously-unused vision-blocking terrains, not just EMPTY/PLANET/ASTEROIDS.
+        val terrains = (0L until 20L).flatMap { seed ->
+            MapFactory.generateMap(radius = 8, archetype = MapArchetype.NEBULA_EXPANSE, seed = seed)
+                .tiles.values.map { it.terrain }
+        }.toSet()
+        assertTrue("NEBULA_EXPANSE never generated PLASMA_CLOUD", terrains.contains(TerrainType.PLASMA_CLOUD))
+        assertTrue("NEBULA_EXPANSE never generated ION_STORM terrain", terrains.contains(TerrainType.ION_STORM))
+    }
+
+    @Test
+    fun wormholeCountScalesWithRadius() {
+        // A wormhole anchor is skipped if it happens to land on a planet, so counts vary by
+        // seed — compare the maximum reached across a spread of seeds instead of a single map.
+        fun maxWormholes(radius: Int) = (0L until 20L).maxOf { seed ->
+            MapFactory.generateMap(radius = radius, seed = seed).tiles.values.count { it.terrain == TerrainType.WORMHOLE }
+        }
+        // Small maps attempt a single pair (<= 2 wormholes); large maps attempt up to three pairs.
+        assertTrue("Small map should have at most one wormhole pair", maxWormholes(3) <= 2)
+        assertTrue("Large map should offer more wormholes than a small one", maxWormholes(12) > maxWormholes(3))
+    }
+
+    @Test
+    fun seedIsStoredOnGeneratedMap() {
+        val map = MapFactory.generateMap(radius = 5, seed = 12345L)
+        assertEquals(12345L, map.seed)
+    }
+
+    @Test
     fun zodiacMapsAreFullyConnected() {
         for (seed in 0L until 25L) {
             assertFullyConnected(5, MapArchetype.ZODIAC, seed)

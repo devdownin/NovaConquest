@@ -320,7 +320,12 @@ fun TacticalMapScreen(
                         val gs = currentGameState
                         val explored = gs.playerStates[gs.activeFaction]?.exploredHexes ?: emptySet()
                         if (!gs.map.tiles.containsKey(coord)) return@detectTapGestures
-                        if (!explored.contains(coord)) return@detectTapGestures
+                        // Tapping a fog-of-war hex does nothing — give a light haptic tick so the
+                        // tap doesn't feel dropped (A6).
+                        if (!explored.contains(coord)) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            return@detectTapGestures
+                        }
 
                         val prev = selectedHex
                         val prevUnit = prev?.let { gs.units[it] }
@@ -509,49 +514,9 @@ fun TacticalMapScreen(
                             strokeWidth = 2.5f  // contour encre épaisse BD
                         )
 
-                        // Movement range overlay (cyan fill + border)
-                        if (reachableHexes.contains(tile.coord)) {
-                            drawHexagonPath(
-                                centerX = x, centerY = y, radius = hexRadius,
-                                color = NeonCyan.copy(alpha = 0.25f), fill = true
-                            )
-                            drawHexagonPath(
-                                centerX = x, centerY = y, radius = hexRadius,
-                                color = NeonCyan.copy(alpha = 0.55f), strokeWidth = 2f
-                            )
-                        }
-
-                        // Attack reach: faint red fill on every in-range hex (shows the unit's range)
-                        if (attackRangeHexes.contains(tile.coord)) {
-                            drawHexagonPath(
-                                centerX = x, centerY = y, radius = hexRadius,
-                                color = NeonRed.copy(alpha = 0.10f), fill = true
-                            )
-                        }
-
-                        // Target outline: green = no retaliation (out-ranges the enemy), red = will be countered
-                        when {
-                            safeTargetCoords.contains(tile.coord) -> drawHexagonPath(
-                                centerX = x, centerY = y, radius = hexRadius,
-                                color = NeonGreen.copy(alpha = 0.85f), strokeWidth = 3.5f
-                            )
-                            attackableCoords.contains(tile.coord) -> drawHexagonPath(
-                                centerX = x, centerY = y, radius = hexRadius,
-                                color = NeonRed.copy(alpha = 0.55f), strokeWidth = 3f
-                            )
-                        }
-
-                        // Adjacent enemy planets: gold = capturable (level 0), orange = siegeable
-                        when {
-                            capturableCoords.contains(tile.coord) -> drawHexagonPath(
-                                centerX = x, centerY = y, radius = hexRadius,
-                                color = NeonGold.copy(alpha = 0.85f), strokeWidth = 3.5f
-                            )
-                            siegeableCoords.contains(tile.coord) -> drawHexagonPath(
-                                centerX = x, centerY = y, radius = hexRadius,
-                                color = NeonOrange.copy(alpha = 0.85f), strokeWidth = 3f
-                            )
-                        }
+                        // Selection-dependent overlays (movement/attack range, targets, selected
+                        // outline) are drawn in the separate overlay Canvas below, so selecting a
+                        // unit no longer invalidates this whole terrain layer — see O2 in AUDIT_CARTES.
 
                         // Sector ID (Blueprint style)
                         drawContext.canvas.nativeCanvas.drawText(
@@ -588,13 +553,6 @@ fun TacticalMapScreen(
                         if (unit != null && (isVisible || unit.faction == gameState.activeFaction)) {
                             drawUnit(x, y, unit)
                         }
-
-                        if (selectedHex == tile.coord) {
-                            drawHexagonPath(
-                                centerX = x, centerY = y, radius = hexRadius,
-                                color = NeonCyan, strokeWidth = 4f
-                            )
-                        }
                     } else {
                         drawHexagonPath(x, y, hexRadius, color = Color(0xFF0D0A07), fill = true)
                         drawHexagonPath(x, y, hexRadius, color = Color(0xFF130F0A), fill = false, strokeWidth = 2.5f)
@@ -617,6 +575,25 @@ fun TacticalMapScreen(
                 val hexHeight = 2f * hexRadius
                 val horizSpacing = hexWidth
                 val vertSpacing = 3f / 4f * hexHeight
+
+                // Selection-dependent overlays (moved off the terrain layer — O2). Iterating the
+                // precomputed coord sets is cheaper than scanning every tile, and it keeps the
+                // terrain Canvas from invalidating when the player just selects a unit.
+                fun overlayHex(coord: HexCoord, color: Color, fill: Boolean, strokeWidth: Float = 2f) {
+                    // Keep overlays out of the fog of war (matches the pre-O2 in-loop behaviour).
+                    if (coord !in exploredHexes) return
+                    val hx = centerX + horizSpacing * (coord.q + coord.r / 2f)
+                    val hy = centerY + vertSpacing * coord.r
+                    drawHexagonPath(centerX = hx, centerY = hy, radius = hexRadius, color = color, fill = fill, strokeWidth = strokeWidth)
+                }
+                reachableHexes.forEach { overlayHex(it, NeonCyan.copy(alpha = 0.25f), fill = true) }
+                reachableHexes.forEach { overlayHex(it, NeonCyan.copy(alpha = 0.55f), fill = false, strokeWidth = 2f) }
+                attackRangeHexes.forEach { overlayHex(it, NeonRed.copy(alpha = 0.10f), fill = true) }
+                safeTargetCoords.forEach { overlayHex(it, NeonGreen.copy(alpha = 0.85f), fill = false, strokeWidth = 3.5f) }
+                attackableCoords.forEach { if (it !in safeTargetCoords) overlayHex(it, NeonRed.copy(alpha = 0.55f), fill = false, strokeWidth = 3f) }
+                capturableCoords.forEach { overlayHex(it, NeonGold.copy(alpha = 0.85f), fill = false, strokeWidth = 3.5f) }
+                siegeableCoords.forEach { if (it !in capturableCoords) overlayHex(it, NeonOrange.copy(alpha = 0.85f), fill = false, strokeWidth = 3f) }
+                selectedHex?.let { overlayHex(it, NeonCyan, fill = false, strokeWidth = 4f) }
 
                 // Blueprint scanline sweep (animation — lives here to avoid terrain redraw)
                 val scanlineY = sweepProgress.value * size.height
@@ -1181,6 +1158,18 @@ fun TacticalMapScreen(
                 siegePreviewData = null
             }
         }
+
+        // Seed readout (A5) — lets a galaxy be identified / replayed. Unobtrusive corner label.
+        if (gameState.map.seed != 0L) {
+            Text(
+                text = "SEED ${gameState.map.seed}",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary.copy(alpha = 0.6f),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 12.dp, bottom = 8.dp)
+            )
+        }
     }
 }
 
@@ -1612,9 +1601,9 @@ fun TerrainTooltipOverlay(
         TerrainType.NEBULA -> "Nébuleuse. Bloque la vision. Les flottes peuvent la traverser."
         TerrainType.BLACK_HOLE -> "Trou noir. Danger extrême — un vaisseau qui y stationne perd 3 PV en fin de tour et attaque à -25%."
         TerrainType.WORMHOLE -> "Ver de l'espace. Permet des déplacements longue distance."
-        TerrainType.PLASMA_CLOUD -> "Nuage de plasma. Bloque la vision et ralentit les déplacements."
-        TerrainType.ION_STORM -> "Tempête ionique. Réduit la portée de déplacement de 1."
-        TerrainType.ANOMALY -> "Anomalie galactique. Effets imprévisibles chaque tour."
+        TerrainType.PLASMA_CLOUD -> "Nuage de plasma. Bloque la vision."
+        TerrainType.ION_STORM -> "Champ ionique stationnaire. Bloque la vision."
+        TerrainType.ANOMALY -> "Anomalie galactique. Zone traversable aux relevés instables."
     }
 
     Box(

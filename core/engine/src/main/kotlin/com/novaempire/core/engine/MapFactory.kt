@@ -20,6 +20,43 @@ class MapFactory {
             HexCoord(-radius, 0, radius)
         )
 
+        /**
+         * Cumulative terrain thresholds per archetype: `(upperBound, terrain)` pairs consumed in
+         * order against a single `nextDouble()` draw (independent buckets — chaining draws skewed
+         * them). Anything above the last bound is EMPTY. All terrains here are passable except
+         * ASTEROIDS; PLASMA_CLOUD / ION_STORM block vision (a real, implemented effect).
+         */
+        private fun terrainWeights(archetype: MapArchetype): List<Pair<Double, TerrainType>> = when (archetype) {
+            MapArchetype.ASTEROID_BELT -> listOf(
+                0.09 to TerrainType.PLANET,
+                0.34 to TerrainType.ASTEROIDS,
+                0.40 to TerrainType.NEBULA,
+                0.43 to TerrainType.PLASMA_CLOUD,
+                0.45 to TerrainType.ION_STORM,
+                0.47 to TerrainType.ANOMALY
+            )
+            MapArchetype.NEBULA_EXPANSE -> listOf(
+                0.10 to TerrainType.PLANET,
+                0.18 to TerrainType.ASTEROIDS,
+                0.40 to TerrainType.NEBULA,
+                0.48 to TerrainType.PLASMA_CLOUD,
+                0.54 to TerrainType.ION_STORM,
+                0.57 to TerrainType.ANOMALY
+            )
+            // STANDARD and ZODIAC share the baseline mix.
+            else -> listOf(
+                0.10 to TerrainType.PLANET,
+                0.23 to TerrainType.ASTEROIDS,
+                0.31 to TerrainType.NEBULA,
+                0.35 to TerrainType.PLASMA_CLOUD,
+                0.38 to TerrainType.ION_STORM,
+                0.40 to TerrainType.ANOMALY
+            )
+        }
+
+        private fun rollTerrain(weights: List<Pair<Double, TerrainType>>, roll: Double): TerrainType =
+            weights.firstOrNull { roll < it.first }?.second ?: TerrainType.EMPTY
+
         fun generateMap(radius: Int = 3, archetype: MapArchetype = MapArchetype.STANDARD, seed: Long = 42): GameMap {
             val random = Random(seed)
             val tiles = mutableMapOf<HexCoord, HexTile>()
@@ -37,6 +74,8 @@ class MapFactory {
                 )
                 zodiacNodes.addAll(points)
             }
+
+            val weights = terrainWeights(archetype)
 
             for (q in -radius..radius) {
                 val r1 = maxOf(-radius, -q - radius)
@@ -56,15 +95,7 @@ class MapFactory {
                         // independent of each other (chaining nextDouble() skewed them).
                         terrain = when {
                             q == 0 && r == 0 && archetype != MapArchetype.ZODIAC -> TerrainType.BLACK_HOLE
-                            else -> {
-                                val roll = random.nextDouble()
-                                when {
-                                    roll < 0.10 -> TerrainType.PLANET
-                                    roll < 0.25 -> TerrainType.ASTEROIDS
-                                    roll < 0.35 -> TerrainType.NEBULA
-                                    else -> TerrainType.EMPTY
-                                }
-                            }
+                            else -> rollTerrain(weights, random.nextDouble())
                         }
                         if (terrain == TerrainType.PLANET) {
                             systemLevel = random.nextInt(2, 5)
@@ -87,19 +118,9 @@ class MapFactory {
             // so a ship can always move and reach objectives regardless of the seed.
             ensureConnectivity(tiles, spawnPoints)
 
-            // Place a symmetric wormhole pair at mid-ring positions (skip spawns/black-holes/planets).
-            val half = radius / 2
-            if (half > 0) {
-                val wA = HexCoord(half, -half, 0)
-                val wB = HexCoord(-half, half, 0)
-                for (w in listOf(wA, wB)) {
-                    val existing = tiles[w]
-                    if (existing != null && existing.terrain != TerrainType.PLANET &&
-                        existing.terrain != TerrainType.BLACK_HOLE && w !in spawnPoints) {
-                        tiles[w] = existing.copy(terrain = TerrainType.WORMHOLE, systemLevel = 0)
-                    }
-                }
-            }
+            // Symmetric wormhole pairs (count scales with radius). Wormholes are passable, so
+            // this only ever adds passability and never breaks the connectivity guaranteed above.
+            placeWormholes(tiles, radius, spawnPoints)
 
             // Assign specialties to ~25 % of non-spawn planets.
             val specialties = PlanetSpecialty.values()
@@ -110,7 +131,35 @@ class MapFactory {
                 }
             }
 
-            return GameMap(tiles, radius, archetype, zodiacNodes)
+            return GameMap(tiles, radius, archetype, zodiacNodes, seed)
+        }
+
+        /**
+         * Places `radius/4` (1‑3) point‑symmetric wormhole pairs at mid‑ring anchors, skipping
+         * spawns, planets, black holes and existing wormholes. With `tech_wormhole_nav` every
+         * wormhole links to every other, so more pairs mean more long‑range jump options on
+         * bigger maps (previously a single pair, i.e. a single link, regardless of size).
+         */
+        private fun placeWormholes(tiles: MutableMap<HexCoord, HexTile>, radius: Int, spawnPoints: List<HexCoord>) {
+            val half = radius / 2
+            if (half <= 0) return
+            val pairCount = (radius / 4).coerceIn(1, 3)
+            val anchors = listOf(
+                HexCoord(half, -half, 0),
+                HexCoord(half, 0, -half),
+                HexCoord(0, half, -half)
+            ).take(pairCount)
+            for (anchor in anchors) {
+                for (w in listOf(anchor, HexCoord(-anchor.q, -anchor.r, -anchor.s))) {
+                    val existing = tiles[w] ?: continue
+                    if (existing.terrain != TerrainType.PLANET &&
+                        existing.terrain != TerrainType.BLACK_HOLE &&
+                        existing.terrain != TerrainType.WORMHOLE &&
+                        w !in spawnPoints) {
+                        tiles[w] = existing.copy(terrain = TerrainType.WORMHOLE, systemLevel = 0)
+                    }
+                }
+            }
         }
 
         private fun isPassable(tiles: Map<HexCoord, HexTile>, coord: HexCoord): Boolean =
@@ -148,16 +197,46 @@ class MapFactory {
             }
             targets.remove(hub)
 
+            // Maintain the reachable set incrementally: each carved corridor runs to the hub, so
+            // it is contiguous with the reachable region — a BFS seeded from just the carved cells
+            // adds only the newly-connected hexes instead of re-scanning the whole region each time.
             val reachable = reachablePassable(tiles, hub)
             for (target in targets) {
                 if (target in reachable) continue
-                carveLine(tiles, target, hub)
-                reachable.addAll(reachablePassable(tiles, hub))
+                val carved = carveLine(tiles, target, hub)
+                expandReachable(tiles, reachable, carved)
             }
         }
 
-        private fun carveLine(tiles: MutableMap<HexCoord, HexTile>, from: HexCoord, to: HexCoord) {
+        /** Continues a BFS from [seeds], growing [reachable] with every newly-connected passable hex. */
+        private fun expandReachable(
+            tiles: Map<HexCoord, HexTile>,
+            reachable: MutableSet<HexCoord>,
+            seeds: List<HexCoord>
+        ) {
+            val queue = ArrayDeque<HexCoord>()
+            for (c in seeds) {
+                if (c !in reachable && isPassable(tiles, c)) {
+                    reachable.add(c)
+                    queue.add(c)
+                }
+            }
+            while (queue.isNotEmpty()) {
+                val current = queue.removeFirst()
+                for (dir in HexCoord.directions) {
+                    val next = current + dir
+                    if (next !in reachable && isPassable(tiles, next)) {
+                        reachable.add(next)
+                        queue.add(next)
+                    }
+                }
+            }
+        }
+
+        /** Carves a straight hex line, clearing impassable cells; returns the line's coords. */
+        private fun carveLine(tiles: MutableMap<HexCoord, HexTile>, from: HexCoord, to: HexCoord): List<HexCoord> {
             val dist = from.distanceTo(to)
+            val line = ArrayList<HexCoord>(dist + 1)
             for (i in 0..dist) {
                 val t = if (dist == 0) 0.0 else i.toDouble() / dist
                 val q = from.q + (to.q - from.q) * t
@@ -168,7 +247,9 @@ class MapFactory {
                 if (!tile.terrain.isPassable) {
                     tiles[coord] = tile.copy(terrain = TerrainType.EMPTY)
                 }
+                line.add(coord)
             }
+            return line
         }
     }
 }

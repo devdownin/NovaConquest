@@ -20,13 +20,14 @@
 | B3 | 🟠 Moyen — ✅ corrigé | Cohérence UX | Trois calculs divergents de portée de déplacement (moteur ≠ surbrillance ≠ glisser) → prévisualisations trompeuses |
 | B4 | 🟡 Faible — ✅ corrigé | Cohérence | Le tracé du glisser ignore la **navigation par trou de ver** (surbrillée mais non routée) |
 | B5 | 🟡 Faible — ✅ clarifié | (faux positif) | `centerRequest` : le second champ n'est **pas** un zoom mais un nonce de re-déclenchement ; audit initial erroné |
-| O1 | ⚪ Optim | Génération | `ensureConnectivity` relance un BFS complet après **chaque** corridor carvé |
-| O2 | ⚪ Optim | Rendu | La couche terrain se **redessine intégralement à chaque sélection** de tuile |
-| A1 | 💡 Amélio | Contenu | Une **seule paire** de trous de ver, quelle que soit la taille |
-| A2 | 💡 Amélio | Contenu | `PLASMA_CLOUD`, `ION_STORM`, `ANOMALY` : terrains **jamais générés** (rendu + tooltip morts) |
-| A3 | 💡 Amélio | Contenu | Seulement 2 archétypes ; le sélecteur UI est déjà en place |
-| A4 | 💡 Amélio | Campagne | Taille de carte **forcée à MEDIUM** pour toute campagne |
-| A5 | 💡 Amélio | Rejouabilité | Graine ni stockée ni affichée (pas de « rejouer/partager cette carte ») |
+| O1 | ⚪ Optim — ✅ fait | Génération | `ensureConnectivity` relançait un BFS complet après **chaque** corridor → désormais incrémental |
+| O2 | ⚪ Optim — ✅ fait | Rendu | Overlays de sélection déplacés hors de la couche terrain (plus de redraw terrain au tap) |
+| A1 | 💡 Amélio — ✅ fait | Contenu | Trous de ver : `radius/4` paires (1‑3) au lieu d'une seule |
+| A2 | 💡 Amélio — ✅ fait | Contenu | `PLASMA_CLOUD` / `ION_STORM` / `ANOMALY` désormais générés ; tooltips honnêtes |
+| A3 | 💡 Amélio — ✅ fait | Contenu | 2 nouveaux archétypes : `NEBULA_EXPANSE`, `ASTEROID_BELT` |
+| A4 | 💡 Amélio — ✅ fait | Campagne | `CampaignMission.mapSize` (défaut MEDIUM), utilisé au lancement |
+| A5 | 💡 Amélio — ✅ fait | Rejouabilité | Graine stockée dans `GameMap.seed` et affichée (coin bas‑droit) |
+| A6 | 💡 Amélio — ✅ fait | UX | Retour haptique léger quand on tape une case dans le brouillard |
 
 ---
 
@@ -130,47 +131,51 @@ sites pour éviter la confusion ; aucun changement de comportement.
 
 ## 3. Optimisations
 
-### O1 — BFS complet répété dans `ensureConnectivity`
+### O1 — BFS complet répété dans `ensureConnectivity`  ✅ **fait**
 
-`MapFactory.kt:151‑156` : pour chaque cible non atteinte, on carve un corridor **puis** on
-relance `reachablePassable(hub)` (BFS complet, O(cellules)). Sur GIGANTIC (rayon 12 ≈ 469 hex,
-nombreuses planètes), c'est O(cibles × cellules). Coût unique à la génération, donc non
-bloquant, mais on peut :
-- ne relancer le BFS **qu'en incrémental** depuis les cellules nouvellement carvées, ou
-- carver toutes les cibles restantes puis faire **un seul** BFS de contrôle.
+Avant : pour chaque cible non atteinte, on carvait un corridor **puis** on relançait
+`reachablePassable(hub)` (BFS complet, O(cellules)) → O(cibles × cellules) sur GIGANTIC.
 
-### O2 — La couche terrain se redessine à chaque sélection
+**Correctif** — le set `reachable` est désormais maintenu **incrémentalement** :
+`carveLine` renvoie les coords du corridor, et `expandReachable` poursuit un BFS **depuis ces
+seules cellules**. Comme chaque corridor rejoint le hub, il est contigu à la région déjà
+atteignable ; on n'ajoute que les hex nouvellement connectés au lieu de re-scanner toute la
+région. Résultat identique (validé par `MapFactoryTest.everyMapIsFullyConnected…`), coût
+amorti O(cellules) au total.
 
-Le `Canvas` de terrain (`TacticalMapScreen.kt:475‑600`) lit `selectedHex`, `reachableHexes`,
-`attackRangeHexes`, `capturableCoords`, etc. Toute sélection invalide donc **l'intégralité**
-du parcours de tuiles (fills + strokes + texte natif par hex). Le fichier sépare déjà une
-seconde couche `Canvas` pour les animations ; y **déplacer les overlays de sélection**
-(portée de déplacement/attaque, cibles, contour du sélectionné) éviterait de redessiner la
-base terrain à chaque tap — gain net de fluidité sur les grandes cartes.
+### O2 — La couche terrain se redessinait à chaque sélection  ✅ **fait**
+
+Avant : le `Canvas` de terrain lisait `selectedHex`, `reachableHexes`, `attackRangeHexes`,
+`capturableCoords`, etc. → toute sélection invalidait **l'intégralité** du parcours de tuiles.
+
+**Correctif** — tous les overlays de sélection (portée déplacement/attaque, cibles,
+capture/siège, contour du sélectionné) sont déplacés dans la seconde couche `Canvas` (celle
+des animations), en itérant directement les **sets de coords** (moins de travail qu'un parcours
+de toutes les tuiles). La couche terrain de base ne dépend plus de la sélection → aucun redraw
+terrain au tap. Le filtre brouillard (`coord in exploredHexes`) est conservé pour un rendu
+identique.
 
 ---
 
 ## 4. Améliorations de contenu / rejouabilité
 
-- **A1 — Trous de ver** : une seule paire posée aux positions mi‑anneau (`MapFactory.kt:90‑102`).
-  La nav wormhole n'offre donc jamais plus d'un saut. Générer un nombre de paires
-  proportionnel au rayon.
-- **A2 — Terrains morts** : `PLASMA_CLOUD`, `ION_STORM`, `ANOMALY` existent dans l'enum, ont
-  un rendu dédié (`drawPlasmaCloud`/`drawIonStorm`/`drawAnomaly`) et un tooltip, mais **ne
-  sont jamais générés** — le tirage procédural ne produit que EMPTY/PLANET/ASTEROIDS/NEBULA
-  (+ BLACK_HOLE/WORMHOLE scriptés). Les brancher dans le tirage (idéalement pondéré par
-  archétype) débloque du contenu déjà dessiné.
-- **A3 — Archétypes** : seulement STANDARD et ZODIAC. Le sélecteur UI
-  (`FactionSelectionScreen`) itère déjà `MapArchetype.values()` : ajouter des archétypes
-  (anneau, spirale, amas) est peu coûteux.
-- **A4 — Taille de campagne** : `GameViewModel.startCampaign` force `MapSize.MEDIUM` ; laisser
-  chaque mission déclarer sa taille via `CampaignConfig`.
-- **A5 — Graine reproductible** : une fois B1 en place, stocker la graine dans `GameState`
-  (avec valeur par défaut pour ne pas casser les saves) et l'afficher permettrait de
-  rejouer/partager une carte. Les tuiles étant déjà sérialisées, la sauvegarde fonctionne
-  indépendamment.
-- **A6 — Feedback** : un tap sur un hex non exploré est silencieusement ignoré
-  (`TacticalMapScreen.kt:321`) — un léger retour (son/haptique) clarifierait l'action.
+- **A1 — Trous de ver** ✅ : `placeWormholes` pose `(radius/4).coerceIn(1,3)` paires
+  point‑symétriques (au lieu d'une seule) — plus d'options de saut sur grandes cartes. Ne fait
+  qu'ajouter de la traversabilité, donc la connectivité reste garantie.
+- **A2 — Terrains morts** ✅ : `PLASMA_CLOUD`, `ION_STORM`, `ANOMALY` sont désormais générés
+  via `terrainWeights(archetype)`. `PLASMA_CLOUD`/`ION_STORM` bloquent la vision (effet réel) ;
+  tooltips réécrits pour ne plus sur‑promettre (le ralentissement de déplacement n'est pas
+  implémenté). Tous passables → connectivité intacte.
+- **A3 — Archétypes** ✅ : ajout de `NEBULA_EXPANSE` (vision‑lourd) et `ASTEROID_BELT`
+  (astéroïdes denses). Le sélecteur `FactionSelectionScreen` les affiche automatiquement ;
+  `VictoryChecker` ne réserve son cas spécial qu'à ZODIAC, les autres suivent la victoire
+  standard. Couverts par `MapFactoryTest.newArchetypesAreFullyConnected`.
+- **A4 — Taille de campagne** ✅ : `CampaignMission.mapSize` (défaut MEDIUM) ; `GameViewModel`
+  la transmet au lieu de forcer MEDIUM.
+- **A5 — Graine reproductible** ✅ : `GameMap.seed` (défaut `0L`, compat saves) stocke la
+  graine ; affichée discrètement en bas‑droite de la carte tactique.
+- **A6 — Feedback** ✅ : un tap sur une case du brouillard déclenche un retour haptique léger
+  au lieu d'être silencieusement ignoré.
 
 ---
 
