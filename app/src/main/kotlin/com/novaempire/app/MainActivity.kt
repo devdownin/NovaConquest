@@ -282,6 +282,8 @@ fun GameContainer(
         .filter { it.faction == gameState.activeFaction && !it.hasMoved && !it.hasAttacked }
         .sortedBy { it.id }
     var smartFocusIdx by remember { mutableStateOf(0) }
+    // centerRequestCounter is a re-trigger nonce (NOT a zoom level): bumping it changes the
+    // Pair so TacticalMapScreen's LaunchedEffect re-centers even on the same coord.
     var centerRequestCounter by remember { mutableStateOf(0) }
     var centerRequest by remember { mutableStateOf<Pair<com.novaempire.core.hex.HexCoord, Int>?>(null) }
     var endTurnSummary by remember { mutableStateOf<EndTurnSummary?>(null) }

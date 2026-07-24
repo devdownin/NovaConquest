@@ -16,10 +16,10 @@
 | # | Sévérité | Domaine | Constat |
 |---|----------|---------|---------|
 | **B1** | 🔴 **Majeur — ✅ corrigé** | Génération | Graine fixe : **toutes les parties génèrent la même carte** (`seed` par défaut = 42 jamais surchargé) |
-| B2 | 🟠 Moyen | Cohérence UX | Trou noir : le tooltip promet des « dégâts aux vaisseaux » **jamais infligés** ; la case est traversable et sûre |
-| B3 | 🟠 Moyen | Cohérence UX | Trois calculs divergents de portée de déplacement (moteur ≠ surbrillance ≠ glisser) → prévisualisations trompeuses |
-| B4 | 🟡 Faible | Cohérence | Le tracé du glisser ignore la **navigation par trou de ver** (surbrillée mais non routée) |
-| B5 | 🟡 Faible | Mort-code | `centerRequest` transporte un niveau de zoom **ignoré** |
+| B2 | 🟠 Moyen — ✅ corrigé | Cohérence UX | Trou noir : le tooltip promet des « dégâts aux vaisseaux » **jamais infligés** ; la case est traversable et sûre |
+| B3 | 🟠 Moyen — ✅ corrigé | Cohérence UX | Trois calculs divergents de portée de déplacement (moteur ≠ surbrillance ≠ glisser) → prévisualisations trompeuses |
+| B4 | 🟡 Faible — ✅ corrigé | Cohérence | Le tracé du glisser ignore la **navigation par trou de ver** (surbrillée mais non routée) |
+| B5 | 🟡 Faible — ✅ clarifié | (faux positif) | `centerRequest` : le second champ n'est **pas** un zoom mais un nonce de re-déclenchement ; audit initial erroné |
 | O1 | ⚪ Optim | Génération | `ensureConnectivity` relance un BFS complet après **chaque** corridor carvé |
 | O2 | ⚪ Optim | Rendu | La couche terrain se **redessine intégralement à chaque sélection** de tuile |
 | A1 | 💡 Amélio | Contenu | Une **seule paire** de trous de ver, quelle que soit la taille |
@@ -69,53 +69,62 @@ val map = MapFactory.generateMap(
 La connectivité reste garantie : `MapFactoryTest` valide déjà les graines `0..49` (STANDARD)
 et `0..24` (ZODIAC) sur les rayons 3/5/8/12.
 
-### B2 — 🟠 Trou noir : effet promis mais absent
+### B2 — 🟠 Trou noir : effet promis mais absent  ✅ **corrigé**
 
-Le tooltip (`TacticalMapScreen.kt:1611`) annonce *« Trou noir. Danger extrême — les vaisseaux
-subissent des dommages »*, mais **aucun code n'inflige de dégâts** de trou noir. La seule
-mécanique `BLACK_HOLE` réellement implémentée est un malus **-25 % d'attaque** en combat
-(`CombatResolver.kt:29,55`). De plus `BLACK_HOLE` a `isPassable = true` (défaut de
-`TerrainType`), donc une unité peut stationner indéfiniment sur le trou noir central `(0,0,0)`
-sans le moindre risque — l'inverse de « danger extrême ».
+Le tooltip (`TacticalMapScreen.kt:1611`) annonçait *« Trou noir. Danger extrême — les
+vaisseaux subissent des dommages »*, mais **aucun code n'infligeait de dégâts**. La seule
+mécanique `BLACK_HOLE` implémentée était un malus **-25 % d'attaque** en combat
+(`CombatResolver.kt:29,55`). Une unité pouvait stationner indéfiniment sur le trou noir
+central `(0,0,0)` sans le moindre risque — l'inverse de « danger extrême ».
 
-**Recommandation** — choisir une direction et l'appliquer des deux côtés :
-- *soit* implémenter des dégâts de fin de tour aux unités sur `BLACK_HOLE` (bloc de fin de
-  tour de `GameEngine.reduce`, à la manière des soins de héros) ;
-- *soit* rendre la case impassable et/ou corriger le texte pour ne décrire que le malus
-  d'attaque. Attention si on la rend impassable : le centre `(0,0,0)` devient un obstacle et
-  la logique de connectivité (`ensureConnectivity`, qui ne carve que les astéroïdes) doit en
-  tenir compte.
+**Correctif appliqué** — dégâts de fin de tour dans `TurnManager.advanceTurn` : une unité de
+la faction qui **termine** son tour et qui stationne sur un `BLACK_HOLE` perd
+`TurnManager.BLACK_HOLE_DAMAGE = 3` PV ; à 0 PV elle est retirée. Le calcul suit le même
+motif que les soins du héros Nix (ne touche que les unités de la faction active), et la
+vision est recalculée en aval par `reduce(EndTurn)`. Le tooltip est mis à jour pour décrire
+l'effet réel (-3 PV/tour + -25 % attaque). La case reste traversable (choix volontaire :
+raccourci risqué plutôt qu'obstacle, pour ne pas perturber `ensureConnectivity`).
 
-### B3 — 🟠 Trois calculs divergents de portée de déplacement
+**Tests** (`TurnManagerTest`) : `blackHoleDamagesUnitOfFactionEndingTurn`,
+`blackHoleDestroysUnitAtLowHp`, `blackHoleSparesUnitsOfOtherFactions`.
 
-| Source | Formule | Prend en compte |
-|--------|---------|-----------------|
-| **Moteur** (autoritaire, `IntentHandlers.kt:54‑55`) | `movement + BonusRegistry.sum(MOVEMENT_MODIFIER)` | faction **+ tech + héros + événement** (ex. ION_STORM −1) |
-| Surbrillance `reachableHexes` (`TacticalMapScreen.kt:162`) | `movement + faction.bonusMovement − ionPenalty` | faction + ION_STORM, **pas** tech/héros |
-| Tracé du glisser (`TacticalMapScreen.kt:438`) | `movement + faction.bonusMovement` | faction seule, **ni** tech/héros **ni** ION_STORM |
+### B3 — 🟠 Trois calculs divergents de portée de déplacement  ✅ **corrigé**
 
-Conséquences visibles : pendant une tempête ionique, le glisser peut proposer une
-destination que le moteur **refusera** ensuite (« Target position is unreachable or too
-far »), et la surbrillance cyan ne coïncide pas avec le tracé du glisser.
+Trois formules coexistaient :
 
-**Recommandation** — exposer un helper unique de « mouvement effectif » (idéalement dans
-`:core:engine`, réutilisé par l'UI) et l'appeler aux trois endroits, pour que
-surbrillance = prévisualisation = résolution.
+| Source | Formule (avant) | Prenait en compte |
+|--------|-----------------|-------------------|
+| **Moteur** (autoritaire, `IntentHandlers.kt`) | `movement + BonusRegistry.sum(MOVEMENT_MODIFIER)` | faction **+ tech + héros + événement** (ION_STORM −1) |
+| Surbrillance `reachableHexes` | `movement + faction.bonusMovement − ionPenalty` | faction + ION_STORM, **pas** tech/héros |
+| Tracé du glisser | `movement + faction.bonusMovement` | faction seule, **ni** tech/héros **ni** ION_STORM |
 
-### B4 — 🟡 Le glisser ignore la navigation par trou de ver
+Conséquence : en tempête ionique, le glisser proposait une destination que le moteur
+**refusait** ensuite, et la surbrillance cyan ne coïncidait pas avec le tracé du glisser.
 
-`reachableHexes` construit `GameGridMap(gameState, gameState.activeFaction)` — qui active les
-arêtes wormhole si `tech_wormhole_nav` est débloquée (`GameGridMap.kt:11‑27`). Mais le tracé
-du glisser construit `GameGridMap(gs)` **sans faction** (`TacticalMapScreen.kt:433`). Un
-joueur ayant la nav wormhole voit donc ses hex accessibles *via* wormhole surlignés, mais le
-tracé du glisser ne route jamais par le trou de ver. Passer `gs.activeFaction` au
-`GameGridMap` du glisser suffit.
+**Correctif appliqué** — nouveau `MovementCalculator.effectiveMovement(state, unit)` dans
+`:core:engine`, source unique de vérité (faction + tech + héros + événement, plancher à 1).
+Il est appelé par le moteur (`handleMoveUnit`), la surbrillance (`reachableHexes`) et le tracé
+du glisser. Surbrillance = prévisualisation = résolution.
 
-### B5 — 🟡 `centerRequest` : niveau de zoom mort
+**Tests** (`MovementCalculatorTest`) : base, bonus de faction, pénalité ION_STORM, plancher à 1.
 
-`centerRequest: Pair<HexCoord, Int>` — le second champ (zoom) est ignoré via `(coord, _)`
-(`TacticalMapScreen.kt:255`). Le « SMART FOCUS » recentre mais ne peut pas ajuster l'échelle :
-soit exploiter la valeur (adapter `scale`), soit retirer le champ pour lever l'ambiguïté.
+### B4 — 🟡 Le glisser ignore la navigation par trou de ver  ✅ **corrigé**
+
+`reachableHexes` construisait `GameGridMap(gameState, gameState.activeFaction)` — qui active
+les arêtes wormhole si `tech_wormhole_nav` est débloquée (`GameGridMap.kt:11‑27`). Mais le
+tracé du glisser construisait `GameGridMap(gs)` **sans faction**. Un joueur ayant la nav
+wormhole voyait ses hex accessibles *via* wormhole surlignés, sans que le glisser n'y route.
+**Correctif** : le glisser passe désormais `gs.activeFaction` au `GameGridMap`.
+
+### B5 — 🟡 `centerRequest` : faux positif (pas un zoom)  ✅ **clarifié**
+
+Réexamen : le second champ de `centerRequest: Pair<HexCoord, Int>` n'est **pas** un niveau de
+zoom mais un **compteur monotone** (`centerRequestCounter`, `MainActivity.kt:285`) servant de
+*nonce* : incrémenté à chaque « SMART FOCUS », il change la `Pair` pour que
+`LaunchedEffect(centerRequest)` se re-déclenche même en recentrant sur la même coordonnée. Le
+destructuring `(coord, _)` est donc **correct** — le champ n'est pas mort, il agit via la clé
+du `LaunchedEffect`. L'audit initial était erroné. **Action** : commentaires ajoutés aux deux
+sites pour éviter la confusion ; aucun changement de comportement.
 
 ---
 

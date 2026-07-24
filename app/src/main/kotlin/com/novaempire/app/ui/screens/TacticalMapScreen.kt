@@ -52,6 +52,7 @@ import com.novaempire.core.domain.models.*
 import com.novaempire.core.domain.state.CombatEvent
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.engine.GameGridMap
+import com.novaempire.core.engine.MovementCalculator
 import com.novaempire.core.hex.HexCoord
 import com.novaempire.core.hex.HexPathfinder
 import kotlin.math.cos
@@ -78,6 +79,8 @@ fun TacticalMapScreen(
     onDeployUnit: (HexCoord, HexCoord, Int) -> Unit = { _, _, _ -> },
     onOpenAcademy: () -> Unit,
     onClearSelection: () -> Unit,
+    // (coord, nonce): the Int is a monotonically increasing re-trigger counter — NOT a zoom
+    // level — so LaunchedEffect(centerRequest) re-fires even when re-focusing the same coord.
     centerRequest: Pair<HexCoord, Int>? = null,
     initialSelectedHex: HexCoord? = null,
     combatLog: List<Pair<String, String>> = emptyList(),
@@ -158,8 +161,7 @@ fun TacticalMapScreen(
         val sel = selectedHex ?: return@remember emptySet<HexCoord>()
         val unit = gameState.units[sel] ?: return@remember emptySet<HexCoord>()
         if (unit.faction != gameState.activeFaction || unit.hasMoved) return@remember emptySet<HexCoord>()
-        val ionPenalty = if (gameState.activeEvent == GalacticEvent.ION_STORM) 1 else 0
-        HexPathfinder.findReachable(sel, GameGridMap(gameState, gameState.activeFaction), (unit.type.movement + unit.faction.bonusMovement - ionPenalty).coerceAtLeast(1))
+        HexPathfinder.findReachable(sel, GameGridMap(gameState, gameState.activeFaction), MovementCalculator.effectiveMovement(gameState, unit))
     }
 
     // Enemy units the selected unit can attack this turn
@@ -252,7 +254,7 @@ fun TacticalMapScreen(
 
     // Center map on a coord when requested by SMART FOCUS
     LaunchedEffect(centerRequest) {
-        centerRequest?.let { (coord, _) ->
+        centerRequest?.let { (coord, _) ->  // second component is the re-trigger nonce, intentionally unused here
             val hSpacing = sqrt(3f) * HEX_RADIUS
             val vSpacing = 1.5f * HEX_RADIUS
             pan = Offset(
@@ -430,12 +432,12 @@ fun TacticalMapScreen(
                                 return@detectDragGesturesAfterLongPress
                             }
 
-                            val gridMap = GameGridMap(gs)
+                            val gridMap = GameGridMap(gs, gs.activeFaction)
                             val targetUnit = gs.units[coord]
                             val path = if (targetUnit != null && targetUnit.faction != gs.activeFaction) {
                                 if (start.distanceTo(coord) <= unit.type.range) listOf(coord) else null
                             } else {
-                                HexPathfinder.findPath(start, coord, gridMap, maxCost = unit.type.movement + unit.faction.bonusMovement)
+                                HexPathfinder.findPath(start, coord, gridMap, maxCost = MovementCalculator.effectiveMovement(gs, unit))
                             }
 
                             if (path != null && path != ghostPath) {
@@ -1608,7 +1610,7 @@ fun TerrainTooltipOverlay(
         TerrainType.PLANET -> "Planète habitée. Génère des crédits. Peut être capturée ou assiégée."
         TerrainType.ASTEROIDS -> "Champ d'astéroïdes. Impassable."
         TerrainType.NEBULA -> "Nébuleuse. Bloque la vision. Les flottes peuvent la traverser."
-        TerrainType.BLACK_HOLE -> "Trou noir. Danger extrême — les vaisseaux subissent des dommages."
+        TerrainType.BLACK_HOLE -> "Trou noir. Danger extrême — un vaisseau qui y stationne perd 3 PV en fin de tour et attaque à -25%."
         TerrainType.WORMHOLE -> "Ver de l'espace. Permet des déplacements longue distance."
         TerrainType.PLASMA_CLOUD -> "Nuage de plasma. Bloque la vision et ralentit les déplacements."
         TerrainType.ION_STORM -> "Tempête ionique. Réduit la portée de déplacement de 1."

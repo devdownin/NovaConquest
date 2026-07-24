@@ -11,6 +11,9 @@ import kotlin.random.Random
 
 object TurnManager {
 
+    /** Structural damage a ship takes at the end of its turn while sitting on a black hole. */
+    const val BLACK_HOLE_DAMAGE = 3
+
     fun advanceTurn(state: GameState, rng: Random = Random.Default): GameState {
         val allFactions = Faction.values().filter { it != Faction.ANCIENT_NPC }
         val nextIndex = (allFactions.indexOf(state.activeFaction) + 1) % allFactions.size
@@ -47,6 +50,25 @@ object TurnManager {
                     else unit
                 }
             )
+        }
+
+        // Black hole hazard: units of the faction that just ended its turn take structural
+        // damage while sitting on a black hole; destroyed ships are removed. Gives the
+        // "danger extrême" terrain a real cost and a reason not to camp the -25% ATK tile.
+        val hasBlackHoleUnit = nextState.units.values.any { unit ->
+            unit.faction == state.activeFaction &&
+                nextState.map.tiles[unit.position]?.terrain == TerrainType.BLACK_HOLE
+        }
+        if (hasBlackHoleUnit) {
+            val survivors = nextState.units
+                .mapValues { (_, unit) ->
+                    if (unit.faction == state.activeFaction &&
+                        nextState.map.tiles[unit.position]?.terrain == TerrainType.BLACK_HOLE) {
+                        unit.copy(currentHp = unit.currentHp - BLACK_HOLE_DAMAGE)
+                    } else unit
+                }
+                .filterValues { it.currentHp > 0 }
+            nextState = nextState.copy(units = survivors)
         }
 
         // Income for the faction starting its turn
