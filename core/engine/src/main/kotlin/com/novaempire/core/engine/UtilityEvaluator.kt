@@ -186,7 +186,16 @@ object UtilityEvaluator : AIStrategy {
             .minByOrNull { it.distanceTo(unit.position) } ?: return null
         if (approach == unit.position) return null
         val path = HexPathfinder.findPath(unit.position, approach, gridMap) ?: return null
-        return path.take(movement).lastOrNull { state.units[it] == null }
+        // Walk the path spending movement points per hex (difficult terrain costs more), and
+        // return the furthest free hex still within budget — matches what the engine will accept.
+        var budget = movement
+        var dest: HexCoord? = null
+        for (hex in path) {
+            budget -= gridMap.enterCost(hex)
+            if (budget < 0) break
+            if (state.units[hex] == null) dest = hex
+        }
+        return dest
     }
 
     private fun fleetCentroid(allies: List<GameUnit>): HexCoord =

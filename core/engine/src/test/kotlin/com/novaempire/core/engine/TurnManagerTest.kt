@@ -74,6 +74,28 @@ class TurnManagerTest {
     }
 
     @Test
+    fun anomalyProducesVariableOutcomes() {
+        // Over many seeds the anomaly pulse must sometimes heal, sometimes damage, sometimes no-op.
+        val anomaly = HexCoord(0, 0, 0)
+        val outcomes = (0L until 40L).map { seed ->
+            val unit = GameUnit(type = UnitType.CRUISER, faction = Faction.DOMINION, position = anomaly, currentHp = 20)
+            val state = GameState(
+                activeFaction = Faction.DOMINION,
+                playerStates = mapOf(
+                    Faction.DOMINION to PlayerState(Faction.DOMINION, credits = 10),
+                    Faction.TRADERS to PlayerState(Faction.TRADERS, credits = 10)
+                ),
+                units = mapOf(anomaly to unit),
+                map = GameMap(tiles = mapOf(anomaly to HexTile(anomaly, TerrainType.ANOMALY)))
+            )
+            TurnManager.advanceTurn(state, Random(seed)).units[anomaly]?.currentHp ?: 0
+        }.toSet()
+        assertTrue("anomaly never healed", outcomes.any { it > 20 })
+        assertTrue("anomaly never damaged", outcomes.any { it in 1 until 20 })
+        assertTrue("anomaly never left a unit unchanged", outcomes.contains(20))
+    }
+
+    @Test
     fun turnCounterIncrementsAfterFullRound() {
         val allActive = Faction.values().filter { it != Faction.ANCIENT_NPC }
         var state = baseState(Faction.DOMINION, Faction.TRADERS)

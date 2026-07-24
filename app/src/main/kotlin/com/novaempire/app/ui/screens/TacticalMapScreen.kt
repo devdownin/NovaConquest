@@ -1601,9 +1601,9 @@ fun TerrainTooltipOverlay(
         TerrainType.NEBULA -> "Nébuleuse. Bloque la vision. Les flottes peuvent la traverser."
         TerrainType.BLACK_HOLE -> "Trou noir. Danger extrême — un vaisseau qui y stationne perd 3 PV en fin de tour et attaque à -25%."
         TerrainType.WORMHOLE -> "Ver de l'espace. Permet des déplacements longue distance."
-        TerrainType.PLASMA_CLOUD -> "Nuage de plasma. Bloque la vision."
-        TerrainType.ION_STORM -> "Champ ionique stationnaire. Bloque la vision."
-        TerrainType.ANOMALY -> "Anomalie galactique. Zone traversable aux relevés instables."
+        TerrainType.PLASMA_CLOUD -> "Nuage de plasma. Bloque la vision et ralentit les flottes (coût de déplacement x2)."
+        TerrainType.ION_STORM -> "Champ ionique stationnaire. Bloque la vision et ralentit les flottes (coût de déplacement x2)."
+        TerrainType.ANOMALY -> "Anomalie galactique. Chaque fin de tour, un vaisseau qui y stationne subit une impulsion imprévisible (soin ou dégâts)."
     }
 
     Box(

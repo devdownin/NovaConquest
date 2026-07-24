@@ -163,9 +163,8 @@ identique.
   point‑symétriques (au lieu d'une seule) — plus d'options de saut sur grandes cartes. Ne fait
   qu'ajouter de la traversabilité, donc la connectivité reste garantie.
 - **A2 — Terrains morts** ✅ : `PLASMA_CLOUD`, `ION_STORM`, `ANOMALY` sont désormais générés
-  via `terrainWeights(archetype)`. `PLASMA_CLOUD`/`ION_STORM` bloquent la vision (effet réel) ;
-  tooltips réécrits pour ne plus sur‑promettre (le ralentissement de déplacement n'est pas
-  implémenté). Tous passables → connectivité intacte.
+  via `terrainWeights(archetype)` **et dotés d'effets réels** (voir §5). Tous passables →
+  connectivité intacte.
 - **A3 — Archétypes** ✅ : ajout de `NEBULA_EXPANSE` (vision‑lourd) et `ASTEROID_BELT`
   (astéroïdes denses). Le sélecteur `FactionSelectionScreen` les affiche automatiquement ;
   `VictoryChecker` ne réserve son cas spécial qu'à ZODIAC, les autres suivent la victoire
@@ -179,7 +178,32 @@ identique.
 
 ---
 
-## 5. Ce qui fonctionne bien
+## 5. Effets de terrain implémentés
+
+Les terrains « décoratifs » ont désormais des mécaniques réelles, appliquées au bon endroit et
+alignées sur leurs tooltips :
+
+| Terrain | Effet(s) | Où |
+|---------|----------|----|
+| `BLACK_HOLE` | -3 PV/fin de tour (peut détruire) + -25 % attaque | `TurnManager`, `CombatResolver` |
+| `NEBULA` | Bloque la vision (traversée libre) | `VisionSystem` |
+| `PLASMA_CLOUD` | Bloque la vision + **coût de déplacement x2** | `VisionSystem`, `GameGridMap.enterCost` |
+| `ION_STORM` (terrain) | Bloque la vision + **coût de déplacement x2** | `VisionSystem`, `GameGridMap.enterCost` |
+| `ANOMALY` | **Impulsion aléatoire** de fin de tour (±2 PV ou rien) | `TurnManager` |
+
+**Coût de déplacement par terrain** : l'interface `GridMap` gagne `enterCost(coord): Int`
+(défaut 1) ; `HexPathfinder.findPath`/`findReachable` la consomment ; `GameGridMap` renvoie 2
+pour plasma/ion. Comme tout le pathfinding (moteur, surbrillance, glisser, IA) passe par
+`GameGridMap`, le surcoût est cohérent partout. L'heuristique de destination de l'IA
+(`stepToward`) dépense aussi les points par hex, donc elle ne propose plus de trajets que le
+moteur refuserait. En terrain normal (coût 1) le comportement est strictement inchangé.
+
+**Tests** : `HexPathfinderTest` (coût d'entrée sur `findPath` et `findReachable`),
+`GameGridMapTest` (plasma/ion = 2, nébuleuse = 1), `TurnManagerTest.anomalyProducesVariableOutcomes`.
+
+---
+
+## 6. Ce qui fonctionne bien
 
 - **Connectivité garantie** : `ensureConnectivity` + `carveLine` assurent qu'un vaisseau peut
   toujours atteindre chaque spawn et chaque planète, couvert par `MapFactoryTest` sur un large

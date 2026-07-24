@@ -17,6 +17,12 @@ class GameGridMap(private val state: GameState, private val faction: Faction? = 
         return tile.terrain.isPassable && unit == null
     }
 
+    /** Plasma and ion fields are turbulent: entering one costs 2 movement points instead of 1. */
+    override fun enterCost(coord: HexCoord): Int = when (state.map.tiles[coord]?.terrain) {
+        TerrainType.PLASMA_CLOUD, TerrainType.ION_STORM -> 2
+        else -> 1
+    }
+
     override fun getNeighbors(coord: HexCoord): List<HexCoord> {
         val standard = HexCoord.directions.map { coord + it }.filter { state.map.tiles.containsKey(it) }
         if (hasWormholeNav && state.map.tiles[coord]?.terrain == TerrainType.WORMHOLE) {

@@ -73,4 +73,40 @@ class HexPathfinderTest {
 
         assertNull(path)
     }
+
+    /** Grid where [costly] hexes cost 2 movement to enter instead of 1. */
+    private class CostGrid(private val radius: Int, private val costly: Set<HexCoord>) : GridMap {
+        override fun isPassable(coord: HexCoord) =
+            kotlin.math.abs(coord.q) <= radius && kotlin.math.abs(coord.r) <= radius && kotlin.math.abs(coord.s) <= radius
+        override fun getNeighbors(coord: HexCoord) =
+            HexCoord.directions.map { coord + it }.filter { isPassable(it) }
+        override fun enterCost(coord: HexCoord) = if (coord in costly) 2 else 1
+    }
+
+    @Test
+    fun difficultTerrainConsumesExtraMovement() {
+        val start = HexCoord(0, 0, 0)
+        val goal = HexCoord(2, -2, 0)
+        // The two hexes on the direct line each cost 2 → total path cost 4, not 2.
+        val costly = setOf(HexCoord(1, -1, 0), HexCoord(2, -2, 0))
+        val grid = CostGrid(radius = 4, costly = costly)
+
+        // Reachable within 2 points on open space, but not when both steps cost 2.
+        assertNull("goal must be out of reach when terrain doubles the cost",
+            HexPathfinder.findPath(start, goal, grid, maxCost = 2))
+        assertNotNull("goal reachable once enough movement is available",
+            HexPathfinder.findPath(start, goal, grid, maxCost = 4))
+    }
+
+    @Test
+    fun findReachableRespectsEnterCost() {
+        val start = HexCoord(0, 0, 0)
+        // Ring-1 neighbours all cost 2 to enter; with 1 movement point none are reachable.
+        val ring1 = HexCoord.directions.map { start + it }.toSet()
+        val grid = CostGrid(radius = 4, costly = ring1)
+        assertTrue("no hex should be reachable with 1 point when all neighbours cost 2",
+            HexPathfinder.findReachable(start, grid, maxCost = 1).isEmpty())
+        assertTrue("neighbours become reachable with 2 points",
+            HexPathfinder.findReachable(start, grid, maxCost = 2).containsAll(ring1))
+    }
 }
