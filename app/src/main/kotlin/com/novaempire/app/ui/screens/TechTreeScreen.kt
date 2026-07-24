@@ -45,7 +45,8 @@ data class UiTechNode(
 @Composable
 fun TechTreeScreen(
     gameState: GameState,
-    onResearchTech: (String) -> Unit
+    onResearchTech: (String) -> Unit,
+    onCancelResearch: () -> Unit = {}
 ) {
     val playerState = gameState.playerStates[gameState.activeFaction]
     val credits = playerState?.credits ?: 0
@@ -124,6 +125,7 @@ fun TechTreeScreen(
                 title = "MILITARY",
                 nodes = militaryNodes,
                 onResearchClick = onResearchTech,
+                onCancelClick = onCancelResearch,
                 modifier = Modifier.width(300.dp)
             )
             Spacer(modifier = Modifier.width(16.dp))
@@ -131,6 +133,7 @@ fun TechTreeScreen(
                 title = "EXPANSION",
                 nodes = expansionNodes,
                 onResearchClick = onResearchTech,
+                onCancelClick = onCancelResearch,
                 modifier = Modifier.width(300.dp)
             )
             Spacer(modifier = Modifier.width(16.dp))
@@ -138,6 +141,7 @@ fun TechTreeScreen(
                 title = "EXPLORATION",
                 nodes = explorationNodes,
                 onResearchClick = onResearchTech,
+                onCancelClick = onCancelResearch,
                 modifier = Modifier.width(300.dp)
             )
         }
@@ -145,7 +149,13 @@ fun TechTreeScreen(
 }
 
 @Composable
-fun TechBranchView(title: String, nodes: List<UiTechNode>, onResearchClick: (String) -> Unit, modifier: Modifier = Modifier) {
+fun TechBranchView(
+    title: String,
+    nodes: List<UiTechNode>,
+    onResearchClick: (String) -> Unit,
+    onCancelClick: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
     Column(
         modifier = modifier.verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -158,7 +168,7 @@ fun TechBranchView(title: String, nodes: List<UiTechNode>, onResearchClick: (Str
         )
 
         nodes.forEachIndexed { index, node ->
-            TechNodeCard(node = node, onResearchClick = { onResearchClick(node.id) })
+            TechNodeCard(node = node, onResearchClick = { onResearchClick(node.id) }, onCancelClick = onCancelClick)
             if (index < nodes.size - 1) {
                 val connectorColor = if (node.state == TechNodeState.UNLOCKED) NeonCyan else MaterialTheme.colorScheme.surfaceVariant
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -177,7 +187,7 @@ fun TechBranchView(title: String, nodes: List<UiTechNode>, onResearchClick: (Str
 }
 
 @Composable
-fun TechNodeCard(node: UiTechNode, onResearchClick: () -> Unit) {
+fun TechNodeCard(node: UiTechNode, onResearchClick: () -> Unit, onCancelClick: () -> Unit = {}) {
     val borderColor = when (node.state) {
         TechNodeState.UNLOCKED -> Color.Transparent
         TechNodeState.RESEARCHING -> NeonOrange
@@ -227,6 +237,8 @@ fun TechNodeCard(node: UiTechNode, onResearchClick: () -> Unit) {
                         style = MaterialTheme.typography.bodyMedium,
                         color = NeonOrange
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    IndustrialButton(text = "CANCEL", onClick = onCancelClick, color = NeonRed)
                 }
                 TechNodeState.UNLOCKED -> {
                     Spacer(modifier = Modifier.height(8.dp))

@@ -20,7 +20,17 @@ class CostCalculatorTest {
     fun costIncreasesWithUnlockedBranchTechs() {
         val unlocked = setOf("tech_hull_plating")
         val cost = CostCalculator.techCost("tech_plasma_weapons", unlocked)
-        assertEquals(8 + 6, cost) // base 8 + 6 * 1 unlocked in branch
+        // Plasma is a tier-2 tech (base 14) + 6 * 1 unlocked in branch.
+        assertEquals(14 + 6, cost)
+    }
+
+    @Test
+    fun higherTierTechsCostMore() {
+        // With no branch techs unlocked, cost is the tier base alone — later tiers cost more.
+        val t1 = CostCalculator.techCost("tech_hull_plating", emptySet())   // tier 1
+        val t2 = CostCalculator.techCost("tech_plasma_weapons", emptySet()) // tier 2
+        val t4 = CostCalculator.techCost("tech_nano_armor", emptySet())     // tier 4
+        assertTrue("Tech cost should rise with tier", t1 < t2 && t2 < t4)
     }
 
     @Test

@@ -39,7 +39,12 @@ data class GameState(
 )
 
 @Serializable
-data class ResearchProgress(val techId: String, val turnsRemaining: Int)
+data class ResearchProgress(
+    val techId: String,
+    val turnsRemaining: Int,
+    /** Credits actually spent to start this research — refunded (in part) if it is cancelled. */
+    val costPaid: Int = 0
+)
 
 @Serializable
 data class BuildOrder(val unitType: UnitType, val planetCoord: HexCoord, val turnsRemaining: Int)

@@ -17,9 +17,9 @@
 |---|----------|---------|---------|
 | **T1** | 🟠 Moyen — ✅ corrigé | Cohérence UX | Le coût affiché dans l'arbre **ignore la remise d'événement** (`ANCIENT_SIGNAL` -25 %) → coût trop élevé, tech faussement « non finançable » |
 | T2 | 🟡 Faible — ✅ corrigé | Cohérence | `Anomaly Analysis` : description « -2 tours » alors que le code fait décroître **2× plus vite** |
-| T3 | 💡 Amélio | Équilibrage | `baseCost` **jamais personnalisé** (toutes les techs = 8) : le coût ne reflète pas la puissance (tier‑4 = filler) |
+| T3 | 💡 Amélio — ✅ fait | Équilibrage | `baseCost` par tier (8/14/22/32) : les techs tardives coûtent plus |
 | T4 | 🟡 Faible — ✅ corrigé | UX | Bouton `RESEARCH` **cliquable même sans crédits** → erreur moteur au lieu d'un état désactivé |
-| T5 | 💡 Amélio | Feature gap | Pas d'**annulation de recherche** (asymétrie avec `CancelBuild`) → crédits perdus sur erreur |
+| T5 | 💡 Amélio — ✅ fait | Feature gap | `CancelResearch` avec remboursement 50 % (symétrique de `CancelBuild`) |
 | T6 | ⚪ Comportement | IA | Recherche IA **naïve** : toujours dans l'ordre de `ALL_TECHS` (militaire d'abord), sans stratégie |
 | T7 | 🟡 Design | Événements | `anomaly_analysis` est **global** : la tech de n'importe quel joueur raccourcit l'événement partagé pour tout le monde |
 | T8 | 🧹 Propreté | Mort‑code | Constante `TechRegistry.DEEP_SCANNERS` **jamais référencée** |
@@ -64,18 +64,33 @@ n'avait pas d'état désactivé. **Correctif** : ajout d'un paramètre `enabled:
 (rétrocompatible, `clickable(enabled = …)` + atténuation), et le bouton passe
 `enabled = node.canAfford` avec un libellé `INSUFFICIENT (n C)`.
 
+### T3 — 💡 Barème de coût par tier  ✅ **fait**
+
+`TechDefinition.baseCost` valait 8 pour **toutes** les techs ; le coût ne montait que via
+`baseCost + 6 × (techs débloquées dans la branche)`. Une tech tier‑4 déterminante coûtait le
+même barème qu'une tech de remplissage. **Correctif** — `baseCost` par tier (constantes
+`TechRegistry.TIER_1_COST..TIER_4_COST` = 8 / 14 / 22 / 32), renseigné sur chaque définition.
+Le tier 1 conserve 8 (aucune sauvegarde ni test cassé). Escalade d'une branche (ex. militaire) :
+8 → 20 → 34 → 50 au lieu de 8 → 14 → 20 → 26.
+
+**Tests** : `CostCalculatorTest.higherTierTechsCostMore` + mise à jour de
+`costIncreasesWithUnlockedBranchTechs` (plasma tier‑2 = 20).
+
+### T5 — 💡 Annulation de recherche  ✅ **fait**
+
+Aucun pendant à `CancelBuild` : une recherche lancée par erreur immobilisait les crédits.
+**Correctif** — nouvel intent `CancelResearch` + `handleCancelResearch` : rembourse **50 %**
+des crédits réellement dépensés (`ResearchProgress.costPaid`, nouveau champ défaut `0` →
+compatible sauvegardes) et vide la file. Bouton `CANCEL` ajouté à la carte `RESEARCHING`,
+câblé dans `MainActivity`.
+
+**Tests** : `IntentReducerTest.cancelResearchRefundsHalfAndClearsQueue` et
+`cancelResearchWithoutQueueIsNoOp`.
+
 ---
 
 ## 3. Design / équilibrage / IA (signalés, non modifiés)
 
-- **T3 — `baseCost` inexploité.** `TechDefinition.baseCost` vaut 8 par défaut et n'est
-  **jamais surchargé** ; le coût ne varie que via `baseCost + 6 × (techs débloquées dans la
-  branche)`. Une tech tier‑4 déterminante (`nano_armor` +5 PV, `stellar_mining` +15 crédits,
-  `quantum_relay` +20 % revenu) coûte le même barème qu'une tech de remplissage. Piste :
-  renseigner `baseCost` par tech/tier. *(Changement d'équilibrage — laissé à votre décision.)*
-- **T5 — Pas d'annulation de recherche.** `CancelBuild` existe et rembourse 50 %, mais aucun
-  `CancelResearch` : une recherche lancée par erreur immobilise les crédits jusqu'à la fin (ou
-  l'aptitude du héros Kael). Piste : ajouter un intent symétrique avec remboursement partiel.
 - **T6 — Recherche IA naïve.** `UtilityEvaluator.evaluateEconomyAndTech` prend la **première**
   tech disponible et abordable dans l'ordre de `ALL_TECHS` (militaire → expansion →
   exploration). L'IA ne priorise ni par valeur, ni selon sa posture (agressive/économique).

@@ -323,7 +323,7 @@ object UtilityEvaluator : AIStrategy {
         val newPlayerStates = state.playerStates.toMutableMap()
         newPlayerStates[faction] = playerState.copy(
             credits = playerState.credits - cost,
-            researchInProgress = ResearchProgress(affordableTech.id, affordableTech.tier + 1)
+            researchInProgress = ResearchProgress(affordableTech.id, affordableTech.tier + 1, costPaid = cost)
         )
         return state.copy(playerStates = newPlayerStates)
     }

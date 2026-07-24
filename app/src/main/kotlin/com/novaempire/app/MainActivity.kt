@@ -452,7 +452,8 @@ fun GameContainer(
                 }
                 GameTab.TECH -> TechTreeScreen(
                     gameState = gameState,
-                    onResearchTech = onResearchTech
+                    onResearchTech = onResearchTech,
+                    onCancelResearch = { gameViewModel.dispatch(GameIntent.CancelResearch) }
                 )
                 GameTab.INTEL -> DiplomacyIntelScreen(
                     gameState = gameState,
