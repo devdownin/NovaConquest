@@ -142,6 +142,43 @@ class UtilityEvaluatorTest {
         assertNull("No hero is affordable with 0 credits", UtilityEvaluator.chooseHero(state, ps))
     }
 
+    // ── Production choice (P6) ────────────────────────────────────────────────
+
+    private fun producerState(atWar: Boolean, credits: Int) = PlayerState(
+        Faction.XYLAR, credits = credits,
+        relations = if (atWar) mapOf(Faction.KAELEN to DiplomaticRelation.WAR) else emptyMap()
+    )
+
+    @Test
+    fun atWarTheAiBuildsTheStrongestHullItCanAfford() {
+        val ps = producerState(atWar = true, credits = 100)
+        val state = GameState(activeFaction = Faction.XYLAR, playerStates = mapOf(Faction.XYLAR to ps))
+        assertEquals(UnitType.DREADNOUGHT, UtilityEvaluator.chooseUnitToBuild(state, ps, planetThreatened = false))
+    }
+
+    @Test
+    fun atPeaceTheAiDoesNotEmptyItsTreasuryIntoDreadnoughts() {
+        // Regression: the old rule always picked the most expensive affordable hull, even in peace.
+        val ps = producerState(atWar = false, credits = 100)
+        val state = GameState(activeFaction = Faction.XYLAR, playerStates = mapOf(Faction.XYLAR to ps))
+        val chosen = UtilityEvaluator.chooseUnitToBuild(state, ps, planetThreatened = false)!!
+        assertTrue("a peacetime build should stay affordable, got $chosen", chosen.cost < UnitType.DREADNOUGHT.cost)
+    }
+
+    @Test
+    fun aThreatenedPlanetGetsADefensePlatform() {
+        val ps = producerState(atWar = true, credits = 100)
+        val state = GameState(activeFaction = Faction.XYLAR, playerStates = mapOf(Faction.XYLAR to ps))
+        assertEquals(UnitType.DEFENSE_PLATFORM, UtilityEvaluator.chooseUnitToBuild(state, ps, planetThreatened = true))
+    }
+
+    @Test
+    fun nothingIsBuiltWithoutCredits() {
+        val ps = producerState(atWar = true, credits = 0)
+        val state = GameState(activeFaction = Faction.XYLAR, playerStates = mapOf(Faction.XYLAR to ps))
+        assertNull(UtilityEvaluator.chooseUnitToBuild(state, ps, planetThreatened = false))
+    }
+
     @Test
     fun advancesTowardDistantObjectiveEvenBeyondMovement() = runBlocking {
         // DREADNOUGHT (movement 1 + XYLAR +1 = 2) four hexes from an enemy planet must still close in.

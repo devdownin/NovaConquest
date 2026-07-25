@@ -29,6 +29,7 @@ import com.novaempire.app.ui.theme.TextSecondary
 import com.novaempire.core.domain.models.Hero
 import com.novaempire.core.domain.models.HeroRegistry
 import com.novaempire.core.domain.state.GameState
+import com.novaempire.core.engine.HeroCostCalculator
 
 @Composable
 fun HeroAcademyScreen(
@@ -51,7 +52,7 @@ fun HeroAcademyScreen(
     val heroAbilityDescriptions = mapOf(
         HeroRegistry.VANCE to "Frappe de Suppression — all fleet units may fire again this turn",
         HeroRegistry.KAEL to "Prototype — complete current research instantly",
-        HeroRegistry.NIX to "Refuge Stellaire — fully heal all friendly units",
+        HeroRegistry.NIX to "Refuge Stellaire — repair half the hull of every friendly unit",
         HeroRegistry.ELARA to "Convoi Commercial — gain +80 Credits immediately"
     )
 
@@ -140,9 +141,15 @@ fun HeroAcademyScreen(
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
                 items(availableHeroes) { hero ->
+                    // Price depends on affinity (own hero = base, another faction's = double,
+                    // mercenary = base) — read it from the same calculator the engine charges with.
+                    val price = HeroCostCalculator.costFor(hero, gameState.activeFaction)
                     HeroCard(
                         hero = hero,
-                        canAfford = credits >= hero.cost,
+                        price = price,
+                        isMercenary = HeroCostCalculator.isMercenary(hero),
+                        recruiterFaction = gameState.activeFaction,
+                        canAfford = credits >= price,
                         onRecruit = { onRecruitClick(hero.id) }
                     )
                 }
@@ -154,6 +161,9 @@ fun HeroAcademyScreen(
 @Composable
 fun HeroCard(
     hero: Hero,
+    price: Int,
+    isMercenary: Boolean,
+    recruiterFaction: com.novaempire.core.domain.models.Faction,
     canAfford: Boolean,
     onRecruit: () -> Unit
 ) {
@@ -176,10 +186,15 @@ fun HeroCard(
 
             Spacer(modifier = Modifier.height(16.dp))
             Text(text = hero.name.uppercase(), style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
+            val isOwnHero = hero.targetFaction == recruiterFaction
             Text(
-                text = "AFFINITY — ${hero.targetFaction.displayName}",
+                text = when {
+                    isMercenary -> "MERCENAIRE — sert toutes les factions"
+                    isOwnHero -> "AFFINITÉ — ${hero.targetFaction.displayName} (tarif de faction)"
+                    else -> "LOYAUTÉ — ${hero.targetFaction.displayName} (×${HeroCostCalculator.OFF_FACTION_MULTIPLIER})"
+                },
                 style = MaterialTheme.typography.labelSmall,
-                color = TextSecondary
+                color = if (isOwnHero || isMercenary) NeonCyan else NeonOrange
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -196,7 +211,7 @@ fun HeroCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(text = "${hero.cost} C", style = MaterialTheme.typography.headlineMedium, color = if (canAfford) NeonCyan else NeonRed)
+                Text(text = "$price C", style = MaterialTheme.typography.headlineMedium, color = if (canAfford) NeonCyan else NeonRed)
                 IndustrialButton(
                     text = if (canAfford) "RECRUIT" else "INSUFFICIENT",
                     onClick = onRecruit,

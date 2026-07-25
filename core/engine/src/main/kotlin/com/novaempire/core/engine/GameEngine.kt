@@ -103,7 +103,9 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
     private suspend fun checkVictoryConditions(state: GameState): GameState {
         val result = VictoryChecker.check(state) ?: return state
         val finalState = state.copy(winner = result.winner, victoryReason = result.reason)
-        _effects.emit(GameEffect.ShowNotification("VICTORY: ${result.winner.displayName} — ${result.reason}", "GOLD"))
+        val banner = result.winner?.let { "VICTORY: ${it.displayName} — ${result.reason}" }
+            ?: "MATCH NUL — ${result.reason}"
+        _effects.emit(GameEffect.ShowNotification(banner, "GOLD"))
         return finalState
     }
 

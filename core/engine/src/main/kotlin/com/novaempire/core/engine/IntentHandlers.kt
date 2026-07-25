@@ -132,10 +132,13 @@ internal fun handleBuildUnit(state: GameState, intent: GameIntent.BuildUnit): Ga
 internal fun handleRecruitHero(state: GameState, intent: GameIntent.RecruitHero): GameResult {
     val playerState = state.activePlayer() ?: return GameResult(state, "Player state not found.")
     val hero = HeroRegistry.getHero(intent.heroId) ?: return GameResult(state, "Hero not found.")
-    IntentValidator.canAfford(playerState, hero.cost)?.let { return GameResult(state, it) }
+    // Affinity is priced, not locked (see HeroCostCalculator): your own hero costs base, someone
+    // else's costs double, a mercenary serves anyone at base.
+    val cost = HeroCostCalculator.costFor(hero, state.activeFaction)
+    IntentValidator.canAfford(playerState, cost)?.let { return GameResult(state, it) }
     if (playerState.recruitedHeroes.contains(hero.id)) return GameResult(state, "Hero already recruited.")
     return GameResult(state.withUpdatedPlayer(playerState.copy(
-        credits = playerState.credits - hero.cost,
+        credits = playerState.credits - cost,
         recruitedHeroes = playerState.recruitedHeroes + hero.id
     )))
 }
@@ -316,11 +319,16 @@ internal fun handleUseHeroAbility(state: GameState, intent: GameIntent.UseHeroAb
                 notification = "ELARA: Convoi Commercial — +80 Credits")
         }
         HeroRegistry.NIX -> {
+            // Heals half of each hull rather than resetting the fleet to full (H6). Nix already
+            // grants a passive +1 HP/turn and — being the mercenary — is hirable by every faction,
+            // so a free total repair on top made losing a fleet fight nearly costless.
             val newUnits = state.units.mapValues { (_, u) ->
-                if (u.faction == state.activeFaction) u.copy(currentHp = u.type.maxHp) else u
+                if (u.faction == state.activeFaction)
+                    u.copy(currentHp = minOf(u.type.maxHp, u.currentHp + (u.type.maxHp + 1) / 2))
+                else u
             }
             GameResult(state.withUpdatedPlayer(playerState.copy(heroAbilitiesUsed = markUsed)).copy(units = newUnits),
-                notification = "NIX: Refuge Stellaire — all units fully healed")
+                notification = "NIX: Refuge Stellaire — fleet repaired for half its hull")
         }
         HeroRegistry.KAEL -> {
             val research = playerState.researchInProgress
@@ -339,12 +347,20 @@ internal fun handleUseHeroAbility(state: GameState, intent: GameIntent.UseHeroAb
 
 // ── Build-turn lookup ─────────────────────────────────────────────────────────
 
+/**
+ * Turns needed to build a unit, scaled by class (P4).
+ *
+ * Six of the seven types used to take a flat 2 turns, so a 3-credit Scout rolled off the line as
+ * fast as a 25-credit Carrier and time carried no strategic weight: only credits mattered. Heavier
+ * hulls now take meaningfully longer, which is what makes forge worlds and the XYLAR production
+ * bonus worth having.
+ */
 internal fun buildTurns(unitType: com.novaempire.core.domain.models.UnitType): Int = when (unitType) {
-    com.novaempire.core.domain.models.UnitType.SCOUT,
-    com.novaempire.core.domain.models.UnitType.FIGHTER -> 2
-    com.novaempire.core.domain.models.UnitType.CRUISER,
-    com.novaempire.core.domain.models.UnitType.BATTLESHIP,
-    com.novaempire.core.domain.models.UnitType.CARRIER,
-    com.novaempire.core.domain.models.UnitType.DEFENSE_PLATFORM -> 2
-    com.novaempire.core.domain.models.UnitType.DREADNOUGHT -> 3
+    com.novaempire.core.domain.models.UnitType.SCOUT -> 1
+    com.novaempire.core.domain.models.UnitType.FIGHTER,
+    com.novaempire.core.domain.models.UnitType.CRUISER -> 2
+    com.novaempire.core.domain.models.UnitType.DEFENSE_PLATFORM,
+    com.novaempire.core.domain.models.UnitType.BATTLESHIP -> 3
+    com.novaempire.core.domain.models.UnitType.CARRIER -> 4
+    com.novaempire.core.domain.models.UnitType.DREADNOUGHT -> 5
 }

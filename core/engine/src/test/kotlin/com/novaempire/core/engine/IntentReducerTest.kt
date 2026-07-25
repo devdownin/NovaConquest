@@ -252,6 +252,34 @@ class IntentReducerTest {
         assertTrue(e.state.value.units[carrierCoord]!!.cargoHp.isEmpty())
     }
 
+    // ── Hero abilities ────────────────────────────────────────────────────────
+
+    @Test
+    fun nixAbilityRepairsHalfTheHullNotAllOfIt() = runBlocking {
+        // H6: Nix already grants a passive +1 HP/turn and, being the mercenary, is hirable by every
+        // faction — a free full repair on top made losing a fleet fight nearly costless.
+        val e = engine()
+        val unitCoord = HexCoord(0, 0, 0)
+        val wounded = GameUnit(type = UnitType.CRUISER, faction = Faction.DOMINION, position = unitCoord, currentHp = 1)
+        e.processIntent(GameIntent.LoadGame(GameState(
+            activeFaction = Faction.DOMINION,
+            humanFaction = Faction.DOMINION,
+            playerStates = mapOf(Faction.DOMINION to PlayerState(
+                Faction.DOMINION, credits = 10, recruitedHeroes = setOf(HeroRegistry.NIX))),
+            map = GameMap(tiles = mapOf(unitCoord to HexTile(unitCoord, TerrainType.EMPTY))),
+            units = mapOf(unitCoord to wounded)
+        )))
+        delay(50)
+
+        e.processIntent(GameIntent.UseHeroAbility(HeroRegistry.NIX))
+        delay(100)
+
+        val healed = e.state.value.units[unitCoord]!!
+        val expected = 1 + (UnitType.CRUISER.maxHp + 1) / 2
+        assertEquals(expected, healed.currentHp)
+        assertTrue("the fleet must not be reset to full", healed.currentHp < UnitType.CRUISER.maxHp)
+    }
+
     // ── SiegePlanet ───────────────────────────────────────────────────────────
 
     @Test

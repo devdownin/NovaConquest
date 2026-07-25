@@ -77,7 +77,9 @@ object CombatResolver : CombatSystem {
         if (attackerHpAfterSiege <= 0) {
             updatedUnits.remove(attackerCoord)
         } else {
-            updatedUnits[attackerCoord] = unit.copy(hasAttacked = true, currentHp = attackerHpAfterSiege)
+            // hasMoved too: firing on a planet ends the ship's turn exactly like firing on a unit
+            // (resolveCombat sets both). Without it, a fleet could bombard and then withdraw.
+            updatedUnits[attackerCoord] = unit.copy(hasAttacked = true, hasMoved = true, currentHp = attackerHpAfterSiege)
         }
 
         val newTiles = state.map.tiles.toMutableMap()
@@ -91,7 +93,8 @@ object CombatResolver : CombatSystem {
         val tile = state.map.tiles[planetCoord] ?: return state
 
         val updatedUnits = state.units.toMutableMap()
-        updatedUnits[unitCoord] = unit.copy(hasAttacked = true)
+        // Same rule as siege/attack: taking a world consumes the ship's whole turn.
+        updatedUnits[unitCoord] = unit.copy(hasAttacked = true, hasMoved = true)
 
         val capturingPlayer = state.playerStates[unit.faction]
         val startLevel = 1 + BonusRegistry.sum(BonusType.CAPTURE_START_LEVEL, capturingPlayer, state.activeEvent)
