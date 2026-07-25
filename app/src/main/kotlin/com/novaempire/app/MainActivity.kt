@@ -104,8 +104,10 @@ class MainActivity : ComponentActivity() {
                     val snackbarHostState = remember { SnackbarHostState() }
                     val coroutineScope = rememberCoroutineScope()
 
-                    LaunchedEffect(gameState.winner) {
-                        if (gameState.winner != null) {
+                    // Keyed on victoryReason, not winner: a draw (mutual annihilation) ends the game
+                    // with a reason but no winner, and must still take the player to the end screen.
+                    LaunchedEffect(gameState.victoryReason) {
+                        if (gameState.victoryReason != null) {
                             currentScreen = AppScreen.VICTORY
                         }
                     }

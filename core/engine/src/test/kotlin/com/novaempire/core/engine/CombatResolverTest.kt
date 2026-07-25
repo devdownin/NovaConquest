@@ -158,6 +158,22 @@ class CombatResolverTest {
     }
 
     @Test
+    fun siegeConsumesTheShipsMovement() {
+        // C3: firing on a planet now ends the turn exactly like firing on a unit — previously a
+        // fleet could bombard a world and then withdraw out of reach in the same turn.
+        val state = stateWithPlanet(HexCoord(0,0,0), HexCoord(1,-1,0), UnitType.CRUISER, planetLevel = 3, planetOwner = Faction.TRADERS)
+        val result = CombatResolver.siegePlanet(state, HexCoord(0,0,0), HexCoord(1,-1,0))
+        assertEquals(true, result.units[HexCoord(0,0,0)]?.hasMoved)
+    }
+
+    @Test
+    fun captureConsumesTheShipsMovement() {
+        val state = stateWithPlanet(HexCoord(0,0,0), HexCoord(1,-1,0), UnitType.SCOUT, planetLevel = 0)
+        val result = CombatResolver.capturePlanet(state, HexCoord(0,0,0), HexCoord(1,-1,0))
+        assertEquals(true, result.units[HexCoord(0,0,0)]?.hasMoved)
+    }
+
+    @Test
     fun battleshipSiegeDealsTwoDamage() {
         val state = stateWithPlanet(HexCoord(0,0,0), HexCoord(1,-1,0), UnitType.BATTLESHIP, planetLevel = 3, planetOwner = Faction.TRADERS)
         val result = CombatResolver.siegePlanet(state, HexCoord(0,0,0), HexCoord(1,-1,0))

@@ -7,6 +7,7 @@ import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.domain.state.PlayerState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VictoryCheckerTest {
@@ -69,6 +70,63 @@ class VictoryCheckerTest {
         )
         val result = VictoryChecker.check(state)!!
         assertEquals(Faction.TRADERS, result.winner)
+    }
+
+    private val planet = com.novaempire.core.hex.HexCoord(0, 0, 0)
+
+    private fun mapWithPlanet(owner: Faction?) = com.novaempire.core.domain.models.GameMap(
+        tiles = mapOf(planet to com.novaempire.core.domain.models.HexTile(
+            planet, com.novaempire.core.domain.models.TerrainType.PLANET, systemLevel = 2, owner = owner))
+    )
+
+    @Test
+    fun mutualAnnihilationEndsInADraw() {
+        // No faction holds a unit or a planet: nobody can ever act again, so the game must end
+        // rather than grind on to turn 100 with an empty board.
+        val state = GameState(
+            turn = 12,
+            playerStates = mapOf(Faction.DOMINION to PlayerState(Faction.DOMINION)),
+            map = mapWithPlanet(owner = null)
+        )
+        val result = VictoryChecker.check(state)!!
+        assertNull("a draw has no winner", result.winner)
+        assertEquals("Mutual Annihilation — no empire survives", result.reason)
+    }
+
+    @Test
+    fun aSettledDrawStaysSettled() {
+        // The pass-through keys on the reason, not the winner — otherwise a draw would be
+        // re-evaluated every turn because `winner` is null.
+        val state = GameState(victoryReason = "Mutual Annihilation — no empire survives")
+        val result = VictoryChecker.check(state)!!
+        assertNull(result.winner)
+        assertEquals("Mutual Annihilation — no empire survives", result.reason)
+    }
+
+    @Test
+    fun timeLimitScoreCountsTerritoryNotJustCredits() {
+        // Regression: the turn-100 winner was whoever hoarded the most credits, so a player who
+        // never left home beat the one that actually conquered the galaxy.
+        val state = GameState(
+            turn = 100,
+            playerStates = mapOf(
+                Faction.DOMINION to PlayerState(Faction.DOMINION, credits = 300), // hoarder, no land
+                Faction.TRADERS to PlayerState(Faction.TRADERS, credits = 100)    // holds a level-2 world
+            ),
+            map = mapWithPlanet(owner = Faction.TRADERS)
+        )
+        assertEquals(Faction.TRADERS, VictoryChecker.check(state)!!.winner)
+    }
+
+    @Test
+    fun empireScoreRewardsFleetAndResearch() {
+        val bare = PlayerState(Faction.DOMINION, credits = 100)
+        val researched = PlayerState(Faction.DOMINION, credits = 100, techUnlocked = setOf("tech_hull_plating"))
+        val state = GameState(playerStates = mapOf(Faction.DOMINION to bare))
+        assertTrue(
+            "unlocked research must raise the end-game score",
+            VictoryChecker.empireScore(state, researched) > VictoryChecker.empireScore(state, bare)
+        )
     }
 
     @Test

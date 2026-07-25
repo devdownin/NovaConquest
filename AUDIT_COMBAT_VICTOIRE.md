@@ -14,10 +14,10 @@
 | **C1** | 🟠 **Moyen — ✅ corrigé** | Mouvement | La plateforme de défense (`movement = 0`) **pouvait se déplacer d'une case par tour** : le plancher « jamais moins de 1 » lui offrait un hex gratuit |
 | **C2** | 🟠 **Moyen — ✅ corrigé** | Exploit | Embarquer une unité ne mémorisait que son **type** : la redéployer la ramenait à **pleins PV** — le porte-vaisseaux servait d'atelier de réparation gratuit |
 | **V1** | 🟠 **Moyen — ✅ corrigé** | Victoire | La victoire technologique **comptait** les entrées au lieu de vérifier les identifiants : n'importe quel jeu de la bonne taille déclenchait la victoire |
-| C3 | 🟡 Design | Combat | Attaquer une **unité** consomme le déplacement, assiéger une **planète** non — asymétrie non documentée |
+| C3 | 🟡 Design — ✅ tranché (voir AUDIT_DECISIONS_GAMEPLAY.md) | Combat | Attaquer une **unité** consomme le déplacement, assiéger une **planète** non — asymétrie non documentée |
 | C4 | 🟡 Design | Transport | L'embarquement est une action **gratuite** : ni l'escorte ni le porte-vaisseaux ne sont marqués comme ayant agi |
-| V2 | 🟡 Faible | Victoire | Annihilation mutuelle (0 survivant) → **aucun vainqueur**, la partie ne se termine jamais |
-| V3 | 💡 Design | Victoire | La victoire aux points (tour 100) ne regarde que les **crédits**, en ignorant planètes et flotte |
+| V2 | 🟡 Faible — ✅ tranché (voir AUDIT_DECISIONS_GAMEPLAY.md) | Victoire | Annihilation mutuelle (0 survivant) → **aucun vainqueur**, la partie ne se termine jamais |
+| V3 | 💡 Design — ✅ tranché (voir AUDIT_DECISIONS_GAMEPLAY.md) | Victoire | La victoire aux points (tour 100) ne regarde que les **crédits**, en ignorant planètes et flotte |
 | V4 | 🟡 Faible | Victoire | La victoire territoriale Zodiac balaie `Faction.values()`, **`ANCIENT_NPC` compris** |
 
 ---

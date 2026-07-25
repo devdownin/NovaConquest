@@ -231,17 +231,12 @@ object UtilityEvaluator : AIStrategy {
 
     private fun evaluateHeroes(state: GameState, faction: Faction): GameState {
         val playerState = state.playerStates[faction] ?: return state
-        val availableHeroes = HeroRegistry.ALL_HEROES.filter {
-            !playerState.recruitedHeroes.contains(it.id) && playerState.credits >= it.cost
-        }
-        if (availableHeroes.isEmpty()) return state
-
         val selectedHero = chooseHero(state, playerState)
 
         if (selectedHero != null) {
             val newPlayerStates = state.playerStates.toMutableMap()
             newPlayerStates[faction] = playerState.copy(
-                credits = playerState.credits - selectedHero.cost,
+                credits = playerState.credits - HeroCostCalculator.costFor(selectedHero, faction),
                 recruitedHeroes = playerState.recruitedHeroes + selectedHero.id
             )
             return state.copy(playerStates = newPlayerStates)
@@ -258,7 +253,8 @@ object UtilityEvaluator : AIStrategy {
      */
     internal fun chooseHero(state: GameState, playerState: PlayerState): Hero? {
         val affordable = HeroRegistry.ALL_HEROES.filter {
-            !playerState.recruitedHeroes.contains(it.id) && playerState.credits >= it.cost
+            !playerState.recruitedHeroes.contains(it.id) &&
+                playerState.credits >= HeroCostCalculator.costFor(it, playerState.faction)
         }
         if (affordable.isEmpty()) return null
 
@@ -267,7 +263,8 @@ object UtilityEvaluator : AIStrategy {
             it.faction == playerState.faction && it.currentHp < it.type.maxHp
         }
         return affordable.maxByOrNull { hero ->
-            heroScore(hero, playerState.faction, atWar, woundedFleet) * 100 - hero.cost
+            heroScore(hero, playerState.faction, atWar, woundedFleet) * 100 -
+                HeroCostCalculator.costFor(hero, playerState.faction)
         }
     }
 
@@ -288,13 +285,12 @@ object UtilityEvaluator : AIStrategy {
         val myPlanets = state.map.tiles.values.filter { it.owner == faction }
         if (myPlanets.isEmpty()) return state
 
-        val unitOrder = listOf(UnitType.DREADNOUGHT, UnitType.CARRIER, UnitType.BATTLESHIP, UnitType.CRUISER, UnitType.DEFENSE_PLATFORM, UnitType.FIGHTER, UnitType.SCOUT)
-
         var nextState = state
         for (planet in myPlanets) {
             val pState = nextState.playerStates[faction] ?: continue
             if (pState.buildQueue.any { it.planetCoord == planet.coord }) continue
-            val affordableUnit = unitOrder.find { it.cost <= pState.credits } ?: continue
+            val threatened = enemyUnitsOf(nextState, faction).any { it.position.distanceTo(planet.coord) <= 2 }
+            val affordableUnit = chooseUnitToBuild(nextState, pState, threatened) ?: continue
             val turns = buildTurns(affordableUnit)
             val newPlayerStates = nextState.playerStates.toMutableMap()
             newPlayerStates[faction] = pState.copy(
@@ -305,6 +301,34 @@ object UtilityEvaluator : AIStrategy {
         }
         return nextState
     }
+
+    /**
+     * Chooses what to lay down at a shipyard (P6). The old rule took the most expensive affordable
+     * hull, so the AI emptied its treasury into dreadnoughts even at peace with nothing to fight.
+     *
+     * Now: a planet with enemies closing in gets a Defense Platform; at war the best raw fighter it
+     * can afford; at peace the best value per credit, which favours cheap hulls and leaves money for
+     * research and heroes. Defense Platforms are excluded from the peacetime pick — they cannot
+     * expand, so stockpiling them while safe just freezes the empire.
+     */
+    internal fun chooseUnitToBuild(state: GameState, playerState: PlayerState, planetThreatened: Boolean): UnitType? {
+        val affordable = UnitType.values().filter { it.cost <= playerState.credits }
+        if (affordable.isEmpty()) return null
+
+        if (planetThreatened) {
+            affordable.firstOrNull { it == UnitType.DEFENSE_PLATFORM }?.let { return it }
+        }
+        val atWar = playerState.relations.values.any { it == DiplomaticRelation.WAR }
+        return if (atWar) {
+            affordable.maxByOrNull { combatScore(it) }
+        } else {
+            affordable.filter { it != UnitType.DEFENSE_PLATFORM }
+                .maxByOrNull { combatScore(it).toDouble() / it.cost }
+        }
+    }
+
+    /** Rough fighting value of a hull: firepower dominates, durability contributes. */
+    private fun combatScore(type: UnitType): Int = type.attack * 2 + type.maxHp / 5
 
     private fun evaluateDiplomacy(
         state: GameState,

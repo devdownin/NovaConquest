@@ -6,7 +6,8 @@ import com.novaempire.core.domain.models.TechRegistry
 import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.state.GameState
 
-data class VictoryResult(val winner: Faction, val reason: String)
+/** [winner] is null for a draw (mutual annihilation) — the game still ends, nobody claims it. */
+data class VictoryResult(val winner: Faction?, val reason: String)
 
 object VictoryChecker {
 
@@ -35,8 +36,10 @@ object VictoryChecker {
                 return null // If in a campaign, standard victory conditions are ignored
             }
         }
-        val existing = state.winner
-        if (existing != null) return VictoryResult(existing, state.victoryReason ?: "")
+        // Key the pass-through on the reason, not the winner: a draw ends the game with a reason
+        // but no winner, and must stay settled rather than being re-evaluated every turn.
+        val settled = state.victoryReason
+        if (settled != null) return VictoryResult(state.winner, settled)
 
         // 1. Tech Victory: unlock all technologies. Check the actual ids rather than the count —
         // counting declares a winner as soon as the player holds *as many* entries as the registry
@@ -76,14 +79,33 @@ object VictoryChecker {
         if (survivors.size == 1) {
             return VictoryResult(survivors.first(), "Military Conquest")
         }
+        // Mutual annihilation: the last sides wiped each other out. Nobody can ever act again, so a
+        // draw beats grinding on to turn 100 on an empty board. Requiring a non-empty map keeps this
+        // out of the way of skeleton states that legitimately have no territory yet.
+        if (survivors.isEmpty() && state.map.tiles.isNotEmpty()) {
+            return VictoryResult(null, "Mutual Annihilation — no empire survives")
+        }
 
-        // 6. Time Limit: 100 turns — highest credits wins
+        // 6. Time Limit: 100 turns — highest empire score wins
         if (state.turn >= 100) {
-            state.playerStates.values.maxByOrNull { it.credits }?.let {
+            state.playerStates.values.maxByOrNull { empireScore(state, it) }?.let {
                 return VictoryResult(it.faction, "Time Limit Reached - Score Victory")
             }
         }
 
         return null
+    }
+
+    /**
+     * End-of-game score (V3). Credits alone used to decide the turn-100 winner, so a hoarder who
+     * never left home beat the empire that actually conquered the galaxy. Territory, fleet and
+     * research now count too.
+     */
+    fun empireScore(state: GameState, player: com.novaempire.core.domain.state.PlayerState): Int {
+        val planets = state.map.tiles.values.filter { it.terrain == TerrainType.PLANET && it.owner == player.faction }
+        val territory = planets.sumOf { 40 + it.systemLevel * 10 }
+        val fleet = state.units.values.filter { it.faction == player.faction }.sumOf { it.type.cost }
+        val research = player.techUnlocked.size * 20
+        return player.credits + territory + fleet + research
     }
 }

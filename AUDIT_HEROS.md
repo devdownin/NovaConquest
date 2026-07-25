@@ -13,11 +13,11 @@
 | # | Sévérité | Domaine | Constat |
 |---|----------|---------|---------|
 | **H1** | 🔴 **Majeur — ✅ corrigé** | Cohérence UX | L'académie codait **sa propre liste de héros** (coûts 1200–2000, factions/​noms erronés) divergente de `HeroRegistry` (coûts **40–75**) → le prix affiché était fictif |
-| H2 | 🟡 Design | Recrutement | `Hero.targetFaction` **jamais vérifié** : toute faction recrute tout héros. Nix = `ANCIENT_NPC` → verrouillage strict impossible sans réattribuer sa faction |
+| H2 | 🟡 Design — ✅ tranché (voir AUDIT_DECISIONS_GAMEPLAY.md) | Recrutement | `Hero.targetFaction` **jamais vérifié** : toute faction recrute tout héros. Nix = `ANCIENT_NPC` → verrouillage strict impossible sans réattribuer sa faction |
 | H3 | 🟡 Faible — ✅ corrigé | UX | Bouton `RECRUIT` **cliquable sans crédits** → erreur moteur au lieu d'un état désactivé |
 | H4 | ⚪ Duplication — ✅ fait | Revenu | `IncomeCalculator` partagé : l'aperçu HUD affiche enfin le revenu réellement versé |
 | H5 | ⚪ Comportement — ✅ fait | IA | Recrutement IA scoré : affinité de faction, posture (guerre/paix) et état de la flotte |
-| H6 | 🟡 Design | Équilibrage | Nix (héros `ANCIENT_NPC`) recrutable par **tous** cumule un **passif** (+1 PV/tour) et un **actif** (soin complet) |
+| H6 | 🟡 Design — ✅ tranché (voir AUDIT_DECISIONS_GAMEPLAY.md) | Équilibrage | Nix (héros `ANCIENT_NPC`) recrutable par **tous** cumule un **passif** (+1 PV/tour) et un **actif** (soin complet) |
 
 ---
 
