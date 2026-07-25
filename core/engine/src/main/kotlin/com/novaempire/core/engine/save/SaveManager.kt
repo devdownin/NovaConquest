@@ -2,6 +2,10 @@ package com.novaempire.core.engine.save
 
 import com.novaempire.core.domain.state.GameState
 import java.io.File
+import java.io.IOException
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 class SaveManager(private val saveDirectory: File) : SaveRepository {
 
@@ -10,7 +14,7 @@ class SaveManager(private val saveDirectory: File) : SaveRepository {
         File(saveDirectory, "quarantine").mkdirs()
     }
 
-    override fun saveGame(state: GameState) {
+    override fun saveGame(state: GameState): Boolean {
         try {
             val encoded = SavedGameSnapshotCodec.encode(state)
             val file1 = File(saveDirectory, "autosave_1.json")
@@ -22,12 +26,13 @@ class SaveManager(private val saveDirectory: File) : SaveRepository {
             if (file1.exists()) file1.copyTo(file2, overwrite = true)
 
             tmp.writeText(encoded)
-            if (tmp.exists()) {
-                file1.delete()
-                tmp.renameTo(file1)
-            }
+            if (!tmp.exists()) return false
+            return moveIntoPlace(tmp, file1)
         } catch (e: Exception) {
+            // Report the failure instead of swallowing it: a full disk or a permission error
+            // used to leave the player believing the game had been auto-saved.
             e.printStackTrace()
+            return false
         }
     }
 
@@ -61,6 +66,31 @@ class SaveManager(private val saveDirectory: File) : SaveRepository {
         )
     }
 
+    /**
+     * Replaces [to] with [from] in a single filesystem operation, so a crash can never leave the
+     * newest slot missing. The previous `delete()` + `renameTo()` pair had a window where slot 1
+     * existed nowhere; `renameTo` needed that delete because it does not replace an existing target
+     * on every platform, whereas [Files.move] does it atomically (API 26+, our `minSdk`).
+     */
+    private fun moveIntoPlace(from: File, to: File): Boolean = try {
+        try {
+            Files.move(from.toPath(), to.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        } catch (unsupported: AtomicMoveNotSupportedException) {
+            // Exotic/emulated filesystem: fall back to a plain replace rather than failing the save.
+            Files.move(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
+        true
+    } catch (e: IOException) {
+        e.printStackTrace()
+        false
+    }
+
+    /**
+     * True when ANY slot holds a save. Checking only slot 1 hid recoverable games: a corrupt
+     * slot 1 is quarantined (moved away) by [loadLatestGame], after which the menu's "resume"
+     * entry went dead even though slots 2/3 still loaded fine.
+     */
     override fun hasSavedGame(): Boolean =
-        File(saveDirectory, "autosave_1.json").exists()
+        listOf("autosave_1.json", "autosave_2.json", "autosave_3.json")
+            .any { File(saveDirectory, it).exists() }
 }

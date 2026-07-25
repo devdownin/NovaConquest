@@ -9,7 +9,8 @@ sealed class LoadResult {
 }
 
 interface SaveRepository {
-    fun saveGame(state: GameState)
+    /** Persists [state]; returns false if the save could not be written (disk full, permissions…). */
+    fun saveGame(state: GameState): Boolean
     fun loadLatestGame(): LoadResult
     fun hasSavedGame(): Boolean
 }
