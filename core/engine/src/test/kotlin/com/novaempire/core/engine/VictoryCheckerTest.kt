@@ -130,6 +130,44 @@ class VictoryCheckerTest {
     }
 
     @Test
+    fun zodiacVictoryIsNotAwardedToTheAncientNpc() {
+        // V4: the sweep used to run over every Faction value, so ANCIENT_NPC — which has no
+        // PlayerState and never takes a turn — could be declared galactic winner.
+        val node = com.novaempire.core.hex.HexCoord(1, -1, 0)
+        val state = GameState(
+            playerStates = mapOf(Faction.DOMINION to PlayerState(Faction.DOMINION)),
+            map = com.novaempire.core.domain.models.GameMap(
+                tiles = mapOf(node to com.novaempire.core.domain.models.HexTile(
+                    node, com.novaempire.core.domain.models.TerrainType.PLANET, systemLevel = 5,
+                    owner = Faction.ANCIENT_NPC)),
+                archetype = MapArchetype.ZODIAC,
+                zodiacPlanets = setOf(node)
+            )
+        )
+        val result = VictoryChecker.check(state)
+        assertTrue(
+            "ANCIENT_NPC must never win the Celestial Alignment",
+            result == null || result.winner != Faction.ANCIENT_NPC
+        )
+    }
+
+    @Test
+    fun zodiacVictoryStillWorksForAPlayableFaction() {
+        val node = com.novaempire.core.hex.HexCoord(1, -1, 0)
+        val state = GameState(
+            playerStates = mapOf(Faction.KAELEN to PlayerState(Faction.KAELEN)),
+            map = com.novaempire.core.domain.models.GameMap(
+                tiles = mapOf(node to com.novaempire.core.domain.models.HexTile(
+                    node, com.novaempire.core.domain.models.TerrainType.PLANET, systemLevel = 5,
+                    owner = Faction.KAELEN)),
+                archetype = MapArchetype.ZODIAC,
+                zodiacPlanets = setOf(node)
+            )
+        )
+        assertEquals(Faction.KAELEN, VictoryChecker.check(state)!!.winner)
+    }
+
+    @Test
     fun existingWinnerPassedThrough() {
         val state = GameState(winner = Faction.DOMINION, victoryReason = "Test")
         val result = VictoryChecker.check(state)!!

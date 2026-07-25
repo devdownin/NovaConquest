@@ -263,13 +263,18 @@ internal fun handleLoadUnit(state: GameState, intent: GameIntent.LoadUnit): Game
     val unit = state.units[intent.unitCoord] ?: return GameResult(state, "Unit not found.")
     if (unit.faction != state.activeFaction) return GameResult(state, "Cannot load enemy units.")
     if (unit.type != UnitType.SCOUT && unit.type != UnitType.FIGHTER) return GameResult(state, "Only Scouts and Fighters can be loaded.")
+    // Boarding is a manoeuvre, not a free action (C4): the escort must still have its move, and the
+    // carrier holds station to take it aboard. It may still fire — only its movement is spent.
+    IntentValidator.notMoved(unit)?.let { return GameResult(state, it) }
+    IntentValidator.notMoved(carrier)?.let { return GameResult(state, it) }
     val newUnits = state.units.toMutableMap()
     newUnits.remove(intent.unitCoord)
     // Record the embarked unit's HP: without it, deploying rebuilt the ship at full health, so a
     // carrier doubled as a free repair bay for nearly-destroyed escorts.
     newUnits[intent.carrierCoord] = carrier.copy(
         cargo = carrier.cargo + unit.type,
-        cargoHp = carrier.cargoHp + unit.currentHp
+        cargoHp = carrier.cargoHp + unit.currentHp,
+        hasMoved = true
     )
     return GameResult(state.copy(units = newUnits))
 }
@@ -294,7 +299,8 @@ internal fun handleDeployUnit(state: GameState, intent: GameIntent.DeployUnit): 
         if (intent.unitIndex < it.size) it.removeAt(intent.unitIndex)
     }
     val newUnits = state.units.toMutableMap()
-    newUnits[intent.carrierCoord] = carrier.copy(cargo = newCargo, cargoHp = newCargoHp)
+    // Launching costs the carrier its movement too, symmetrically with boarding (C4).
+    newUnits[intent.carrierCoord] = carrier.copy(cargo = newCargo, cargoHp = newCargoHp, hasMoved = true)
     newUnits[intent.deployCoord] = newUnit
     return GameResult(updateVision(state.copy(units = newUnits), setOf(state.activeFaction)))
 }

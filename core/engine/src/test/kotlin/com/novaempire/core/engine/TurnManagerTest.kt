@@ -13,6 +13,7 @@ import com.novaempire.core.domain.state.PlayerState
 import com.novaempire.core.domain.state.ResearchProgress
 import com.novaempire.core.hex.HexCoord
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -71,6 +72,46 @@ class TurnManagerTest {
         val enemy = GameUnit(type = UnitType.CRUISER, faction = Faction.TRADERS, position = bh, currentHp = 25)
         val next = TurnManager.advanceTurn(blackHoleState(enemy, active = Faction.DOMINION))
         assertEquals(25, next.units[bh]!!.currentHp)
+    }
+
+    @Test
+    fun blockedBuildOrderIsFlaggedForTheUi() {
+        // P5: the order finished but every candidate hex is taken. It retries next turn — and must
+        // now say so, instead of showing a countdown that silently never reaches zero.
+        val planet = HexCoord(0, 0, 0)
+        val occupier = GameUnit(type = UnitType.CRUISER, faction = Faction.DOMINION, position = planet, currentHp = 25)
+        val state = GameState(
+            activeFaction = Faction.DOMINION,
+            playerStates = mapOf(
+                Faction.DOMINION to PlayerState(Faction.DOMINION, credits = 10,
+                    buildQueue = listOf(BuildOrder(UnitType.SCOUT, planet, turnsRemaining = 1))),
+                Faction.TRADERS to PlayerState(Faction.TRADERS)
+            ),
+            // Only the planet exists, and a ship already sits on it → nowhere to place the new unit.
+            map = GameMap(tiles = mapOf(planet to HexTile(planet, TerrainType.PLANET, owner = Faction.DOMINION))),
+            units = mapOf(planet to occupier)
+        )
+
+        val order = TurnManager.advanceTurn(state).playerStates[Faction.DOMINION]!!.buildQueue.single()
+        assertTrue("a stuck order must be flagged", order.blocked)
+        assertEquals("and must keep retrying", 1, order.turnsRemaining)
+    }
+
+    @Test
+    fun progressingBuildOrderIsNotFlagged() {
+        val planet = HexCoord(0, 0, 0)
+        val state = GameState(
+            activeFaction = Faction.DOMINION,
+            playerStates = mapOf(
+                Faction.DOMINION to PlayerState(Faction.DOMINION, credits = 10,
+                    buildQueue = listOf(BuildOrder(UnitType.CARRIER, planet, turnsRemaining = 3, blocked = true))),
+                Faction.TRADERS to PlayerState(Faction.TRADERS)
+            ),
+            map = GameMap(tiles = mapOf(planet to HexTile(planet, TerrainType.PLANET, owner = Faction.DOMINION)))
+        )
+
+        val order = TurnManager.advanceTurn(state).playerStates[Faction.DOMINION]!!.buildQueue.single()
+        assertFalse("an order that is still ticking down is not blocked", order.blocked)
     }
 
     @Test

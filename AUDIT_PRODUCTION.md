@@ -15,7 +15,7 @@
 | **P2** | 🔴 **Majeur — ✅ corrigé** | Contenu | Seuls **3 des 7 types d'unités** étaient proposés au joueur : porte-vaisseaux, cuirassé, dreadnought et plateforme de défense étaient **inconstructibles** |
 | P3 | 🟡 Faible — ✅ corrigé | UX | Boutons `PRODUCE` et `UPGRADE` cliquables sans crédits → erreur moteur au lieu d'un état désactivé |
 | P4 | 💡 Design — ✅ tranché (voir AUDIT_DECISIONS_GAMEPLAY.md) | Équilibrage | Durée de construction quasi **plate** : un éclaireur (3 C) prend autant de tours qu'un cuirassé (18 C) |
-| P5 | 🟡 Faible | Production | Un ordre dont la zone d'apparition reste bloquée se **réarme indéfiniment** à 1 tour restant |
+| P5 | 🟡 Faible — ✅ corrigé | Production | Un ordre dont la zone d'apparition reste bloquée se **réarme indéfiniment** à 1 tour restant |
 | P6 | 💡 Design — ✅ tranché (voir AUDIT_DECISIONS_GAMEPLAY.md) | IA | La production IA suit un ordre fixe « le plus cher d'abord », sans tenir compte de sa posture |
 
 ---

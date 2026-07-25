@@ -58,7 +58,9 @@ object VictoryChecker {
         // 3. Territorial Victory: all Zodiac nodes
         if (state.map.archetype == MapArchetype.ZODIAC) {
             val zodiacCoords = state.map.zodiacPlanets
-            Faction.values().find { faction ->
+            // Playable factions only (V4): the sweep used to include ANCIENT_NPC, which could
+            // "win" the game despite having no PlayerState and never taking a turn.
+            Faction.values().filter { it != Faction.ANCIENT_NPC }.find { faction ->
                 zodiacCoords.isNotEmpty() && zodiacCoords.all { state.map.tiles[it]?.owner == faction }
             }?.let {
                 return VictoryResult(it, "Celestial Alignment")

@@ -280,6 +280,37 @@ class IntentReducerTest {
         assertTrue("the fleet must not be reset to full", healed.currentHp < UnitType.CRUISER.maxHp)
     }
 
+    @Test
+    fun loadingCostsTheCarrierItsMovement() = runBlocking {
+        // C4: boarding used to be a free action — a carrier could take an escort aboard and still
+        // move away in the same turn.
+        val e = engine()
+        e.processIntent(GameIntent.LoadGame(carrierWithWoundedEscort(escortHp = 12)))
+        delay(50)
+        val carrierCoord = HexCoord(0, 0, 0)
+        e.processIntent(GameIntent.LoadUnit(carrierCoord, HexCoord(1, -1, 0)))
+        delay(100)
+        assertTrue("the carrier holds station to take the escort aboard",
+            e.state.value.units[carrierCoord]!!.hasMoved)
+    }
+
+    @Test
+    fun anEscortThatAlreadyMovedCannotBoard() = runBlocking {
+        // Otherwise a fighter could cross the map and then board for free.
+        val e = engine()
+        val base = carrierWithWoundedEscort(escortHp = 12)
+        val escortCoord = HexCoord(1, -1, 0)
+        val spent = base.copy(units = base.units.toMutableMap().apply {
+            this[escortCoord] = this[escortCoord]!!.copy(hasMoved = true)
+        })
+        e.processIntent(GameIntent.LoadGame(spent))
+        delay(50)
+        e.processIntent(GameIntent.LoadUnit(HexCoord(0, 0, 0), escortCoord))
+        delay(100)
+        assertTrue("cargo must stay empty", e.state.value.units[HexCoord(0, 0, 0)]!!.cargo.isEmpty())
+        assertNotNull("the escort must still be on the map", e.state.value.units[escortCoord])
+    }
+
     // ── SiegePlanet ───────────────────────────────────────────────────────────
 
     @Test
