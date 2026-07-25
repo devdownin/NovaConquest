@@ -113,6 +113,12 @@ internal fun handleCancelResearch(state: GameState): GameResult {
 internal fun handleBuildUnit(state: GameState, intent: GameIntent.BuildUnit): GameResult {
     val playerState = state.activePlayer() ?: return GameResult(state, "Player state not found.")
     val planetCoord = intent.location ?: playerState.capitalCoord ?: return GameResult(state, "No valid spawn location.")
+    // The reducer is the authority: without these checks an intent carrying any coordinate could
+    // queue production on an enemy world (spawning the ship deep in their territory) or on empty
+    // space. handleUpgradeSystem already guards ownership — building must match.
+    IntentValidator.isPlanet(state, planetCoord)?.let { return GameResult(state, it) }
+    if (state.map.tiles[planetCoord]?.owner != state.activeFaction)
+        return GameResult(state, "You can only build at planets you control.")
     IntentValidator.canAfford(playerState, intent.unitType.cost)?.let { return GameResult(state, it) }
     if (playerState.buildQueue.any { it.planetCoord == planetCoord })
         return GameResult(state, "Already producing a unit at this location.")

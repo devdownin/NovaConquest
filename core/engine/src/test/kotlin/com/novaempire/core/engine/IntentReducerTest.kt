@@ -170,6 +170,47 @@ class IntentReducerTest {
         assertEquals(creditsBefore, e.state.value.playerStates[Faction.DOMINION]!!.credits)
     }
 
+    @Test
+    fun buildUnitRejectedOnAPlanetYouDoNotOwn() = runBlocking {
+        // Regression: the reducer checked neither ownership nor that the target was a planet, so an
+        // intent carrying any coordinate could queue production on an enemy world — and TurnManager
+        // would then spawn the finished ship right there, inside their territory.
+        val e = engine()
+        e.processIntent(GameIntent.LoadGame(stateWithAdjacentPlanet(planetLevel = 2, planetOwner = Faction.TRADERS)))
+        delay(50)
+        val creditsBefore = e.state.value.playerStates[Faction.DOMINION]!!.credits
+
+        e.processIntent(GameIntent.BuildUnit(UnitType.SCOUT, HexCoord(1, -1, 0)))
+        delay(100)
+
+        val player = e.state.value.playerStates[Faction.DOMINION]!!
+        assertTrue("no order may be queued on an enemy planet", player.buildQueue.isEmpty())
+        assertEquals("credits must not be spent", creditsBefore, player.credits)
+    }
+
+    @Test
+    fun buildUnitRejectedOnEmptySpace() = runBlocking {
+        val e = engine()
+        e.processIntent(GameIntent.LoadGame(stateWithAdjacentPlanet(planetLevel = 2, planetOwner = Faction.TRADERS)))
+        delay(50)
+        // (0,0,0) holds the unit and is EMPTY terrain, not a planet.
+        e.processIntent(GameIntent.BuildUnit(UnitType.SCOUT, HexCoord(0, 0, 0)))
+        delay(100)
+        assertTrue(e.state.value.playerStates[Faction.DOMINION]!!.buildQueue.isEmpty())
+    }
+
+    @Test
+    fun buildUnitAcceptedOnAPlanetYouOwn() = runBlocking {
+        val e = engine()
+        e.processIntent(GameIntent.LoadGame(stateWithAdjacentPlanet(planetLevel = 2, planetOwner = Faction.DOMINION)))
+        delay(50)
+        e.processIntent(GameIntent.BuildUnit(UnitType.SCOUT, HexCoord(1, -1, 0)))
+        delay(100)
+        val queue = e.state.value.playerStates[Faction.DOMINION]!!.buildQueue
+        assertEquals(1, queue.size)
+        assertEquals(UnitType.SCOUT, queue.first().unitType)
+    }
+
     // ── Carrier transport ─────────────────────────────────────────────────────
 
     /** A CARRIER at (0,0,0) with a damaged FIGHTER escort alongside it at (1,-1,0). */
