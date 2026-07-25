@@ -191,6 +191,7 @@ fun InfrastructurePanel(
                     text = if (canUpgrade) "UPGRADE SYSTEM" else "UPGRADE ($upgradeCost C)",
                     onClick = onUpgrade,
                     isPrimary = canUpgrade,
+                    enabled = canUpgrade,
                     color = if (canUpgrade) NeonCyan else TextSecondary,
                     icon = { Icon(Icons.Default.Build, contentDescription = null) }
                 )
@@ -249,38 +250,23 @@ fun ShipyardPanel(coord: HexCoord, credits: Int, buildQueue: List<BuildOrder>, o
             } else {
                 Text("AVAILABLE BLUEPRINTS", style = MaterialTheme.typography.labelLarge, color = TextSecondary, modifier = Modifier.padding(bottom = 16.dp))
 
+                // Driven by UnitType so every buildable ship is actually offered. Only Scout,
+                // Fighter and Cruiser used to be listed — the player could never field a Carrier
+                // (making the map's LOAD/DEPLOY controls unreachable), a Battleship or Dreadnought
+                // (their siege bonus was AI-only), nor a Defense Platform.
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    BlueprintCard(
-                        name = "Scout",
-                        cost = UnitType.SCOUT.cost,
-                        level = "LVL 1",
-                        icon = Icons.Default.Menu,
-                        canAfford = credits >= UnitType.SCOUT.cost,
-                        onClick = { onBuildUnit(UnitType.SCOUT, coord) },
-                        modifier = Modifier.widthIn(min = 160.dp).weight(1f, fill = false)
-                    )
-                    BlueprintCard(
-                        name = "Fighter",
-                        cost = UnitType.FIGHTER.cost,
-                        level = "LVL 2",
-                        icon = Icons.Default.Menu,
-                        canAfford = credits >= UnitType.FIGHTER.cost,
-                        onClick = { onBuildUnit(UnitType.FIGHTER, coord) },
-                        modifier = Modifier.widthIn(min = 160.dp).weight(1f, fill = false)
-                    )
-                    BlueprintCard(
-                        name = "Cruiser",
-                        cost = UnitType.CRUISER.cost,
-                        level = "LVL 4",
-                        icon = Icons.Default.Menu,
-                        canAfford = credits >= UnitType.CRUISER.cost,
-                        onClick = { onBuildUnit(UnitType.CRUISER, coord) },
-                        modifier = Modifier.widthIn(min = 160.dp).weight(1f, fill = false)
-                    )
+                    UnitType.values().sortedBy { it.cost }.forEach { type ->
+                        BlueprintCard(
+                            type = type,
+                            canAfford = credits >= type.cost,
+                            onClick = { onBuildUnit(type, coord) },
+                            modifier = Modifier.widthIn(min = 160.dp).weight(1f, fill = false)
+                        )
+                    }
                 }
             }
         }
@@ -289,10 +275,7 @@ fun ShipyardPanel(coord: HexCoord, credits: Int, buildQueue: List<BuildOrder>, o
 
 @Composable
 fun BlueprintCard(
-    name: String,
-    cost: Int,
-    level: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    type: UnitType,
     canAfford: Boolean = true,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -304,19 +287,25 @@ fun BlueprintCard(
     ) {
         Column {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Icon(icon, contentDescription = null, tint = TextSecondary)
-                Text(level, style = MaterialTheme.typography.labelLarge, color = NeonCyan)
+                Icon(Icons.Default.Menu, contentDescription = null, tint = TextSecondary)
+                // Real stats replace the old decorative "LVL n" tag, which mapped to nothing.
+                Text("${type.upkeepCost} C/tour", style = MaterialTheme.typography.labelLarge, color = NeonOrange)
             }
             Spacer(modifier = Modifier.height(16.dp))
-            Text(name.uppercase(), style = MaterialTheme.typography.headlineMedium)
+            Text(type.name.replace('_', ' '), style = MaterialTheme.typography.headlineMedium)
 
             Spacer(modifier = Modifier.height(16.dp))
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 16.dp)) {
+                Text(
+                    "ATQ ${type.attack} · PV ${type.maxHp} · PORTÉE ${type.range} · MOUV ${type.movement}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(modifier = Modifier.size(8.dp).background(NeonCyan, shape = androidx.compose.foundation.shape.CircleShape))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("$cost Credits", style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
+                    Text("${type.cost} Credits", style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
                 }
             }
 
@@ -325,12 +314,13 @@ fun BlueprintCard(
                 onClick = onClick,
                 color = if (canAfford) NeonCyan else TextSecondary,
                 isPrimary = canAfford,
+                enabled = canAfford,
                 icon = { Icon(Icons.Default.Menu, contentDescription = null) }
             )
             if (!canAfford) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Crédits insuffisants ($cost C)",
+                    text = "Crédits insuffisants (${type.cost} C)",
                     style = MaterialTheme.typography.labelSmall,
                     color = NeonRed.copy(alpha = 0.8f)
                 )
