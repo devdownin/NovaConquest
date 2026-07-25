@@ -118,6 +118,25 @@ class SaveManagerTest {
     }
 
     @Test
+    fun saveLeavesNoTempFileBehind() {
+        // The snapshot is written to a .tmp then moved into place; a successful save must not
+        // leave the scratch file lying around (a stale .tmp signals a half-finished write).
+        manager.saveGame(stateWithCredits(7))
+        assertFalse(File(saveDir, "autosave_1.json.tmp").exists())
+    }
+
+    @Test
+    fun repeatedSavesKeepSlot1Loadable() {
+        // Slot 1 is replaced by a single atomic move, so it is never momentarily absent and each
+        // save must leave a fully readable snapshot behind.
+        repeat(5) { i -> assertTrue(manager.saveGame(stateWithCredits(i))) }
+        assertTrue(File(saveDir, "autosave_1.json").exists())
+        val loaded = manager.loadLatestGame()
+        assertTrue(loaded is LoadResult.Success)
+        assertEquals(4, (loaded as LoadResult.Success).state.playerStates[Faction.DOMINION]?.credits)
+    }
+
+    @Test
     fun saveGameReportsFailureWhenDirectoryIsUnusable() {
         // Simulate an unwritable location: a *file* where the save directory should be. The write
         // must report failure rather than silently pretending the turn was auto-saved.

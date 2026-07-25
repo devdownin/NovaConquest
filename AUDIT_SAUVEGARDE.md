@@ -18,7 +18,7 @@
 | **S1** | 🟠 **Moyen — ✅ corrigé** | Perte d'accès | `hasSavedGame()` ne testait que le slot 1 : après mise en quarantaine de ce slot, « RESUME COMMAND » devenait inerte alors que les slots 2/3 étaient chargeables |
 | **S2** | 🟠 **Moyen — ✅ corrigé** | Silence | Les échecs d'écriture étaient **avalés** (`printStackTrace`) : le joueur croyait sa partie sauvegardée |
 | S3 | 🟢 **Vérifié — ✅ testé** | Migration | Les champs ajoutés récemment (`seed`, `costPaid`) ont bien des valeurs par défaut → anciennes sauvegardes toujours chargeables (désormais **prouvé par test**) |
-| S4 | 🟡 Faible | Atomicité | Fenêtre `delete()` → `renameTo()` : un crash exactement entre les deux perd le slot 1 (slots 2/3 intacts) |
+| S4 | 🟡 Faible — ✅ corrigé | Atomicité | Fenêtre `delete()` → `renameTo()` supprimée : le slot 1 est remplacé par un **déplacement atomique** |
 | S5 | 🟡 Faible | Versionnage | Aucune migration montante : une sauvegarde plus **ancienne** est acceptée telle quelle (OK tant que `CURRENT_VERSION` vaut 1) |
 
 ---
@@ -78,14 +78,25 @@ future (`SaveVersionException`), et non-persistance des champs `@Transient`
 > sauvegarde a `costPaid = 0`, donc son annulation ne rembourse rien. Aucune perte de crédits
 > (ils avaient déjà été débités), et le cas disparaît à la recherche suivante.
 
+### S4 — 🟡 Écriture du slot 1 rendue atomique  ✅ **corrigé**
+
+`saveGame` faisait `file1.delete()` puis `tmp.renameTo(file1)` : entre les deux, le slot 1
+n'existait **nulle part**. Un crash (ou une mort du process par l'OS) pile dans cette fenêtre
+perdait la sauvegarde la plus récente. Le `delete()` préalable était nécessaire parce que
+`File.renameTo` ne remplace pas une cible existante sur toutes les plateformes.
+
+**Correctif** — remplacement par `Files.move(…, ATOMIC_MOVE, REPLACE_EXISTING)`, disponible depuis
+l'API 26 (soit exactement notre `minSdk`) : le slot 1 passe de l'ancien au nouveau contenu en une
+seule opération du système de fichiers, sans état intermédiaire. Si un système de fichiers exotique
+ne sait pas faire d'échange atomique (`AtomicMoveNotSupportedException`), on retombe sur un
+remplacement simple plutôt que d'échouer la sauvegarde.
+**Tests** : `saveLeavesNoTempFileBehind`, `repeatedSavesKeepSlot1Loadable`.
+
+> Reste hors périmètre : aucun `fsync` n'est forcé, donc une coupure d'alimentation brutale peut
+> encore perdre des données encore en cache d'écriture de l'OS. Les slots 2/3 servent de filet.
+
 ## 4. Signalés, non modifiés
 
-- **S4 — Fenêtre d'écriture non atomique.** `saveGame` fait `file1.delete()` puis
-  `tmp.renameTo(file1)`. Un crash exactement entre les deux perd le slot 1 (les slots 2 et 3
-  restent valides, et `loadLatestGame` sait y retomber — d'autant mieux depuis S1). Le `delete()`
-  préalable est nécessaire car `File.renameTo` ne remplace pas la cible sur toutes les plateformes.
-  Une correction complète passerait par `Files.move(…, ATOMIC_MOVE, REPLACE_EXISTING)` (API 26+,
-  compatible avec `minSdk` 26).
 - **S5 — Pas de migration montante.** `decode` rejette une sauvegarde **plus récente**
   (`version > CURRENT_VERSION`) mais accepte toute version antérieure sans transformation. C'est
   correct tant que `CURRENT_VERSION` vaut 1 ; dès qu'un changement de schéma non rétrocompatible
