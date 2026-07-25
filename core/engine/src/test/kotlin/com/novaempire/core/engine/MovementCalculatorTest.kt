@@ -47,9 +47,21 @@ class MovementCalculatorTest {
     }
 
     @Test
-    fun movementNeverDropsBelowOne() {
-        // DEFENSE_PLATFORM has movement 0; even so the floor is 1 (an ION_STORM can't pin it below 1).
+    fun mobileUnitNeverDropsBelowOne() {
+        // The floor protects units that can normally move: a DREADNOUGHT (movement 1) caught in an
+        // ION_STORM (-1) must still be able to advance one hex rather than being stranded.
         val storm = stateWith(Faction.DOMINION, GalacticEvent.ION_STORM)
-        assertEquals(1, MovementCalculator.effectiveMovement(storm, unit(Faction.DOMINION, UnitType.DEFENSE_PLATFORM)))
+        assertEquals(1, MovementCalculator.effectiveMovement(storm, unit(Faction.DOMINION, UnitType.DREADNOUGHT)))
+    }
+
+    @Test
+    fun immobileStructureStaysImmobile() {
+        // Regression: DEFENSE_PLATFORM has movement 0, but the "never below 1" floor used to grant
+        // it a free hex every turn — a static turret could walk across the map.
+        assertEquals(0, MovementCalculator.effectiveMovement(
+            stateWith(Faction.DOMINION), unit(Faction.DOMINION, UnitType.DEFENSE_PLATFORM)))
+        // Even with a faction movement bonus (NOMADS +1) it must not become mobile.
+        assertEquals(0, MovementCalculator.effectiveMovement(
+            stateWith(Faction.NOMADS), unit(Faction.NOMADS, UnitType.DEFENSE_PLATFORM)))
     }
 }

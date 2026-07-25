@@ -23,11 +23,25 @@ class VictoryCheckerTest {
 
     @Test
     fun techVictoryWhenAllTechsUnlocked() {
-        val techs = (1..TechRegistry.ALL_TECHS.size).map { "t$it" }.toSet()
+        val techs = TechRegistry.ALL_TECHS.map { it.id }.toSet()
         val state = stateWith(PlayerState(Faction.TRADERS, techUnlocked = techs))
         val result = VictoryChecker.check(state)!!
         assertEquals(Faction.TRADERS, result.winner)
         assertEquals("Technological Dominance", result.reason)
+    }
+
+    @Test
+    fun techVictoryRequiresTheRealTechIds() {
+        // Regression: the check counted entries instead of verifying them, so any set of the right
+        // size — here pure filler — handed out a Technological Dominance win.
+        val filler = (1..TechRegistry.ALL_TECHS.size).map { "t$it" }.toSet()
+        assertNull(VictoryChecker.check(stateWith(PlayerState(Faction.TRADERS, techUnlocked = filler))))
+    }
+
+    @Test
+    fun techVictoryNotAwardedWhenOneTechIsMissing() {
+        val allButOne = TechRegistry.ALL_TECHS.map { it.id }.drop(1).toSet()
+        assertNull(VictoryChecker.check(stateWith(PlayerState(Faction.TRADERS, techUnlocked = allButOne))))
     }
 
     @Test

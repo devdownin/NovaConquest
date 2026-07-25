@@ -256,7 +256,12 @@ internal fun handleLoadUnit(state: GameState, intent: GameIntent.LoadUnit): Game
     if (unit.type != UnitType.SCOUT && unit.type != UnitType.FIGHTER) return GameResult(state, "Only Scouts and Fighters can be loaded.")
     val newUnits = state.units.toMutableMap()
     newUnits.remove(intent.unitCoord)
-    newUnits[intent.carrierCoord] = carrier.copy(cargo = carrier.cargo + unit.type)
+    // Record the embarked unit's HP: without it, deploying rebuilt the ship at full health, so a
+    // carrier doubled as a free repair bay for nearly-destroyed escorts.
+    newUnits[intent.carrierCoord] = carrier.copy(
+        cargo = carrier.cargo + unit.type,
+        cargoHp = carrier.cargoHp + unit.currentHp
+    )
     return GameResult(state.copy(units = newUnits))
 }
 
@@ -270,11 +275,17 @@ internal fun handleDeployUnit(state: GameState, intent: GameIntent.DeployUnit): 
     val tile = state.map.tiles[intent.deployCoord]
     if (tile == null || !tile.terrain.isPassable) return GameResult(state, "Cannot deploy to impassable terrain.")
     val deployedType = carrier.cargo[intent.unitIndex]
+    // Redeploy at the HP the unit had when it embarked. Saves written before cargoHp existed have
+    // no entry, so those fall back to full health.
+    val deployedHp = carrier.cargoHp.getOrNull(intent.unitIndex) ?: deployedType.maxHp
     val newUnit = GameUnit(type = deployedType, faction = state.activeFaction, position = intent.deployCoord,
-        currentHp = deployedType.maxHp, hasMoved = true)
+        currentHp = deployedHp, hasMoved = true)
     val newCargo = carrier.cargo.toMutableList().also { it.removeAt(intent.unitIndex) }
+    val newCargoHp = carrier.cargoHp.toMutableList().also {
+        if (intent.unitIndex < it.size) it.removeAt(intent.unitIndex)
+    }
     val newUnits = state.units.toMutableMap()
-    newUnits[intent.carrierCoord] = carrier.copy(cargo = newCargo)
+    newUnits[intent.carrierCoord] = carrier.copy(cargo = newCargo, cargoHp = newCargoHp)
     newUnits[intent.deployCoord] = newUnit
     return GameResult(updateVision(state.copy(units = newUnits), setOf(state.activeFaction)))
 }

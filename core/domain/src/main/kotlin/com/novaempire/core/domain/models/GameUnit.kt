@@ -13,5 +13,11 @@ data class GameUnit(
     val currentHp: Int,
     val hasMoved: Boolean = false,
     val hasAttacked: Boolean = false,
-    val cargo: List<UnitType> = emptyList()
+    val cargo: List<UnitType> = emptyList(),
+    /**
+     * Current HP of each embarked unit, parallel to [cargo]. Kept as a separate defaulted list
+     * rather than folding it into [cargo] so existing saves (which store cargo as plain type names)
+     * still decode; a legacy entry with no recorded HP simply deploys at full health.
+     */
+    val cargoHp: List<Int> = emptyList()
 )

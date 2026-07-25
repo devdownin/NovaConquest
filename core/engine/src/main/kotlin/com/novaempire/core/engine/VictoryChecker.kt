@@ -38,8 +38,12 @@ object VictoryChecker {
         val existing = state.winner
         if (existing != null) return VictoryResult(existing, state.victoryReason ?: "")
 
-        // 1. Tech Victory: unlock all technologies
-        state.playerStates.values.find { it.techUnlocked.size >= TechRegistry.ALL_TECHS.size }?.let {
+        // 1. Tech Victory: unlock all technologies. Check the actual ids rather than the count —
+        // counting declares a winner as soon as the player holds *as many* entries as the registry
+        // has, so a save carrying an id that was later renamed or dropped from ALL_TECHS would
+        // trigger a bogus victory without the player ever finishing the tree.
+        val allTechIds = TechRegistry.ALL_TECHS.map { it.id }
+        state.playerStates.values.find { player -> allTechIds.all { it in player.techUnlocked } }?.let {
             return VictoryResult(it.faction, "Technological Dominance")
         }
 
