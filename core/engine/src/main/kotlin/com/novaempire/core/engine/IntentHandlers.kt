@@ -145,6 +145,17 @@ internal fun handleRecruitHero(state: GameState, intent: GameIntent.RecruitHero)
 
 internal fun handleChangeRelation(state: GameState, intent: GameIntent.ChangeRelation): GameResult {
     val playerState = state.activePlayer() ?: return GameResult(state, "Player state not found.")
+    // A faction has no diplomatic stance towards itself, and only factions that actually play the
+    // game (i.e. have a PlayerState — this excludes ANCIENT_NPC) can be negotiated with (D4).
+    if (intent.targetFaction == state.activeFaction)
+        return GameResult(state, "You cannot set a relation with your own faction.")
+    if (state.playerStates[intent.targetFaction] == null)
+        return GameResult(state, "This faction does not take part in diplomacy.")
+    // War needs no agreement; peace and alliance do (D1). Without this, anyone could declare
+    // themselves allied to every rival and become untouchable, since the AI only engages WAR targets.
+    if (!DiplomacyEvaluator.wouldAccept(state, state.activeFaction, intent.targetFaction, intent.newRelation))
+        return GameResult(state, "${intent.targetFaction.displayName} rejects your proposal.")
+
     val newPlayerStates = state.playerStates.toMutableMap()
     newPlayerStates[state.activeFaction] = playerState.copy(
         relations = playerState.relations.toMutableMap().also { it[intent.targetFaction] = intent.newRelation }

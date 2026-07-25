@@ -311,6 +311,59 @@ class IntentReducerTest {
         assertNotNull("the escort must still be on the map", e.state.value.units[escortCoord])
     }
 
+    // ── Diplomacy ─────────────────────────────────────────────────────────────
+
+    /** DOMINION is a pauper; TRADERS is rich and at peace, so it has no reason to accept anything. */
+    private fun lopsidedDiplomaticState() = GameState(
+        activeFaction = Faction.DOMINION,
+        humanFaction = Faction.DOMINION,
+        playerStates = mapOf(
+            Faction.DOMINION to PlayerState(Faction.DOMINION, credits = 10),
+            Faction.TRADERS to PlayerState(Faction.TRADERS, credits = 5000)
+        )
+    )
+
+    @Test
+    fun allianceCannotBeImposedOnAnUnwillingFaction() = runBlocking {
+        // Regression: the relation was written onto BOTH sides unconditionally, so a player could
+        // declare themselves allied with every rival and become untouchable — the AI only ever
+        // engages factions it is at WAR with.
+        val e = engine()
+        e.processIntent(GameIntent.LoadGame(lopsidedDiplomaticState()))
+        delay(50)
+        e.processIntent(GameIntent.ChangeRelation(Faction.TRADERS, DiplomaticRelation.ALLIANCE))
+        delay(100)
+
+        val traders = e.state.value.playerStates[Faction.TRADERS]!!
+        assertNotEquals("TRADERS must not be dragged into an alliance",
+            DiplomaticRelation.ALLIANCE, traders.relations[Faction.DOMINION])
+    }
+
+    @Test
+    fun warIsAlwaysUnilateral() = runBlocking {
+        val e = engine()
+        e.processIntent(GameIntent.LoadGame(lopsidedDiplomaticState()))
+        delay(50)
+        e.processIntent(GameIntent.ChangeRelation(Faction.TRADERS, DiplomaticRelation.WAR))
+        delay(100)
+
+        val states = e.state.value.playerStates
+        assertEquals(DiplomaticRelation.WAR, states[Faction.DOMINION]!!.relations[Faction.TRADERS])
+        assertEquals("declaring war binds both sides",
+            DiplomaticRelation.WAR, states[Faction.TRADERS]!!.relations[Faction.DOMINION])
+    }
+
+    @Test
+    fun aFactionCannotSetARelationWithItself() = runBlocking {
+        val e = engine()
+        e.processIntent(GameIntent.LoadGame(lopsidedDiplomaticState()))
+        delay(50)
+        e.processIntent(GameIntent.ChangeRelation(Faction.DOMINION, DiplomaticRelation.WAR))
+        delay(100)
+        // A self-war would poison every "am I at war?" check the AI makes.
+        assertNull(e.state.value.playerStates[Faction.DOMINION]!!.relations[Faction.DOMINION])
+    }
+
     // ── SiegePlanet ───────────────────────────────────────────────────────────
 
     @Test
