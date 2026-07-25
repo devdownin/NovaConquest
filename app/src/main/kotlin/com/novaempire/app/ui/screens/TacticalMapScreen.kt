@@ -53,6 +53,7 @@ import com.novaempire.core.domain.state.CombatEvent
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.engine.AttackCalculator
 import com.novaempire.core.engine.GameGridMap
+import com.novaempire.core.engine.IncomeCalculator
 import com.novaempire.core.engine.MovementCalculator
 import com.novaempire.core.hex.HexCoord
 import com.novaempire.core.hex.HexPathfinder
@@ -139,19 +140,13 @@ fun TacticalMapScreen(
     val credits = playerState?.credits ?: 0
     val activeFactionColor = getFactionColor(gameState.activeFaction)
 
-    val incomePerTurn = remember(gameState.map.tiles, gameState.playerStates, gameState.activeFaction, gameState.activeEvent, gameState.units) {
-        val ps = gameState.playerStates[gameState.activeFaction] ?: return@remember 0
-        var income = 10
-        val ownedPlanets = gameState.map.tiles.values.filter {
-            it.terrain == TerrainType.PLANET && it.owner == gameState.activeFaction
-        }
-        income += ownedPlanets.sumOf { 5 + it.systemLevel * 2 }
-        if (ps.recruitedHeroes.contains(HeroRegistry.ELARA)) income += (income * 0.10).toInt() + 2
-        if (gameState.activeEvent == GalacticEvent.ECONOMIC_BOOM) income += 3
-        if (gameState.activeEvent == GalacticEvent.PIRATE_RAID) income -= 5
-        income += gameState.activeFaction.bonusCredits
-        income -= gameState.units.values.filter { it.faction == gameState.activeFaction }.sumOf { it.type.upkeepCost }
-        income
+    // Income preview comes from the shared IncomeCalculator — the same formula TurnManager grants
+    // — instead of a hand-rolled copy that used a different base and mis-scoped event bonuses.
+    val incomePerTurn = remember(
+        gameState.map.tiles, gameState.playerStates, gameState.activeFaction,
+        gameState.activeEvent, gameState.eventTargetFaction, gameState.units
+    ) {
+        IncomeCalculator.perTurn(gameState, gameState.activeFaction)
     }
     val buildingPlanets = remember(gameState.playerStates, gameState.activeFaction) {
         gameState.playerStates[gameState.activeFaction]?.buildQueue?.map { it.planetCoord }?.toSet() ?: emptySet()

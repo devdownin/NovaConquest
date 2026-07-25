@@ -15,8 +15,8 @@
 | **H1** | 🔴 **Majeur — ✅ corrigé** | Cohérence UX | L'académie codait **sa propre liste de héros** (coûts 1200–2000, factions/​noms erronés) divergente de `HeroRegistry` (coûts **40–75**) → le prix affiché était fictif |
 | H2 | 🟡 Design | Recrutement | `Hero.targetFaction` **jamais vérifié** : toute faction recrute tout héros. Nix = `ANCIENT_NPC` → verrouillage strict impossible sans réattribuer sa faction |
 | H3 | 🟡 Faible — ✅ corrigé | UX | Bouton `RECRUIT` **cliquable sans crédits** → erreur moteur au lieu d'un état désactivé |
-| H4 | ⚪ Duplication | Revenu | La prévisualisation de revenu (`TacticalMapScreen`) **recalcule à la main** le bonus d'Elara (+10 %+2) au lieu d'un calculateur partagé avec `TurnManager` |
-| H5 | ⚪ Comportement | IA | `evaluateHeroes` recrute dans un ordre fixe (`KAEL>ELARA>VANCE>NIX`), sans tenir compte de la faction ni de la posture |
+| H4 | ⚪ Duplication — ✅ fait | Revenu | `IncomeCalculator` partagé : l'aperçu HUD affiche enfin le revenu réellement versé |
+| H5 | ⚪ Comportement — ✅ fait | IA | Recrutement IA scoré : affinité de faction, posture (guerre/paix) et état de la flotte |
 | H6 | 🟡 Design | Équilibrage | Nix (héros `ANCIENT_NPC`) recrutable par **tous** cumule un **passif** (+1 PV/tour) et un **actif** (soin complet) |
 
 ---
@@ -72,15 +72,36 @@ sur `IndustrialButton`) + libellé `INSUFFICIENT`.
   strict le rendrait **irrecrutable** pour tous. Options : (a) laisser les héros « mercenaires »
   (affinité informative, actuel) ; (b) verrouiller à la faction **et** réattribuer Nix à une
   faction jouable ou en faire un héros neutre explicite. À décider.
-- **H4 — Duplication du calcul de revenu.** L'aperçu de revenu (`TacticalMapScreen.incomePerTurn`)
-  réplique à la main le bonus d'Elara (`+10 % +2`) et toute la formule de revenu, en parallèle de
-  `TurnManager` (via `BonusRegistry`). Même risque de divergence que la prévisualisation de combat
-  (corrigée par `AttackCalculator`). Piste : extraire un `IncomeCalculator` partagé.
-- **H5 — Recrutement IA rigide.** `evaluateHeroes` prend toujours `KAEL`, sinon `ELARA`, sinon
-  `VANCE`, sinon `NIX`, sans considérer la faction (H2) ni la posture (comme la recherche T6).
-  Si H2 est verrouillé, l'IA devra aussi respecter l'affinité.
 - **H6 — Puissance de Nix.** Recrutable par tous, Nix cumule soin passif (+1 PV/tour,
   `TurnManager`) et soin complet actif — combo fort, à surveiller à l'équilibrage.
+
+### H4 — ⚪ Calcul de revenu unifié  ✅ **fait**
+
+L'aperçu HUD (`TacticalMapScreen.incomePerTurn`) répliquait la formule à la main et **divergeait
+sérieusement** de `TurnManager` :
+
+| Écart | HUD (avant) | Moteur (réel) |
+|-------|-------------|---------------|
+| Base | **10** | **6** |
+| Elara | codée en dur `+10 % +2` | via `BonusRegistry` |
+| Événements | `ECONOMIC_BOOM +3` / `PIRATE_RAID −5` **sans vérifier le ciblage** (affichait le boom d'une autre faction !) | scopés à `eventTargetFaction` |
+| Comptoir commercial (`TRADE_POST` +8) | **ignoré** | compté |
+| `UPKEEP_MODIFIER` (ex. NOMADS) | **ignoré** | appliqué |
+
+**Correctif** — nouveau `IncomeCalculator.perTurn(state, faction)` dans `:core:engine`, **source
+unique** : `TurnManager` l'utilise pour créditer, le HUD pour afficher. L'aperçu correspond
+désormais exactement aux crédits versés. **Tests** : `IncomeCalculatorTest` (base/planètes,
+comptoir, entretien, événement ciblé vs non ciblé, Elara, et **parité avec `advanceTurn`**).
+
+### H5 — ⚪ Recrutement IA situationnel  ✅ **fait**
+
+`evaluateHeroes` prenait toujours `KAEL`, sinon `ELARA`, sinon `VANCE`, sinon `NIX` — ordre fixe,
+sans considérer faction ni situation. **Correctif** — nouveau `chooseHero(state, playerState)`
+(`internal`, testable) qui score les héros abordables : **affinité** (`Hero.targetFaction`, poids
+dominant), puis **posture** (guerre → Vance ; paix → Elara/Kael) et **état de la flotte** (unités
+blessées → Nix) ; le coût départage. Cela donne enfin un usage mécanique à `targetFaction`
+**sans** verrouiller le recrutement (H2 reste ouvert, Nix reste recrutable). **Tests** :
+affinité, posture guerre/paix, flotte blessée, aucun héros si sans crédits.
 
 ---
 
