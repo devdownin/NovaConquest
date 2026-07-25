@@ -97,6 +97,16 @@ class SavedGameSnapshotCodecTest {
     }
 
     @Test
+    fun saveWithoutVersionKeyIsTreatedAsOldestSchema() {
+        // A snapshot written before versioning existed simply has no "version" key; it must load
+        // as the oldest supported schema rather than being rejected or assumed current.
+        // `version` is GameState's first field, so dropping the first match is precise.
+        val unversioned = SavedGameSnapshotCodec.encode(richState()).replaceFirst(Regex("\"version\":\\d+,?"), "")
+        assertTrue("test fixture must actually drop the key", !unversioned.contains("\"version\""))
+        assertEquals(7, SavedGameSnapshotCodec.decode(unversioned).turn)
+    }
+
+    @Test
     fun lastCombatEventIsNotPersisted() {
         // @Transient one-shot effect: it must never come back from disk.
         val decoded = SavedGameSnapshotCodec.decode(SavedGameSnapshotCodec.encode(richState()))

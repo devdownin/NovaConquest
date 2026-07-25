@@ -19,7 +19,7 @@
 | **S2** | 🟠 **Moyen — ✅ corrigé** | Silence | Les échecs d'écriture étaient **avalés** (`printStackTrace`) : le joueur croyait sa partie sauvegardée |
 | S3 | 🟢 **Vérifié — ✅ testé** | Migration | Les champs ajoutés récemment (`seed`, `costPaid`) ont bien des valeurs par défaut → anciennes sauvegardes toujours chargeables (désormais **prouvé par test**) |
 | S4 | 🟡 Faible — ✅ corrigé | Atomicité | Fenêtre `delete()` → `renameTo()` supprimée : le slot 1 est remplacé par un **déplacement atomique** |
-| S5 | 🟡 Faible | Versionnage | Aucune migration montante : une sauvegarde plus **ancienne** est acceptée telle quelle (OK tant que `CURRENT_VERSION` vaut 1) |
+| S5 | 🟡 Faible — ✅ corrigé | Versionnage | Couche de **migration montante** ajoutée (`SaveMigrations`), avec garde-fou testé contre un futur incrément de version sans migration |
 
 ---
 
@@ -95,12 +95,49 @@ remplacement simple plutôt que d'échouer la sauvegarde.
 > Reste hors périmètre : aucun `fsync` n'est forcé, donc une coupure d'alimentation brutale peut
 > encore perdre des données encore en cache d'écriture de l'OS. Les slots 2/3 servent de filet.
 
-## 4. Signalés, non modifiés
+### S5 — 🟡 Couche de migration montante  ✅ **corrigé**
 
-- **S5 — Pas de migration montante.** `decode` rejette une sauvegarde **plus récente**
-  (`version > CURRENT_VERSION`) mais accepte toute version antérieure sans transformation. C'est
-  correct tant que `CURRENT_VERSION` vaut 1 ; dès qu'un changement de schéma non rétrocompatible
-  sera nécessaire, il faudra incrémenter la version **et** ajouter une étape de migration.
+`decode` rejetait bien une sauvegarde **plus récente** (`version > CURRENT_VERSION`), mais acceptait
+toute version antérieure **sans transformation** : il n'existait aucun endroit où écrire une
+migration. Tant que `CURRENT_VERSION` vaut 1 c'est sans conséquence — le piège est le jour où
+quelqu'un incrémente la version pour un changement cassant : les anciennes sauvegardes seraient
+alors désérialisées telles quelles, avec des champs manquants ou mal interprétés.
+
+**Correctif** — nouveau `SaveMigrations` :
+
+- `SaveMigration(fromVersion, apply)` décrit **une** étape `N → N+1` opérant sur le **JSON brut**
+  (et non sur `GameState`) : une vieille sauvegarde peut ne pas correspondre du tout aux data
+  classes actuelles, et au moment de la désérialisation il est déjà trop tard pour la réparer.
+- `migrate(root, from, to, steps)` enchaîne les étapes et **estampille** la version résultante.
+  Une étape manquante lève `SaveVersionException` — que `SaveManager` traite déjà comme « ignorer
+  ce slot sans le mettre en quarantaine », ce qui est le bon comportement pour un fichier intact
+  mais illisible par ce build.
+- `decode` lit désormais la version dans le JSON brut **avant** de désérialiser, et applique la
+  chaîne. Une sauvegarde **sans clé `version`** (antérieure au versionnage) est traitée comme le
+  schéma le plus ancien plutôt que supposée à jour.
+
+`SaveMigrations.ALL` est volontairement **vide** : aucun schéma ancien n'existe encore. Pour livrer
+la première vraie migration : incrémenter `CURRENT_VERSION`, ajouter une `SaveMigration` dont le
+`fromVersion` est la version précédente, et la couvrir par un test nourri de vrai JSON ancien.
+
+**Tests** — `SaveMigrationsTest` valide le mécanisme avec une chaîne **factice** (la seule façon de
+le prouver tant que `ALL` est vide) : application des étapes dans l'ordre, estampillage de la
+version finale, non-copie quand il n'y a rien à faire, et `SaveVersionException` sur chaîne
+incomplète. `productionChainIsCompleteUpToCurrentVersion` est le garde-fou : trivialement vert
+aujourd'hui, il **échouera** dès qu'on incrémentera `CURRENT_VERSION` en oubliant la migration
+correspondante. Côté codec, `saveWithoutVersionKeyIsTreatedAsOldestSchema` couvre le cas
+pré-versionnage.
+
+## 4. Limites restantes (signalées, non modifiées)
+
+- **Durabilité** : aucun `fsync` n'est forcé après écriture. Le déplacement atomique (S4) garantit
+  qu'on ne voit jamais un slot 1 à moitié écrit, mais une coupure d'alimentation brutale peut
+  encore perdre des données restées en cache d'écriture de l'OS. Les slots 2/3 servent de filet.
+- **Rotation non transactionnelle** : les copies 2→3 puis 1→2 précèdent l'écriture du nouveau
+  slot 1. Un crash au milieu peut laisser deux slots identiques — sans perte de données, mais
+  l'historique est momentanément moins profond.
+- **Pas de sauvegarde manuelle** : seul l'auto-save de fin de tour existe (3 slots en anneau) ;
+  ni emplacement nommé, ni export.
 
 ## 5. Ce qui fonctionne bien
 
