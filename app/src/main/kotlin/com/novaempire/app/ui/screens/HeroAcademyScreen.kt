@@ -27,7 +27,6 @@ import com.novaempire.app.ui.theme.NeonOrange
 import com.novaempire.app.ui.theme.NeonRed
 import com.novaempire.app.ui.theme.TextSecondary
 import com.novaempire.core.domain.models.Hero
-import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.HeroRegistry
 import com.novaempire.core.domain.state.GameState
 
@@ -43,12 +42,10 @@ fun HeroAcademyScreen(
     val recruitedHeroes = playerState?.recruitedHeroes ?: emptyList()
 
     val heroAbilitiesUsed = playerState?.heroAbilitiesUsed ?: emptySet()
-    val allHeroes = listOf(
-        Hero("hero_vance", "Commander Vance", Faction.DOMINION, 1500, "+15% Raw Damage Output"),
-        Hero("hero_kael", "Architect Kael", Faction.SYNTH, 1200, "-10% Tech Research Cost"),
-        Hero("hero_nix", "High Seer Nix", Faction.XYLAR, 2000, "+1 HP Fleet Regen / Turn"),
-        Hero("hero_elara", "Admiral Elara", Faction.DOMINION, 1800, "+10% Income + 2C flat bonus")
-    )
+    // Single source of truth: the same registry the engine charges/​applies bonuses from. The
+    // screen used to hard-code its own list (costs 1200–2000, wrong factions/names) while the
+    // engine actually charged the registry cost (40–75) — the displayed price was pure fiction.
+    val allHeroes = HeroRegistry.ALL_HEROES
     val recruitedHeroObjects = allHeroes.filter { it.id in recruitedHeroes }
     val availableHeroes = allHeroes.filter { it.id !in recruitedHeroes }
     val heroAbilityDescriptions = mapOf(
@@ -179,6 +176,11 @@ fun HeroCard(
 
             Spacer(modifier = Modifier.height(16.dp))
             Text(text = hero.name.uppercase(), style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                text = "AFFINITY — ${hero.targetFaction.displayName}",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
             Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.surfaceVariant))
@@ -196,9 +198,10 @@ fun HeroCard(
             ) {
                 Text(text = "${hero.cost} C", style = MaterialTheme.typography.headlineMedium, color = if (canAfford) NeonCyan else NeonRed)
                 IndustrialButton(
-                    text = "RECRUIT",
+                    text = if (canAfford) "RECRUIT" else "INSUFFICIENT",
                     onClick = onRecruit,
                     isPrimary = canAfford,
+                    enabled = canAfford,
                     color = if (canAfford) NeonCyan else TextSecondary,
                     modifier = Modifier.widthIn(min = 120.dp)
                 )

@@ -97,23 +97,11 @@ object TurnManager {
             nextState = nextState.copy(units = pulsed)
         }
 
-        // Income for the faction starting its turn
+        // Income for the faction starting its turn — via the shared IncomeCalculator so the HUD
+        // preview and the credits actually granted here can never drift apart.
         val nextPlayerState = nextState.playerStates[nextFaction]
         if (nextPlayerState != null) {
-            val ownedPlanets = nextState.map.tiles.values.filter {
-                it.terrain == TerrainType.PLANET && it.owner == nextFaction
-            }
-            var income = 6 + ownedPlanets.sumOf { 5 + it.systemLevel * 2 }
-
-            val incomePct = BonusRegistry.sum(BonusType.INCOME_PERCENT, nextPlayerState, nextState.activeEvent, nextState.eventTargetFaction)
-            val incomeFlat = BonusRegistry.sum(BonusType.INCOME_FLAT, nextPlayerState, nextState.activeEvent, nextState.eventTargetFaction)
-            income += (income * incomePct / 100.0).toInt() + incomeFlat
-            income += ownedPlanets.count { it.specialty == PlanetSpecialty.TRADE_POST } * 8
-
-            val upkeepMod = BonusRegistry.sum(BonusType.UPKEEP_MODIFIER, nextPlayerState, nextState.activeEvent)
-            val upkeep = nextState.units.values.filter { it.faction == nextFaction }
-                .sumOf { maxOf(0, it.type.upkeepCost + upkeepMod) }
-            income -= upkeep
+            val income = IncomeCalculator.perTurn(nextState, nextFaction)
 
             val newPlayerStates = nextState.playerStates.toMutableMap()
             newPlayerStates[nextFaction] = nextPlayerState.copy(credits = nextPlayerState.credits + income)

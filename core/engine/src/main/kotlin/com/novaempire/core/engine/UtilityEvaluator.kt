@@ -3,6 +3,7 @@ package com.novaempire.core.engine
 import com.novaempire.core.domain.models.DiplomaticRelation
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.GameUnit
+import com.novaempire.core.domain.models.Hero
 import com.novaempire.core.domain.models.HeroRegistry
 import com.novaempire.core.domain.models.HexTile
 import com.novaempire.core.domain.models.TechBranch
@@ -235,10 +236,7 @@ object UtilityEvaluator : AIStrategy {
         }
         if (availableHeroes.isEmpty()) return state
 
-        val selectedHero = availableHeroes.find { it.id == HeroRegistry.KAEL }
-            ?: availableHeroes.find { it.id == HeroRegistry.ELARA }
-            ?: availableHeroes.find { it.id == HeroRegistry.VANCE }
-            ?: availableHeroes.find { it.id == HeroRegistry.NIX }
+        val selectedHero = chooseHero(state, playerState)
 
         if (selectedHero != null) {
             val newPlayerStates = state.playerStates.toMutableMap()
@@ -249,6 +247,41 @@ object UtilityEvaluator : AIStrategy {
             return state.copy(playerStates = newPlayerStates)
         }
         return state
+    }
+
+    /**
+     * Picks which hero to recruit among the affordable, not-yet-recruited ones. Replaces the old
+     * fixed order (`KAEL > ELARA > VANCE > NIX`) that ignored both the faction and the situation:
+     * a hero matching the faction's affinity ([Hero.targetFaction]) is strongly preferred, then the
+     * pick follows posture — a faction at war wants Vance's damage, one at peace wants income/tech,
+     * and a battered fleet wants Nix's healing. Cheaper heroes break ties.
+     */
+    internal fun chooseHero(state: GameState, playerState: PlayerState): Hero? {
+        val affordable = HeroRegistry.ALL_HEROES.filter {
+            !playerState.recruitedHeroes.contains(it.id) && playerState.credits >= it.cost
+        }
+        if (affordable.isEmpty()) return null
+
+        val atWar = playerState.relations.values.any { it == DiplomaticRelation.WAR }
+        val woundedFleet = state.units.values.any {
+            it.faction == playerState.faction && it.currentHp < it.type.maxHp
+        }
+        return affordable.maxByOrNull { hero ->
+            heroScore(hero, playerState.faction, atWar, woundedFleet) * 100 - hero.cost
+        }
+    }
+
+    private fun heroScore(hero: Hero, faction: Faction, atWar: Boolean, woundedFleet: Boolean): Int {
+        // Affinity dominates: a hero aligned with the faction is the natural hire.
+        val affinity = if (hero.targetFaction == faction) 10 else 0
+        val situational = when (hero.id) {
+            HeroRegistry.VANCE -> if (atWar) 8 else 2          // raw damage
+            HeroRegistry.NIX -> if (woundedFleet) 8 else 1      // fleet healing
+            HeroRegistry.ELARA -> if (atWar) 3 else 7           // income snowball
+            HeroRegistry.KAEL -> if (atWar) 3 else 6            // tech discount
+            else -> 2
+        }
+        return affinity + situational
     }
 
     private fun evaluateProduction(state: GameState, faction: Faction): GameState {

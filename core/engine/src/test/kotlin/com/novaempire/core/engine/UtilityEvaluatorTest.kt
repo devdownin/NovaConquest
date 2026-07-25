@@ -5,6 +5,7 @@ import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.TechBranch
 import com.novaempire.core.domain.models.GameMap
 import com.novaempire.core.domain.models.GameUnit
+import com.novaempire.core.domain.models.HeroRegistry
 import com.novaempire.core.domain.models.HexTile
 import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.models.UnitType
@@ -13,6 +14,7 @@ import com.novaempire.core.domain.state.PlayerState
 import com.novaempire.core.hex.HexCoord
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -93,6 +95,51 @@ class UtilityEvaluatorTest {
         val ps = PlayerState(Faction.XYLAR, credits = 100) // no WAR relations
         val state = GameState(activeFaction = Faction.XYLAR, playerStates = mapOf(Faction.XYLAR to ps))
         assertEquals(TechBranch.EXPANSION, UtilityEvaluator.chooseResearchTech(state, ps)?.branch)
+    }
+
+    // ── Hero recruitment (H5) ─────────────────────────────────────────────────
+
+    private fun heroState(faction: Faction, atWar: Boolean, units: Map<HexCoord, GameUnit> = emptyMap()): Pair<GameState, PlayerState> {
+        val ps = PlayerState(
+            faction, credits = 500,
+            relations = if (atWar) mapOf(Faction.KAELEN to DiplomaticRelation.WAR) else emptyMap()
+        )
+        return GameState(activeFaction = faction, playerStates = mapOf(faction to ps), units = units) to ps
+    }
+
+    @Test
+    fun aiPrefersHeroMatchingItsAffinity() {
+        // Vance's targetFaction is DOMINION → affinity outweighs the peacetime economy pick.
+        val (state, ps) = heroState(Faction.DOMINION, atWar = false)
+        assertEquals(HeroRegistry.VANCE, UtilityEvaluator.chooseHero(state, ps)?.id)
+    }
+
+    @Test
+    fun aiAtWarWithoutAffinityRecruitsCombatHero() {
+        // XYLAR has no affinity hero → posture decides: at war, damage wins.
+        val (state, ps) = heroState(Faction.XYLAR, atWar = true)
+        assertEquals(HeroRegistry.VANCE, UtilityEvaluator.chooseHero(state, ps)?.id)
+    }
+
+    @Test
+    fun aiAtPeaceWithoutAffinityRecruitsEconomyHero() {
+        val (state, ps) = heroState(Faction.XYLAR, atWar = false)
+        assertEquals(HeroRegistry.ELARA, UtilityEvaluator.chooseHero(state, ps)?.id)
+    }
+
+    @Test
+    fun aiWithWoundedFleetPrefersHealer() {
+        val pos = HexCoord(0, 0, 0)
+        val wounded = GameUnit(type = UnitType.CRUISER, faction = Faction.XYLAR, position = pos, currentHp = 5)
+        val (state, ps) = heroState(Faction.XYLAR, atWar = false, units = mapOf(pos to wounded))
+        assertEquals(HeroRegistry.NIX, UtilityEvaluator.chooseHero(state, ps)?.id)
+    }
+
+    @Test
+    fun aiRecruitsNothingWhenBroke() {
+        val ps = PlayerState(Faction.XYLAR, credits = 0)
+        val state = GameState(activeFaction = Faction.XYLAR, playerStates = mapOf(Faction.XYLAR to ps))
+        assertNull("No hero is affordable with 0 credits", UtilityEvaluator.chooseHero(state, ps))
     }
 
     @Test
