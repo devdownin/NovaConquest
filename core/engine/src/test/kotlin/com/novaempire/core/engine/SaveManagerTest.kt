@@ -96,4 +96,34 @@ class SaveManagerTest {
     fun loadLatestGameReturnsNoSaveWhenEmpty() {
         assertTrue(manager.loadLatestGame() is LoadResult.NoSave)
     }
+
+    @Test
+    fun hasSavedGameStaysTrueAfterSlot1IsQuarantined() {
+        // Regression: quarantining a corrupt slot 1 MOVES the file away. hasSavedGame() used to
+        // check only that file, so the menu's "resume" entry went dead even though slot 2 still
+        // loaded fine — the player lost access to a perfectly recoverable game.
+        manager.saveGame(stateWithCredits(10))
+        manager.saveGame(stateWithCredits(20))
+        File(saveDir, "autosave_1.json").writeText("not valid json {{{{")
+
+        val loaded = manager.loadLatestGame()
+        assertTrue(loaded is LoadResult.Success)
+        assertFalse("slot 1 was quarantined", File(saveDir, "autosave_1.json").exists())
+        assertTrue("a recoverable save still exists in another slot", manager.hasSavedGame())
+    }
+
+    @Test
+    fun saveGameReportsSuccess() {
+        assertTrue(manager.saveGame(stateWithCredits(5)))
+    }
+
+    @Test
+    fun saveGameReportsFailureWhenDirectoryIsUnusable() {
+        // Simulate an unwritable location: a *file* where the save directory should be. The write
+        // must report failure rather than silently pretending the turn was auto-saved.
+        val blocked = File(saveDir, "blocked")
+        blocked.writeText("I am a file, not a directory")
+        val brokenManager = SaveManager(File(blocked, "saves"))
+        assertFalse(brokenManager.saveGame(stateWithCredits(1)))
+    }
 }

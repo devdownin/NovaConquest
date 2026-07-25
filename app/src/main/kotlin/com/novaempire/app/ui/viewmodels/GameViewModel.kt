@@ -48,7 +48,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             engine.state.collect { state ->
                 if (state.turn != lastSavedTurn) {
                     lastSavedTurn = state.turn
-                    withContext(Dispatchers.IO) { saveRepository.saveGame(state) }
+                    val saved = withContext(Dispatchers.IO) { saveRepository.saveGame(state) }
+                    // Surface write failures instead of failing silently — the player would
+                    // otherwise keep playing believing the turn had been auto-saved.
+                    if (!saved) _notifications.emit("ÉCHEC DE LA SAUVEGARDE AUTOMATIQUE" to "RED")
                 }
             }
         }
