@@ -15,6 +15,11 @@ import com.novaempire.core.domain.state.GameState
 object MovementCalculator {
 
     fun effectiveMovement(state: GameState, unit: GameUnit): Int {
+        // Structures with no base movement (DEFENSE_PLATFORM) are immobile by design — the floor
+        // below must never hand them a free hex. It exists only so a debuff (ION_STORM's -1)
+        // cannot strand a unit that *can* normally move, such as the movement-1 DREADNOUGHT.
+        if (unit.type.movement <= 0) return 0
+
         val player = state.playerStates[unit.faction]
         val moveMod = BonusRegistry.sum(
             BonusType.MOVEMENT_MODIFIER, player, state.activeEvent, state.eventTargetFaction

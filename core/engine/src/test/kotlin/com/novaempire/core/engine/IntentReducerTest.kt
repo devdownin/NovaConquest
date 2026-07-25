@@ -170,6 +170,47 @@ class IntentReducerTest {
         assertEquals(creditsBefore, e.state.value.playerStates[Faction.DOMINION]!!.credits)
     }
 
+    // ── Carrier transport ─────────────────────────────────────────────────────
+
+    /** A CARRIER at (0,0,0) with a damaged FIGHTER escort alongside it at (1,-1,0). */
+    private fun carrierWithWoundedEscort(escortHp: Int): GameState {
+        val carrierCoord = HexCoord(0, 0, 0)
+        val escortCoord = HexCoord(1, -1, 0)
+        val deployCoord = HexCoord(0, -1, 1)
+        return GameState(
+            activeFaction = Faction.DOMINION,
+            humanFaction = Faction.DOMINION,
+            playerStates = mapOf(Faction.DOMINION to PlayerState(Faction.DOMINION, credits = 100)),
+            map = GameMap(tiles = listOf(carrierCoord, escortCoord, deployCoord)
+                .associateWith { HexTile(it, TerrainType.EMPTY) }),
+            units = mapOf(
+                carrierCoord to GameUnit(type = UnitType.CARRIER, faction = Faction.DOMINION, position = carrierCoord, currentHp = UnitType.CARRIER.maxHp),
+                escortCoord to GameUnit(type = UnitType.FIGHTER, faction = Faction.DOMINION, position = escortCoord, currentHp = escortHp)
+            )
+        )
+    }
+
+    @Test
+    fun deployedUnitKeepsTheHpItHadWhenLoaded() = runBlocking {
+        // Regression: cargo stored only the unit TYPE, so redeploying rebuilt it at full health —
+        // a carrier worked as a free repair bay for nearly-destroyed escorts.
+        val e = engine()
+        e.processIntent(GameIntent.LoadGame(carrierWithWoundedEscort(escortHp = 3)))
+        delay(50)
+        val carrierCoord = HexCoord(0, 0, 0)
+        e.processIntent(GameIntent.LoadUnit(carrierCoord, HexCoord(1, -1, 0)))
+        delay(100)
+        assertEquals(listOf(3), e.state.value.units[carrierCoord]!!.cargoHp)
+
+        e.processIntent(GameIntent.DeployUnit(carrierCoord, HexCoord(0, -1, 1), 0))
+        delay(100)
+        val deployed = e.state.value.units[HexCoord(0, -1, 1)]!!
+        assertEquals(UnitType.FIGHTER, deployed.type)
+        assertEquals("the escort must come back as damaged as it went in", 3, deployed.currentHp)
+        assertTrue("cargo is emptied on deploy", e.state.value.units[carrierCoord]!!.cargo.isEmpty())
+        assertTrue(e.state.value.units[carrierCoord]!!.cargoHp.isEmpty())
+    }
+
     // ── SiegePlanet ───────────────────────────────────────────────────────────
 
     @Test
