@@ -47,7 +47,17 @@ data class ResearchProgress(
 )
 
 @Serializable
-data class BuildOrder(val unitType: UnitType, val planetCoord: HexCoord, val turnsRemaining: Int)
+data class BuildOrder(
+    val unitType: UnitType,
+    val planetCoord: HexCoord,
+    val turnsRemaining: Int,
+    /**
+     * True when the order finished but had nowhere to place the ship (every candidate hex occupied).
+     * It retries each turn; the flag lets the UI say so instead of showing an order that silently
+     * never completes. Defaulted so existing saves keep loading.
+     */
+    val blocked: Boolean = false
+)
 
 @Serializable
 data class PlayerState(

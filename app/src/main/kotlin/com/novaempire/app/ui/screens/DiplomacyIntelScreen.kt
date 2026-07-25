@@ -61,7 +61,11 @@ fun DiplomacyIntelScreen(
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        val otherFactions = Faction.values().filter { it != gameState.activeFaction }
+        // Only factions that actually play take part in diplomacy: ANCIENT_NPC has no PlayerState
+        // and is permanently hostile, so listing it offered relations that meant nothing (D3).
+        val otherFactions = Faction.values().filter {
+            it != gameState.activeFaction && gameState.playerStates[it] != null
+        }
 
         otherFactions.forEach { faction ->
             val relation = relations[faction] ?: DiplomaticRelation.NEUTRAL

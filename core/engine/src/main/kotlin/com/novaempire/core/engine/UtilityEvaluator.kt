@@ -338,14 +338,14 @@ object UtilityEvaluator : AIStrategy {
         val aiPlayerState = state.playerStates[faction] ?: return state
         var nextState = state
 
-        val aiUnits = state.units.values.filter { it.faction == faction }
-        val aiPower = aiPlayerState.credits + aiUnits.sumOf { it.currentHp }
+        // Same strength metric the other side uses to weigh a proposal (DiplomacyEvaluator), so the
+        // AI reasons about power exactly as its counterpart will.
+        val aiPower = DiplomacyEvaluator.power(state, faction)
 
         for (otherFaction in Faction.values()) {
             if (otherFaction == faction || otherFaction == Faction.ANCIENT_NPC) continue
-            val otherPlayerState = state.playerStates[otherFaction] ?: continue
-            val otherUnits = state.units.values.filter { it.faction == otherFaction }
-            val otherPower = otherPlayerState.credits + otherUnits.sumOf { it.currentHp }
+            state.playerStates[otherFaction] ?: continue
+            val otherPower = DiplomacyEvaluator.power(state, otherFaction)
 
             val currentRelation = aiPlayerState.relations[otherFaction] ?: DiplomaticRelation.NEUTRAL
 

@@ -238,6 +238,17 @@ fun ShipyardPanel(coord: HexCoord, credits: Int, buildQueue: List<BuildOrder>, o
                                 color = NeonOrange
                             )
                         }
+                        // P5: an order that finished but had nowhere to place the ship retries every
+                        // turn. Say so, instead of showing a countdown that never reaches zero.
+                        if (activeOrder.blocked) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "⚠ PRODUCTION BLOQUÉE — aucune case libre autour du système. " +
+                                    "Dégagez les environs ou annulez l'ordre.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = NeonRed
+                            )
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(12.dp))

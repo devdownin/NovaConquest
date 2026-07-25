@@ -140,11 +140,12 @@ object TurnManager {
                         updatedUnits[spawnHex] = newUnit
                         stateAfterBuilds = stateAfterBuilds.copy(units = updatedUnits)
                     } else {
-                        // All spawn candidates blocked — retry next turn
-                        remainingOrders.add(order.copy(turnsRemaining = 1))
+                        // Every candidate hex is taken — retry next turn, and flag it so the
+                        // shipyard can say why the order never completes (P5).
+                        remainingOrders.add(order.copy(turnsRemaining = 1, blocked = true))
                     }
                 } else {
-                    remainingOrders.add(order.copy(turnsRemaining = newTurns))
+                    remainingOrders.add(order.copy(turnsRemaining = newTurns, blocked = false))
                 }
             }
 

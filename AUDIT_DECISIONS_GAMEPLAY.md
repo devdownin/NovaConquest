@@ -17,6 +17,9 @@
 | **V3** | Score de fin de partie | Composite : crédits + territoire + flotte + recherche |
 | **H2** | Affinité des héros | **Tarifée**, pas verrouillée (×2 hors faction, mercenaire au tarif de base) |
 | **H6** | Puissance de Nix | Soin actif ramené à la moitié de la coque |
+| **C4** | Embarquement gratuit | Boarding et largage coûtent le déplacement du porte-vaisseaux |
+| **V4** | Zodiac et NPC | Victoire territoriale réservée aux factions jouables |
+| **P5** | Ordre de production bloqué | Signalé à l'écran au lieu de boucler en silence |
 
 ---
 
@@ -130,3 +133,44 @@ unité (arrondi au supérieur) au lieu de la restaurer entièrement. Elle reste 
 de situation — sans effacer le résultat d'un engagement. Le passif est conservé.
 
 **Test** — `nixAbilityRepairsHalfTheHullNotAllOfIt`.
+
+## C4 — L'embarquement coûte une action
+
+**Constat.** `handleLoadUnit` ne vérifiait pas si l'escorte avait déjà bougé et ne marquait
+personne comme ayant agi : on pouvait traverser la carte, embarquer, **puis** déplacer et faire
+tirer le porte-vaisseaux — le tout dans le même tour.
+
+**Décision.** Le transfert est une manœuvre, pas une action gratuite : l'escorte doit encore
+disposer de son déplacement, et le porte-vaisseaux **tient position** pour la recueillir
+(`hasMoved`). Il peut toujours faire feu — seul son déplacement est consommé. Le largage suit la
+même règle, par symétrie.
+
+**Tests** — `loadingCostsTheCarrierItsMovement`, `anEscortThatAlreadyMovedCannotBoard`.
+
+## V4 — Victoire Zodiac réservée aux factions jouables
+
+**Constat.** La victoire territoriale parcourait `Faction.values()`, donc **`ANCIENT_NPC`** — qui
+n'a pas de `PlayerState` et ne joue jamais — pouvait être déclaré vainqueur de l'alignement céleste
+s'il possédait tous les nœuds.
+
+**Décision.** Restreindre le balayage aux factions jouables. (Un plateau entièrement tenu par le
+NPC tombe alors dans le match nul de V2, ce qui est le résultat correct : plus aucune faction
+jouable n'est en lice.)
+
+**Tests** — `zodiacVictoryIsNotAwardedToTheAncientNpc`, `zodiacVictoryStillWorksForAPlayableFaction`.
+
+## P5 — Ordre de production bloqué, signalé
+
+**Constat.** Quand un ordre arrivait à échéance sans case libre où poser le vaisseau, il était
+réinséré à `turnsRemaining = 1` et retentait **indéfiniment**. Les crédits étaient déjà dépensés, et
+l'écran affichait un décompte qui n'atteignait jamais zéro — sans la moindre explication.
+
+**Décision.** Rendre l'état visible plutôt que de le deviner : `BuildOrder.blocked`
+(défaut `false`, donc **compatible avec les sauvegardes existantes**) est posé par `TurnManager`
+quand l'apparition échoue, et effacé dès que l'ordre reprend sa progression. Le chantier affiche
+alors un avertissement invitant à dégager les environs ou à annuler (50 % remboursés).
+
+L'ordre continue de retenter : le blocage est souvent temporaire, il n'y a donc pas lieu d'annuler
+d'office à la place du joueur.
+
+**Tests** — `blockedBuildOrderIsFlaggedForTheUi`, `progressingBuildOrderIsNotFlagged`.
