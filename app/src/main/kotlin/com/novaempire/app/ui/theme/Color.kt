@@ -14,6 +14,11 @@ val NeonOrange   = Color(0xFFB85C2A)   // rouille vive
 val NeonGreen    = Color(0xFF5A7A4A)   // lichen sur béton
 val NeonGold     = Color(0xFFB8960A)   // or fané
 
+// Couleurs de faction complétant la palette — les deux dernières factions utilisaient
+// Color.Cyan / Color.Magenta bruts, des primaires saturées incompatibles avec l'encre désaturée.
+val XylarPurple  = Color(0xFF7B4A9D)   // améthyste sourde — l'essaim
+val AncientBone  = Color(0xFF9D8A6A)   // os ancien, parchemin — les Anciens
+
 // Extras atmosphériques
 val VioletBrume  = Color(0xFF3D2848)   // violet nébuleuse
 val BrunEncre    = Color(0xFF130F0A)   // contour encre BD
