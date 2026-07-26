@@ -28,10 +28,20 @@ object VictoryChecker {
                     com.novaempire.core.domain.models.CampaignObjectiveType.SURVIVE_TURNS -> state.turn >= mission.objective.targetValue
                     com.novaempire.core.domain.models.CampaignObjectiveType.ACCUMULATE_CREDITS -> (state.playerStates[mission.playerFaction]?.credits ?: 0) >= mission.objective.targetValue
                     com.novaempire.core.domain.models.CampaignObjectiveType.DEFEAT_FACTION -> !state.units.values.any { it.faction == mission.enemyFaction } && !state.map.tiles.values.any { it.owner == mission.enemyFaction }
-                    else -> false
+                    // Previously fell into `else -> false`: the objective type existed in the enum
+                    // but had no implementation, so any mission using it was unwinnable — silently.
+                    com.novaempire.core.domain.models.CampaignObjectiveType.CAPTURE_SPECIFIC_PLANET ->
+                        parseTargetCoord(mission.objective.targetString)
+                            ?.let { state.map.tiles[it]?.owner == mission.playerFaction } ?: false
                 }
                 if (isVictorious) {
                     return VictoryResult(mission.playerFaction, "Campaign Mission Complete: ${mission.name}")
+                }
+                // A mission may impose a deadline. Without one the campaign branch never times out
+                // (it returns before the standard 100-turn rule), so an objective that becomes
+                // unreachable would leave the game running forever.
+                if (mission.turnLimit > 0 && state.turn > mission.turnLimit) {
+                    return VictoryResult(mission.enemyFaction, "Defeat! Mission deadline expired.")
                 }
                 return null // If in a campaign, standard victory conditions are ignored
             }
@@ -96,6 +106,20 @@ object VictoryChecker {
         }
 
         return null
+    }
+
+    /**
+     * Reads a `CAPTURE_SPECIFIC_PLANET` target written as `"q,r"` (the third cube coordinate is
+     * derived). Returns null on anything malformed rather than throwing: a typo in mission data
+     * must not crash the victory check mid-game — the objective simply stays unmet, which is
+     * visible in play and caught by the registry test.
+     */
+    internal fun parseTargetCoord(target: String): com.novaempire.core.hex.HexCoord? {
+        val parts = target.split(',').map { it.trim() }
+        if (parts.size != 2) return null
+        val q = parts[0].toIntOrNull() ?: return null
+        val r = parts[1].toIntOrNull() ?: return null
+        return com.novaempire.core.hex.HexCoord(q, r, -q - r)
     }
 
     /**

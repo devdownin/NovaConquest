@@ -102,7 +102,20 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
 
     private suspend fun checkVictoryConditions(state: GameState): GameState {
         val result = VictoryChecker.check(state) ?: return state
-        val finalState = state.copy(winner = result.winner, victoryReason = result.reason)
+        // Record a completed campaign mission. `completedMissions` existed on CampaignState but was
+        // never written, so finishing a mission left no trace: nothing to unlock, nothing to show.
+        val missionId = state.campaignState.activeMissionId
+        val mission = missionId?.let { id ->
+            com.novaempire.core.domain.models.CampaignRegistry.MISSIONS.find { it.id == id }
+        }
+        val campaign = if (mission != null && result.winner == mission.playerFaction)
+            state.campaignState.copy(completedMissions = state.campaignState.completedMissions + mission.id)
+        else state.campaignState
+        val finalState = state.copy(
+            winner = result.winner,
+            victoryReason = result.reason,
+            campaignState = campaign
+        )
         val banner = result.winner?.let { "VICTORY: ${it.displayName} — ${result.reason}" }
             ?: "MATCH NUL — ${result.reason}"
         _effects.emit(GameEffect.ShowNotification(banner, "GOLD"))
@@ -213,6 +226,20 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         }
     }
 
+    /**
+     * A fresh board must not erase campaign progress. `createInitialState` builds a brand-new
+     * [GameState], whose default `campaignState` is empty — so launching the next mission wiped the
+     * record of the previous one. Completed missions (and glory) carry over; the active mission is
+     * deliberately cleared, since the new game has not started one yet.
+     */
+    private fun GameState.keepingCampaignProgress(previous: GameState): GameState = copy(
+        campaignState = com.novaempire.core.domain.state.CampaignState(
+            activeMissionId = null,
+            completedMissions = previous.campaignState.completedMissions,
+            gloryPoints = previous.campaignState.gloryPoints
+        )
+    )
+
     private fun eventBanner(state: GameState): String {
         val e = state.activeEvent
         val target = state.eventTargetFaction
@@ -224,9 +251,9 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
 
     internal fun reduce(state: GameState, intent: GameIntent): GameResult = when (intent) {
         is GameIntent.StartNewGame ->
-            GameResult(createInitialState(MapSize.MEDIUM, MapArchetype.STANDARD))
+            GameResult(createInitialState(MapSize.MEDIUM, MapArchetype.STANDARD).keepingCampaignProgress(state))
         is GameIntent.StartNewGameWithSize ->
-            GameResult(createInitialState(intent.mapSize, intent.archetype))
+            GameResult(createInitialState(intent.mapSize, intent.archetype).keepingCampaignProgress(state))
         is GameIntent.LoadGame ->
             GameResult(updateVision(intent.loadedState))
         is GameIntent.StartCampaign -> handleStartCampaign(state, intent)
