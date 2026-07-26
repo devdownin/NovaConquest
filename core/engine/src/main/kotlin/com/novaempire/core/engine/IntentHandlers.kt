@@ -183,7 +183,10 @@ internal fun handleStartCampaign(state: GameState, intent: GameIntent.StartCampa
         }
         players[mission.enemyFaction]?.let { e ->
             players[mission.enemyFaction] = e.copy(
-                relations = e.relations.toMutableMap().also { it[mission.playerFaction] = DiplomaticRelation.WAR }
+                relations = e.relations.toMutableMap().also { it[mission.playerFaction] = DiplomaticRelation.WAR },
+                // The per-mission difficulty dial: declared on every mission but never applied
+                // until now, so scripted opponents all started on equal footing with the player.
+                credits = e.credits + mission.enemyBonusCredits
             )
         }
         next = next.copy(playerStates = players)

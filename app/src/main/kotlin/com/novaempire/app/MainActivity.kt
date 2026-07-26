@@ -143,7 +143,8 @@ class MainActivity : ComponentActivity() {
                                     gameViewModel.startCampaignMission(mission)
                                     currentScreen = AppScreen.GAME
                                 },
-                                onBackClick = { currentScreen = AppScreen.MAIN_MENU }
+                                onBackClick = { currentScreen = AppScreen.MAIN_MENU },
+                                completedMissions = gameState.campaignState.completedMissions
                             )
                         }
                         AppScreen.FACTION_SELECTION -> {
