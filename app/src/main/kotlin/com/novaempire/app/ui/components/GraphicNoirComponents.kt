@@ -81,6 +81,13 @@ fun IndustrialPanel(
     shape: Shape = CutCornerShape(topStart = 4.dp, bottomEnd = 4.dp),
     content: @Composable BoxScope.() -> Unit
 ) {
+    // Resolved once per panel instead of inside graphicsLayer, which runs on every draw pass:
+    // getActiveTheme() allocates a Calendar and reads the clock, and IndustrialPanel is used
+    // dozens of times per screen — that was pure churn in the render path.
+    val blurRadius = androidx.compose.runtime.remember {
+        com.novaempire.app.ui.theme.ThemeManager
+            .getGraphicsConfig(com.novaempire.app.ui.theme.ThemeManager.getActiveTheme()).blurRadius
+    }
     Surface(
         modifier = modifier,
         color = Color.Transparent,
@@ -94,9 +101,8 @@ fun IndustrialPanel(
                     .then(
                         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                             Modifier.graphicsLayer {
-                                val radius = com.novaempire.app.ui.theme.ThemeManager.getGraphicsConfig(com.novaempire.app.ui.theme.ThemeManager.getActiveTheme()).blurRadius
                                 renderEffect = androidx.compose.ui.graphics.BlurEffect(
-                                    radius, radius, androidx.compose.ui.graphics.TileMode.Clamp
+                                    blurRadius, blurRadius, androidx.compose.ui.graphics.TileMode.Clamp
                                 )
                                 clip = true
                                 this.shape = shape

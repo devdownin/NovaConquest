@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -63,7 +64,8 @@ import kotlin.math.sqrt
 import kotlin.math.roundToInt
 import kotlin.math.roundToInt
 
-private const val HEX_RADIUS = 60f
+/** Hex radius in density-independent units — 30.dp reproduces the historical 60 px on a 2x screen. */
+private val HEX_RADIUS_DP = 30.dp
 
 @Composable
 fun TacticalMapScreen(
@@ -92,8 +94,13 @@ fun TacticalMapScreen(
     val initCoord = gameState.playerStates[gameState.humanFaction]?.capitalCoord
         ?: gameState.units.values.firstOrNull { it.faction == gameState.humanFaction }?.position
         ?: HexCoord(0, 0, 0)
-    val horizSpacingInit = sqrt(3f) * HEX_RADIUS
-    val vertSpacingInit = 1.5f * HEX_RADIUS
+    // DrawScope works in raw pixels, so a hard-coded radius made the whole map shrink as screen
+    // density rose: 60 px is 30 dp at 2x but only 20 dp at 3x, and the sector labels became
+    // unreadable. Deriving it from dp keeps the board the same physical size on every device.
+    // This single value feeds both the drawing and pixelToHex, so hit-testing cannot drift from it.
+    val hexRadiusPx = with(LocalDensity.current) { HEX_RADIUS_DP.toPx() }
+    val horizSpacingInit = sqrt(3f) * hexRadiusPx
+    val vertSpacingInit = 1.5f * hexRadiusPx
 
     var scale by remember { mutableStateOf(initScale) }
     var pan by remember {
@@ -251,8 +258,8 @@ fun TacticalMapScreen(
     // Center map on a coord when requested by SMART FOCUS
     LaunchedEffect(centerRequest) {
         centerRequest?.let { (coord, _) ->  // second component is the re-trigger nonce, intentionally unused here
-            val hSpacing = sqrt(3f) * HEX_RADIUS
-            val vSpacing = 1.5f * HEX_RADIUS
+            val hSpacing = sqrt(3f) * hexRadiusPx
+            val vSpacing = 1.5f * hexRadiusPx
             pan = Offset(
                 -hSpacing * (coord.q + coord.r / 2f) * scale,
                 -vSpacing * coord.r * scale
@@ -302,7 +309,7 @@ fun TacticalMapScreen(
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onLongPress = { offset ->
-                            val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f)
+                            val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f, hexRadiusPx)
                             val gs = currentGameState
                             val explored = gs.playerStates[gs.activeFaction]?.exploredHexes ?: emptySet()
                             if (gs.map.tiles.containsKey(coord) && explored.contains(coord)) {
@@ -312,7 +319,7 @@ fun TacticalMapScreen(
                         }
                     ) { offset ->
                         terrainTooltipCoord = null
-                        val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f)
+                        val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f, hexRadiusPx)
                         val gs = currentGameState
                         val explored = gs.playerStates[gs.activeFaction]?.exploredHexes ?: emptySet()
                         if (!gs.map.tiles.containsKey(coord)) return@detectTapGestures
@@ -375,7 +382,7 @@ fun TacticalMapScreen(
                 .pointerInput(Unit) {
                     detectDragGesturesAfterLongPress(
                         onDragStart = { offset ->
-                            val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f)
+                            val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f, hexRadiusPx)
                             val gs = currentGameState
                             val unit = gs.units[coord]
                             if (unit != null && unit.faction == gs.activeFaction && !unit.hasMoved) {
@@ -424,7 +431,7 @@ fun TacticalMapScreen(
                             val start = dragStartHex ?: return@detectDragGesturesAfterLongPress
                             val gs = currentGameState
                             val unit = gs.units[start] ?: return@detectDragGesturesAfterLongPress
-                            val coord = pixelToHex(change.position.x, change.position.y, size.width / 2f, size.height / 2f)
+                            val coord = pixelToHex(change.position.x, change.position.y, size.width / 2f, size.height / 2f, hexRadiusPx)
                             if (coord == currentHoveredHex) return@detectDragGesturesAfterLongPress
                             currentHoveredHex = coord
 
@@ -455,7 +462,7 @@ fun TacticalMapScreen(
                 val centerX = width / 2f
                 val centerY = height / 2f
 
-                val hexRadius = HEX_RADIUS
+                val hexRadius = hexRadiusPx
                 val hexWidth = sqrt(3f) * hexRadius
                 val hexHeight = 2f * hexRadius
                 val horizSpacing = hexWidth
@@ -464,13 +471,13 @@ fun TacticalMapScreen(
                 // Pre-allocate paints for performance
                 val textPaintVisible = android.graphics.Paint().apply {
                     color = android.graphics.Color.argb((0.12f * 255f).toInt(), 74, 123, 157) // acier froid
-                    textSize = 11f
+                    textSize = hexRadius * 0.18f
                     textAlign = android.graphics.Paint.Align.CENTER
                     typeface = android.graphics.Typeface.MONOSPACE
                 }
                 val textPaintFog = android.graphics.Paint().apply {
                     color = android.graphics.Color.argb((0.06f * 255f).toInt(), 74, 123, 157)
-                    textSize = 11f
+                    textSize = hexRadius * 0.18f
                     textAlign = android.graphics.Paint.Align.CENTER
                     typeface = android.graphics.Typeface.MONOSPACE
                 }
@@ -547,7 +554,7 @@ fun TacticalMapScreen(
 
                         val unit = gameState.units[tile.coord]
                         if (unit != null && (isVisible || unit.faction == gameState.activeFaction)) {
-                            drawUnit(x, y, unit)
+                            drawUnit(x, y, unit, hexRadius)
                         }
                     } else {
                         drawHexagonPath(x, y, hexRadius, color = Color(0xFF0D0A07), fill = true)
@@ -566,7 +573,7 @@ fun TacticalMapScreen(
                 val centerX = width / 2f
                 val centerY = height / 2f
 
-                val hexRadius = HEX_RADIUS
+                val hexRadius = hexRadiusPx
                 val hexWidth = sqrt(3f) * hexRadius
                 val hexHeight = 2f * hexRadius
                 val horizSpacing = hexWidth
@@ -714,7 +721,7 @@ fun TacticalMapScreen(
                         )
                     }
                     val animUnit = gameState.units[anim.to] ?: gameState.units[anim.from]
-                    if (animUnit != null) drawUnit(animX, animY, animUnit)
+                    if (animUnit != null) drawUnit(animX, animY, animUnit, hexRadius)
                 }
             }
         }
@@ -1247,9 +1254,9 @@ fun SiegePreviewOverlay(
     }
 }
 
-fun pixelToHex(x: Float, y: Float, centerX: Float, centerY: Float): HexCoord {
-    val q = (sqrt(3f) / 3 * (x - centerX) - 1f / 3 * (y - centerY)) / HEX_RADIUS
-    val r = (2f / 3 * (y - centerY)) / HEX_RADIUS
+fun pixelToHex(x: Float, y: Float, centerX: Float, centerY: Float, hexRadius: Float): HexCoord {
+    val q = (sqrt(3f) / 3 * (x - centerX) - 1f / 3 * (y - centerY)) / hexRadius
+    val r = (2f / 3 * (y - centerY)) / hexRadius
     return hexRound(q.toDouble(), r.toDouble(), -q.toDouble() - r.toDouble())
 }
 
@@ -1343,10 +1350,11 @@ fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float, owner: Faction?, 
     }
 }
 
-fun DrawScope.drawUnit(x: Float, y: Float, unit: GameUnit) {
+fun DrawScope.drawUnit(x: Float, y: Float, unit: GameUnit, hexRadius: Float) {
     val factionColor = getFactionColor(unit.faction)
     val inkBlack = Color(0xFF130F0A)
-    val size = 25f
+    // Proportional to the hex (25/60 of the historical radius) so sprites scale with the board.
+    val size = hexRadius * 0.42f
 
     // Helper: apply Bilal layers to a path — black fill → tinted fill → black outline → color outline
     fun applyBilalLayers(path: Path) {
@@ -1478,7 +1486,7 @@ fun DrawScope.drawUnit(x: Float, y: Float, unit: GameUnit) {
 
     // Barre HP — métal mat, pas gris numérique
     val hpPercent = unit.currentHp.toFloat() / unit.type.maxHp
-    val barWidth = 40f
+    val barWidth = hexRadius * 0.67f
     val barHeight = 3.5f
     val barTop = y + size + 9f
     drawRect(Color(0xFF2D2620), Offset(x - barWidth / 2, barTop), Size(barWidth, barHeight))

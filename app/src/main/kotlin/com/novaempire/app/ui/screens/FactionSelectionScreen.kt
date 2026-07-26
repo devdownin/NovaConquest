@@ -405,7 +405,11 @@ fun getFactionColor(faction: Faction): Color {
         Faction.SYNTH -> NeonCyan
         Faction.NOMADS -> NeonOrange
         Faction.KAELEN -> NeonGreen
-        Faction.XYLAR -> Color.Cyan
-        Faction.ANCIENT_NPC -> Color.Magenta
+        // XYLAR and ANCIENT_NPC used raw Color.Cyan / Color.Magenta — fully saturated primaries in a
+        // deliberately desaturated "ink" palette. They screamed against every other faction and
+        // contradicted the art direction the rest of the file states explicitly. Replaced with
+        // palette-consistent tones that stay distinguishable from the five others.
+        Faction.XYLAR -> XylarPurple
+        Faction.ANCIENT_NPC -> AncientBone
     }
 }
