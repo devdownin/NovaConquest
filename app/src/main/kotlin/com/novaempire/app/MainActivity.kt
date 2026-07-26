@@ -115,7 +115,9 @@ class MainActivity : ComponentActivity() {
                     Box(modifier = Modifier.fillMaxSize()) {
                     when (currentScreen) {
                         AppScreen.MAIN_MENU -> {
-                            val hasSave = gameViewModel.hasSavedGame()
+                            // Touches the filesystem, so don't do it on every recomposition —
+                            // re-check when the menu is (re)entered, which is when it can change.
+                            val hasSave = remember(currentScreen) { gameViewModel.hasSavedGame() }
                             MainMenuScreen(
                                 hasSavedGame = hasSave,
                                 onCampaignClick = {
@@ -207,7 +209,13 @@ class MainActivity : ComponentActivity() {
                         AppScreen.VICTORY -> {
                             VictoryScreen(
                                 gameState = gameState,
-                                isDefeat = gameState.winner != null && gameState.winner != gameState.humanFaction,
+                                // Reached only once victoryReason is set, so a null winner means a
+                                // draw — which must not be announced as a victory.
+                                outcome = when {
+                                    gameState.winner == null -> GameOutcome.DRAW
+                                    gameState.winner == gameState.humanFaction -> GameOutcome.VICTORY
+                                    else -> GameOutcome.DEFEAT
+                                },
                                 onMainMenuClick = { currentScreen = AppScreen.MAIN_MENU }
                             )
                         }

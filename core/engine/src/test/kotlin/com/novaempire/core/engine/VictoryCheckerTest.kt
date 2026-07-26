@@ -168,6 +168,20 @@ class VictoryCheckerTest {
     }
 
     @Test
+    fun aFinishedGameAlwaysCarriesAReason() {
+        // The UI keys both the end-screen navigation and the autosave guard on victoryReason, so
+        // every terminal result must set it — including a draw, where `winner` is null.
+        val draw = GameState(
+            turn = 12,
+            playerStates = mapOf(Faction.DOMINION to PlayerState(Faction.DOMINION)),
+            map = mapWithPlanet(owner = null)
+        )
+        val result = VictoryChecker.check(draw)!!
+        assertNull(result.winner)
+        assertTrue("a draw must still explain itself", result.reason.isNotBlank())
+    }
+
+    @Test
     fun existingWinnerPassedThrough() {
         val state = GameState(winner = Faction.DOMINION, victoryReason = "Test")
         val result = VictoryChecker.check(state)!!
