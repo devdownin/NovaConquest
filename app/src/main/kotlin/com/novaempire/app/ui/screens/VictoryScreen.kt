@@ -13,17 +13,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.theme.NeonCyan
+import com.novaempire.app.ui.theme.NeonGold
 import com.novaempire.app.ui.theme.NeonRed
 import com.novaempire.app.ui.theme.TextSecondary
 import com.novaempire.core.domain.state.GameState
+import com.novaempire.core.engine.VictoryChecker
+
+/** How the game actually ended. A draw has no winner, and must not be dressed up as a victory. */
+enum class GameOutcome { VICTORY, DEFEAT, DRAW }
 
 @Composable
 fun VictoryScreen(
     gameState: GameState,
-    isDefeat: Boolean = false,
+    outcome: GameOutcome = GameOutcome.VICTORY,
     onMainMenuClick: () -> Unit
 ) {
-    val accentColor = if (isDefeat) NeonRed else NeonCyan
+    val isDefeat = outcome == GameOutcome.DEFEAT
+    val accentColor = when (outcome) {
+        GameOutcome.VICTORY -> NeonCyan
+        GameOutcome.DEFEAT -> NeonRed
+        GameOutcome.DRAW -> NeonGold
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -37,7 +47,11 @@ fun VictoryScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = if (isDefeat) "DEFEAT" else "VICTORY ACHIEVED",
+                text = when (outcome) {
+                    GameOutcome.VICTORY -> "VICTORY ACHIEVED"
+                    GameOutcome.DEFEAT -> "DEFEAT"
+                    GameOutcome.DRAW -> "MATCH NUL"
+                },
                 style = MaterialTheme.typography.displayLarge,
                 color = accentColor
             )
@@ -58,10 +72,10 @@ fun VictoryScreen(
                     modifier = Modifier.padding(32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    if (isDefeat) {
-                        VictoryStat("Winner", gameState.winner?.displayName ?: "Unknown")
-                    } else {
-                        VictoryStat("Faction", gameState.winner?.displayName ?: "Unknown")
+                    when (outcome) {
+                        GameOutcome.DEFEAT -> VictoryStat("Winner", gameState.winner?.displayName ?: "Unknown")
+                        GameOutcome.VICTORY -> VictoryStat("Faction", gameState.winner?.displayName ?: "Unknown")
+                        GameOutcome.DRAW -> VictoryStat("Winner", "—")
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                     VictoryStat("Cycles Elapsed", gameState.turn.toString())
@@ -71,8 +85,12 @@ fun VictoryScreen(
                         style = MaterialTheme.typography.headlineMedium,
                         color = TextSecondary
                     )
+                    // The same composite score that decides the turn-100 winner (credits +
+                    // territory + fleet + research). Showing raw credits here contradicted the
+                    // rule the game actually applies.
                     Text(
-                        text = gameState.playerStates[gameState.humanFaction]?.credits?.toString() ?: "0",
+                        text = gameState.playerStates[gameState.humanFaction]
+                            ?.let { VictoryChecker.empireScore(gameState, it).toString() } ?: "0",
                         style = MaterialTheme.typography.displayLarge,
                         color = accentColor
                     )

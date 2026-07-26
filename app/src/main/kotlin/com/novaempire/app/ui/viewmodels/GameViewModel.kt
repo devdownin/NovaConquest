@@ -46,7 +46,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             var lastSavedTurn = engine.state.value.turn
             engine.state.collect { state ->
-                if (state.turn != lastSavedTurn) {
+                // Never persist a finished game: the victory is detected during the same EndTurn
+                // that bumps the counter, so the autosave used to capture a terminal state — and
+                // "RESUME COMMAND" then dropped the player straight back onto the victory screen
+                // of a game they had already completed. Keeping the previous turn on disk leaves a
+                // save that can actually be played.
+                if (state.turn != lastSavedTurn && state.victoryReason == null) {
                     lastSavedTurn = state.turn
                     val saved = withContext(Dispatchers.IO) { saveRepository.saveGame(state) }
                     // Surface write failures instead of failing silently — the player would
@@ -104,8 +109,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             when (val result = withContext(Dispatchers.IO) { saveRepository.loadLatestGame() }) {
                 is LoadResult.Success -> {
-                    engine.processIntent(GameIntent.LoadGame(result.state))
-                    onResult(true, null)
+                    // Guard for saves written before the rule above: loading a finished game would
+                    // jump straight to the end screen, which reads as a bug rather than a resume.
+                    if (result.state.victoryReason != null) {
+                        onResult(false, "Cette sauvegarde correspond à une partie déjà terminée.")
+                    } else {
+                        engine.processIntent(GameIntent.LoadGame(result.state))
+                        onResult(true, null)
+                    }
                 }
                 is LoadResult.Failed -> onResult(false, result.reason)
                 is LoadResult.NoSave -> onResult(false, null)
