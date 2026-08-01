@@ -128,8 +128,10 @@ fun TacticalMapScreen(
     val currentOnCapturePlanet by rememberUpdatedState(onCapturePlanet)
     val currentOnLoadUnit by rememberUpdatedState(onLoadUnit)
     val currentOnDeployUnit by rememberUpdatedState(onDeployUnit)
-    val currentTheme = gameState.themeConfig.currentTheme
-    val graphicsConfig = com.novaempire.app.ui.theme.ThemeManager.getGraphicsConfig(currentTheme)
+    // Le thème effectif est résolu une seule fois par NovaEmpireTheme. Lire ici
+    // `gameState.themeConfig.currentTheme` brut court-circuitait la résolution saisonnière : la
+    // carte se dessinait avec les réglages DEFAULT alors que l'interface était en HALLOWEEN.
+    val graphicsConfig = com.novaempire.app.ui.theme.LocalGraphicsConfig.current
 
     val laserProgress = remember { Animatable(0f) }
     val explosionScale = remember { Animatable(0f) }
@@ -1287,7 +1289,9 @@ fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float, owner: Faction?, 
             val hY = y + hexRadius * 0.1f + i * 4f
             if (hY < y + hexRadius * 0.52f) {
                 drawLine(
-                    color = inkBlack.copy(alpha = 0.6f),
+                    // `planetShadowAlpha` existait dans les JSON et dans le guide de thème, mais
+                    // n'était lu nulle part : la valeur était figée à 0.6 ici même.
+                    color = inkBlack.copy(alpha = graphicsConfig.planetShadowAlpha),
                     start = Offset(x - hexRadius * 0.5f, hY),
                     end = Offset(x + hexRadius * 0.5f, hY - hexRadius * 0.3f),
                     strokeWidth = 1f

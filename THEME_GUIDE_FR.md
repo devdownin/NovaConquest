@@ -5,7 +5,14 @@ Ce guide explique pas à pas comment un graphiste (ou développeur UI) peut cré
 ## Comprendre l'Architecture des Thèmes
 
 Dans Nova Empire, un thème est défini par des fichiers JSON situés dans `app/src/main/assets/themes/`.
-Les ressources graphiques (couleurs des planètes, unités, effets de particules, etc.) s'adaptent dynamiquement à ce fichier au démarrage du jeu, **sans avoir besoin de toucher au code Kotlin**.
+Le `ColorScheme` Material, la typographie et une partie des réglages de rendu s'adaptent à ce fichier
+au démarrage du jeu. Une seule ligne de Kotlin reste à écrire pour déclarer un nouveau thème (une
+entrée dans l'énumération `ThemeType`, cf. Étape 3).
+
+⚠️ **Portée réelle du thème.** La palette de la carte tactique (couleurs des terrains, encre des
+contours, couleurs de faction) est encore codée en dur dans `TacticalMapScreen.kt` et
+`FactionSelectionScreen.kt` : changer de thème modifie l'interface, les panneaux et le texte, mais
+laisse la carte quasiment inchangée. Voir `AUDIT_THEMES.md` (TH8) et `AUDIT_GRAPHISMES.md` (GR3).
 
 ## Étape 1 : Créer votre Palette de Couleurs (Via Material Theme Builder)
 
@@ -53,7 +60,8 @@ Les ressources graphiques (couleurs des planètes, unités, effets de particules
 - `outlineStrokeWidth` : L'épaisseur des traits d'encre BD autour des éléments de la carte.
 - `planetShadowAlpha` : L'intensité de l'ombrage en hachures sur les planètes.
 - `blurRadius` : La puissance du verre dépoli (Frosted Glass) de l'interface utilisateur.
-- `particleCountMultiplier` : Le nombre d'étincelles/débris émis lors d'un combat (Mettez 2.0 pour des explosions massives, 0.5 pour un effet minimaliste).
+- `particleCountMultiplier` : ⚠️ **Non branché à ce jour** — le champ est lu depuis le JSON mais
+  aucun système de particules ne l'utilise encore. Le renseigner n'a aucun effet visible.
 
 ## Étape 3 : Enregistrer le Thème dans le Modèle de Données
 
@@ -72,11 +80,14 @@ enum class ThemeType {
 }
 ```
 
-Puis dans `app/src/main/kotlin/com/novaempire/app/ui/theme/ThemeManager.kt`, ajoutez la ligne de chargement du JSON :
-```kotlin
-val cyberpunkJsonStr = context.assets.open("themes/cyberpunk.json").bufferedReader().use { it.readText() }
-loadedThemes[ThemeType.CYBERPUNK] = parseThemeDefinition(cyberpunkJsonStr)
-```
+C'est la **seule** modification de code nécessaire : `ThemeManager` parcourt `ThemeType.entries` et
+charge, pour chaque valeur, le fichier `assets/themes/<nom en minuscules>.json`. L'entrée
+`CYBERPUNK` ci-dessus fait donc charger `themes/cyberpunk.json` sans autre intervention.
+
+⚠️ Le nom du fichier doit être **exactement** le nom de l'énumération en minuscules. Si le fichier
+est absent ou malformé, seul ce thème-là est perdu (les autres continuent de fonctionner) et l'erreur
+est visible dans le Logcat sous le tag `ThemeManager`. Une couleur hexadécimale invalide est
+remplacée par la couleur correspondante du thème par défaut, également avec un log.
 
 ## Étape 4 : Activer le Thème (Tests ou Saisonnier)
 
