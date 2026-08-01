@@ -81,13 +81,10 @@ fun IndustrialPanel(
     shape: Shape = CutCornerShape(topStart = 4.dp, bottomEnd = 4.dp),
     content: @Composable BoxScope.() -> Unit
 ) {
-    // Resolved once per panel instead of inside graphicsLayer, which runs on every draw pass:
-    // getActiveTheme() allocates a Calendar and reads the clock, and IndustrialPanel is used
-    // dozens of times per screen — that was pure churn in the render path.
-    val blurRadius = androidx.compose.runtime.remember {
-        com.novaempire.app.ui.theme.ThemeManager
-            .getGraphicsConfig(com.novaempire.app.ui.theme.ThemeManager.getActiveTheme()).blurRadius
-    }
+    // Lu depuis le thème plutôt que via un remember sans clé sur le singleton : le flou restait
+    // sinon figé sur la valeur du premier rendu et ignorait le thème choisi. Un CompositionLocal
+    // statique ne coûte rien dans le chemin de rendu.
+    val blurRadius = com.novaempire.app.ui.theme.LocalGraphicsConfig.current.blurRadius
     Surface(
         modifier = modifier,
         color = Color.Transparent,

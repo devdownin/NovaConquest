@@ -1,5 +1,6 @@
 package com.novaempire.app.ui.theme
 
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -10,27 +11,36 @@ import androidx.compose.ui.unit.sp
 val RajdhaniFamily = FontFamily.Monospace
 val InterFamily    = FontFamily.Monospace
 
-val Typography = Typography(
+/**
+ * La typographie tire ses couleurs du [ColorScheme] actif au lieu de les figer sur la palette
+ * DEFAULT. Un `color` posé dans un [TextStyle] gagne sur `LocalContentColor`, donc figer
+ * `TextPrimary` ici rendait tout le texte de l'application sépia même en thème WINTER ou
+ * HALLOWEEN — le thème changeait les fonds sans jamais changer l'encre.
+ *
+ * Le mapping conserve exactement l'apparence du thème DEFAULT :
+ * `onBackground` y vaut `TextPrimary` et `onSurfaceVariant` vaut `TextSecondary`.
+ */
+fun novaTypography(colorScheme: ColorScheme): Typography = Typography(
     displayLarge = TextStyle(
         fontFamily = RajdhaniFamily,
         fontWeight = FontWeight.Black,
         fontSize = 48.sp,
         letterSpacing = 4.sp,          // titre grande affiche BD
-        color = TextPrimary
+        color = colorScheme.onBackground
     ),
     headlineLarge = TextStyle(
         fontFamily = RajdhaniFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 30.sp,
         letterSpacing = 3.sp,
-        color = TextPrimary
+        color = colorScheme.onBackground
     ),
     headlineMedium = TextStyle(
         fontFamily = RajdhaniFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 22.sp,
         letterSpacing = 2.sp,
-        color = TextPrimary
+        color = colorScheme.onBackground
     ),
     bodyLarge = TextStyle(
         fontFamily = InterFamily,
@@ -38,20 +48,20 @@ val Typography = Typography(
         fontSize = 15.sp,
         lineHeight = 22.sp,
         letterSpacing = 0.3.sp,
-        color = TextPrimary
+        color = colorScheme.onBackground
     ),
     bodyMedium = TextStyle(
         fontFamily = InterFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 13.sp,
         lineHeight = 19.sp,
-        color = TextSecondary
+        color = colorScheme.onSurfaceVariant
     ),
     labelLarge = TextStyle(
         fontFamily = RajdhaniFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 13.sp,
         letterSpacing = 2.sp,          // uppercase espacé style gazette
-        color = TextPrimary
+        color = colorScheme.onBackground
     )
 )
