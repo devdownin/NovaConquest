@@ -38,9 +38,12 @@ fun HeroAcademyScreen(
     onUseAbility: (String) -> Unit = {},
     onBackClick: () -> Unit
 ) {
-    val playerState = gameState.playerStates[gameState.activeFaction]
+    // La faction *humaine*, pas la faction active : pendant la phase IA, `activeFaction` désigne
+    // un adversaire, et l'écran affichait alors son solde de crédits et son roster. Le moteur
+    // refuse déjà les intentions dans cette fenêtre, mais l'information n'avait pas à fuiter.
+    val playerState = gameState.playerStates[gameState.humanFaction]
     val credits = playerState?.credits ?: 0
-    val recruitedHeroes = playerState?.recruitedHeroes ?: emptyList()
+    val recruitedHeroes = playerState?.recruitedHeroes ?: emptySet()
 
     val heroAbilitiesUsed = playerState?.heroAbilitiesUsed ?: emptySet()
     // Single source of truth: the same registry the engine charges/​applies bonuses from. The
@@ -49,12 +52,6 @@ fun HeroAcademyScreen(
     val allHeroes = HeroRegistry.ALL_HEROES
     val recruitedHeroObjects = allHeroes.filter { it.id in recruitedHeroes }
     val availableHeroes = allHeroes.filter { it.id !in recruitedHeroes }
-    val heroAbilityDescriptions = mapOf(
-        HeroRegistry.VANCE to "Frappe de Suppression — all fleet units may fire again this turn",
-        HeroRegistry.KAEL to "Prototype — complete current research instantly",
-        HeroRegistry.NIX to "Refuge Stellaire — repair half the hull of every friendly unit",
-        HeroRegistry.ELARA to "Convoi Commercial — gain +80 Credits immediately"
-    )
 
     Box(
         modifier = Modifier
@@ -108,17 +105,30 @@ fun HeroAcademyScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(hero.name.uppercase(), style = MaterialTheme.typography.labelLarge, color = NeonCyan)
+                                // Décrit depuis le registre : la table locale qui doublait ces
+                                // libellés pouvait mentir sur ce que l'aptitude fait vraiment.
+                                val ability = hero.ability
                                 Text(
-                                    heroAbilityDescriptions[hero.id] ?: hero.bonusDescription,
+                                    if (ability != null) "${ability.name} — ${ability.description}"
+                                    else hero.bonusDescription,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = if (abilityUsed) TextSecondary else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    "PASSIF — ${hero.bonusDescription}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextSecondary
                                 )
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             IndustrialButton(
                                 text = if (abilityUsed) "USED" else "USE ABILITY",
-                                onClick = { if (!abilityUsed) onUseAbility(hero.id) },
+                                onClick = { onUseAbility(hero.id) },
                                 isPrimary = !abilityUsed,
+                                // `enabled` plutôt qu'un garde dans onClick : le bouton grisé
+                                // annonce enfin son état aux services d'accessibilité, comme
+                                // RECRUIT le fait déjà (H3).
+                                enabled = !abilityUsed,
                                 color = if (abilityUsed) TextSecondary else NeonOrange,
                                 modifier = Modifier.widthIn(min = 120.dp)
                             )
@@ -143,12 +153,12 @@ fun HeroAcademyScreen(
                 items(availableHeroes) { hero ->
                     // Price depends on affinity (own hero = base, another faction's = double,
                     // mercenary = base) — read it from the same calculator the engine charges with.
-                    val price = HeroCostCalculator.costFor(hero, gameState.activeFaction)
+                    val price = HeroCostCalculator.costFor(hero, gameState.humanFaction)
                     HeroCard(
                         hero = hero,
                         price = price,
                         isMercenary = HeroCostCalculator.isMercenary(hero),
-                        recruiterFaction = gameState.activeFaction,
+                        recruiterFaction = gameState.humanFaction,
                         canAfford = credits >= price,
                         onRecruit = { onRecruitClick(hero.id) }
                     )
@@ -201,8 +211,19 @@ fun HeroCard(
             Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.surfaceVariant))
             Spacer(modifier = Modifier.height(16.dp))
 
-            Text(text = "SIGNATURE ABILITY", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+            Text(text = "PASSIF", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
             Text(text = hero.bonusDescription, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 8.dp))
+
+            // L'aptitude active était invisible avant recrutement : le joueur choisissait un héros
+            // en ne voyant que la moitié de ce qu'il achète.
+            hero.ability?.let { ability ->
+                Text(text = "APTITUDE — 1 FOIS PAR PARTIE", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                Text(
+                    text = "${ability.name} — ${ability.description}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
 
             Spacer(modifier = Modifier.weight(1f))
 

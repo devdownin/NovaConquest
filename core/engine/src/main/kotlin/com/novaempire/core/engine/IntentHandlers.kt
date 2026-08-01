@@ -320,21 +320,33 @@ internal fun handleDeployUnit(state: GameState, intent: GameIntent.DeployUnit): 
 
 internal fun handleUseHeroAbility(state: GameState, intent: GameIntent.UseHeroAbility): GameResult {
     val playerState = state.activePlayer() ?: return GameResult(state, "Player not found.")
-    if (!playerState.recruitedHeroes.contains(intent.heroId)) return GameResult(state, "Hero not recruited.")
-    if (playerState.heroAbilitiesUsed.contains(intent.heroId)) return GameResult(state, "Ability already used this game.")
-    val markUsed = playerState.heroAbilitiesUsed + intent.heroId
-    return when (intent.heroId) {
+    val hero = HeroRegistry.getHero(intent.heroId) ?: return GameResult(state, "Hero not found.")
+    val ability = hero.ability ?: return GameResult(state, "This hero has no active ability.")
+    if (!playerState.recruitedHeroes.contains(hero.id)) return GameResult(state, "Hero not recruited.")
+    if (playerState.heroAbilitiesUsed.contains(hero.id)) return GameResult(state, "Ability already used this game.")
+
+    // Libellé construit depuis le registre : il était auparavant recopié ici *et* dans une table de
+    // HeroAcademyScreen, sans rien pour tenir les deux d'accord.
+    val notification = "${hero.name.substringAfterLast(' ').uppercase()}: ${ability.name} — ${ability.description}"
+    val markUsed = playerState.heroAbilitiesUsed + hero.id
+
+    return when (hero.id) {
         HeroRegistry.VANCE -> {
             val newUnits = state.units.mapValues { (_, u) ->
                 if (u.faction == state.activeFaction && u.hasAttacked) u.copy(hasAttacked = false) else u
             }
-            GameResult(state.withUpdatedPlayer(playerState.copy(heroAbilitiesUsed = markUsed)).copy(units = newUnits),
-                notification = "VANCE: Frappe de Suppression — all fleet units may fire again")
+            GameResult(
+                state.withUpdatedPlayer(playerState.copy(heroAbilitiesUsed = markUsed)).copy(units = newUnits),
+                notification = notification
+            )
         }
-        HeroRegistry.ELARA -> {
-            GameResult(state.withUpdatedPlayer(playerState.copy(credits = playerState.credits + 80, heroAbilitiesUsed = markUsed)),
-                notification = "ELARA: Convoi Commercial — +80 Credits")
-        }
+        HeroRegistry.ELARA -> GameResult(
+            state.withUpdatedPlayer(playerState.copy(
+                credits = playerState.credits + HeroRegistry.ELARA_ABILITY_CREDITS,
+                heroAbilitiesUsed = markUsed
+            )),
+            notification = notification
+        )
         HeroRegistry.NIX -> {
             // Heals half of each hull rather than resetting the fleet to full (H6). Nix already
             // grants a passive +1 HP/turn and — being the mercenary — is hirable by every faction,
@@ -344,19 +356,25 @@ internal fun handleUseHeroAbility(state: GameState, intent: GameIntent.UseHeroAb
                     u.copy(currentHp = minOf(u.type.maxHp, u.currentHp + (u.type.maxHp + 1) / 2))
                 else u
             }
-            GameResult(state.withUpdatedPlayer(playerState.copy(heroAbilitiesUsed = markUsed)).copy(units = newUnits),
-                notification = "NIX: Refuge Stellaire — fleet repaired for half its hull")
+            GameResult(
+                state.withUpdatedPlayer(playerState.copy(heroAbilitiesUsed = markUsed)).copy(units = newUnits),
+                notification = notification
+            )
         }
         HeroRegistry.KAEL -> {
+            // Sans recherche en cours, l'aptitude était consommée pour rien : elle se marquait
+            // « utilisée » et n'affichait qu'un message. Une ressource à usage unique ne doit pas
+            // partir sur un clic prématuré — on refuse, le héros reste disponible.
             val research = playerState.researchInProgress
-            val newPlayer = if (research != null) playerState.copy(
-                techUnlocked = playerState.techUnlocked + research.techId,
-                researchInProgress = null,
-                heroAbilitiesUsed = markUsed
-            ) else playerState.copy(heroAbilitiesUsed = markUsed)
-            val msg = if (research != null) "KAEL: Prototype — ${research.techId} research completed instantly"
-                      else "KAEL: Prototype — no research in progress"
-            GameResult(state.withUpdatedPlayer(newPlayer), notification = msg)
+                ?: return GameResult(state, "No research in progress — Kael's prototype would be wasted.")
+            GameResult(
+                state.withUpdatedPlayer(playerState.copy(
+                    techUnlocked = playerState.techUnlocked + research.techId,
+                    researchInProgress = null,
+                    heroAbilitiesUsed = markUsed
+                )),
+                notification = "$notification (${research.techId})"
+            )
         }
         else -> GameResult(state, "Unknown hero ability.")
     }
