@@ -20,6 +20,8 @@ enum class BonusType {
     PRODUCTION_SPEED,
     /** Flat delta applied to each unit's per-turn upkeep (negative = cheaper). Floored at 0/unit. */
     UPKEEP_MODIFIER,
+    /** Hull points every friendly unit regains at the end of its faction's turn. */
+    FLEET_REPAIR_PER_TURN,
 }
 
 data class BonusModifier(val type: BonusType, val value: Int)
