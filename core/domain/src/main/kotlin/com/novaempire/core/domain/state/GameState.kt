@@ -20,7 +20,7 @@ data class CombatEvent(
 data class GameState(
     val version: Int = 1,
     // Le thème vivait ici, donc dans chaque sauvegarde. C'est une préférence d'application : elle
-    // est désormais persistée à part (`ThemePreferenceStore`), ce qui la rend disponible dès le menu
+    // est désormais persistée à part (`SettingsStore`), ce qui la rend disponible dès le menu
     // principal et la sort du format de sauvegarde. Les anciennes sauvegardes portent encore la clé
     // `themeConfig` ; `ignoreUnknownKeys` la laisse tomber sans migration.
     val turn: Int = 1,

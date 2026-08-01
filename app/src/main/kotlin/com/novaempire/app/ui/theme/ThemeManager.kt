@@ -26,7 +26,11 @@ object ThemeManager {
     /** Réglages graphiques de secours, identiques au thème par défaut livré. */
     val DEFAULT_GRAPHICS: GraphicsConfig = ThemeDefaults.FALLBACK.graphics
 
-    private data class ResolvedTheme(val colorScheme: ColorScheme, val graphics: GraphicsConfig)
+    private data class ResolvedTheme(
+        val colorScheme: ColorScheme,
+        val graphics: GraphicsConfig,
+        val mapPalette: MapPalette
+    )
 
     private val loadedThemes = mutableMapOf<ThemeType, ResolvedTheme>()
 
@@ -89,7 +93,8 @@ object ThemeManager {
                 onSurface = color(def.colors.onSurface, fallback.onSurface),
                 onSurfaceVariant = color(def.colors.onSurfaceVariant, fallback.onSurfaceVariant)
             ),
-            graphics = def.graphics
+            graphics = def.graphics,
+            mapPalette = MapPalette.from(def.terrain)
         )
     }
 
@@ -144,6 +149,8 @@ object ThemeManager {
     fun getColorSchemeForTheme(themeType: ThemeType): ColorScheme = resolve(themeType).colorScheme
 
     fun getGraphicsConfig(themeType: ThemeType): GraphicsConfig = resolve(themeType).graphics
+
+    fun getMapPalette(themeType: ThemeType): MapPalette = resolve(themeType).mapPalette
 
     private fun resolve(themeType: ThemeType): ResolvedTheme =
         loadedThemes[themeType] ?: loadedThemes[ThemeType.DEFAULT] ?: fallbackTheme

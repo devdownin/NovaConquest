@@ -16,30 +16,32 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.novaempire.app.settings.AppSettings
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.theme.LocalThemeType
 import com.novaempire.app.ui.theme.NeonCyan
 import com.novaempire.app.ui.theme.NeonRed
 import com.novaempire.app.ui.theme.TextSecondary
 import com.novaempire.core.domain.theme.ThemeType
+import kotlin.math.roundToInt
 
 /**
- * @param themePreference choix du joueur, `null` = automatique (saisonnier).
- * @param onThemePreferenceChange appliqué **immédiatement**, contrairement aux réglages ci-dessous
- *   qui suivent le schéma brouillon/APPLY (et ne sont toujours pas persistés).
+ * Écran de réglages.
+ *
+ * Chaque changement est appliqué et persisté **immédiatement** : tous ces réglages ont un effet
+ * visible ou audible tout de suite, donc l'aperçu en direct vaut mieux qu'un brouillon validé par
+ * un bouton. L'écran portait auparavant « CANCEL » et « APPLY SETTINGS », mais aucun des deux
+ * n'écrivait quoi que ce soit — les réglages vivaient dans des `remember` locaux que personne ne
+ * lisait.
  */
 @Composable
 fun SettingsScreen(
     onBackClick: () -> Unit,
-    themePreference: ThemeType? = null,
-    onThemePreferenceChange: (ThemeType?) -> Unit = {}
+    settings: AppSettings = AppSettings(),
+    onSettingsChange: (AppSettings) -> Unit = {}
 ) {
-    var masterVolume by remember { mutableStateOf(0.8f) }
-    var sfxVolume by remember { mutableStateOf(0.7f) }
-    var holoEffects by remember { mutableStateOf(true) }
-    var highContrast by remember { mutableStateOf(false) }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -54,24 +56,44 @@ fun SettingsScreen(
         )
 
         SettingsSection(title = "AUDIO INTERFACE") {
-            SettingsSlider(label = "Master Volume", value = masterVolume, onValueChange = { masterVolume = it })
-            SettingsSlider(label = "SFX Volume", value = sfxVolume, onValueChange = { sfxVolume = it })
+            SettingsSlider(
+                label = "Master Volume",
+                value = settings.masterVolume,
+                onValueChange = { onSettingsChange(settings.copy(masterVolume = it)) }
+            )
+            SettingsSlider(
+                label = "SFX Volume",
+                value = settings.sfxVolume,
+                onValueChange = { onSettingsChange(settings.copy(sfxVolume = it)) }
+            )
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
         SettingsSection(title = "VISUALS") {
-            SettingsSwitch(label = "Holographic Effects", checked = holoEffects, onCheckedChange = { holoEffects = it })
-            SettingsSwitch(label = "High Contrast Mode", checked = highContrast, onCheckedChange = { highContrast = it })
+            SettingsSwitch(
+                label = "Holographic Effects",
+                description = "Frosted panels, film grain, map sweep",
+                checked = settings.holographicEffects,
+                onCheckedChange = { onSettingsChange(settings.copy(holographicEffects = it)) },
+                testTag = HOLOGRAPHIC_SWITCH_TAG
+            )
+            SettingsSwitch(
+                label = "High Contrast Mode",
+                description = "Solid map outlines, brighter secondary text",
+                checked = settings.highContrast,
+                onCheckedChange = { onSettingsChange(settings.copy(highContrast = it)) },
+                testTag = HIGH_CONTRAST_SWITCH_TAG
+            )
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
         SettingsSection(title = "THEME") {
             ThemeSelector(
-                preference = themePreference,
+                preference = settings.theme,
                 activeTheme = LocalThemeType.current,
-                onSelect = onThemePreferenceChange
+                onSelect = { onSettingsChange(settings.copy(theme = it)) }
             )
         }
 
@@ -88,23 +110,13 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            IndustrialButton(
-                text = "CANCEL",
-                onClick = onBackClick,
-                color = TextSecondary,
-                modifier = Modifier.weight(1f)
-            )
-            IndustrialButton(
-                text = "APPLY SETTINGS",
-                onClick = onBackClick,
-                color = NeonCyan,
-                modifier = Modifier.weight(2f)
-            )
-        }
+        IndustrialButton(
+            text = "BACK",
+            onClick = onBackClick,
+            color = NeonCyan,
+            isPrimary = true,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
@@ -119,33 +131,24 @@ fun ThemeSelector(
     activeTheme: ThemeType,
     onSelect: (ThemeType?) -> Unit
 ) {
-    // `null` en tête : c'est le comportement par défaut du jeu, et la seule option qui laisse les
-    // thèmes saisonniers s'activer d'eux-mêmes.
-    val options: List<Pair<ThemeType?, String>> = listOf(
-        null to "AUTOMATIC",
-        ThemeType.DEFAULT to "NOIR FUTURISM",
-        ThemeType.HALLOWEEN to "HALLOWEEN",
-        ThemeType.WINTER to "WINTER"
-    )
-
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.forEach { (value, label) ->
+        THEME_OPTIONS.forEach { (value, label) ->
             IndustrialButton(
                 text = label,
                 onClick = { onSelect(value) },
                 color = if (value == preference) NeonCyan else TextSecondary,
                 isPrimary = value == preference,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(themeOptionTag(value))
             )
         }
         Text(
-            text = if (preference == null) {
-                "Seasonal — currently ${activeTheme.name}"
-            } else {
-                "Manual override — seasonal themes disabled"
-            },
+            text = themeStatusLabel(preference, activeTheme),
             style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(top = 4.dp)
+            modifier = Modifier
+                .padding(top = 4.dp)
+                .testTag(THEME_STATUS_TAG)
         )
     }
 }
@@ -175,7 +178,13 @@ fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) 
 @Composable
 fun SettingsSlider(label: String, value: Float, onValueChange: (Float) -> Unit) {
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
-        Text(text = label, style = MaterialTheme.typography.bodyLarge)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(text = label, style = MaterialTheme.typography.bodyLarge)
+            Text(text = "${(value * 100).roundToInt()}%", style = MaterialTheme.typography.bodyMedium)
+        }
         Slider(
             value = value,
             onValueChange = onValueChange,
@@ -188,7 +197,13 @@ fun SettingsSlider(label: String, value: Float, onValueChange: (Float) -> Unit) 
 }
 
 @Composable
-fun SettingsSwitch(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+fun SettingsSwitch(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    description: String? = null,
+    testTag: String? = null
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -196,10 +211,16 @@ fun SettingsSwitch(label: String, checked: Boolean, onCheckedChange: (Boolean) -
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = label, style = MaterialTheme.typography.bodyLarge)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = label, style = MaterialTheme.typography.bodyLarge)
+            if (description != null) {
+                Text(text = description, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
+            modifier = if (testTag != null) Modifier.testTag(testTag) else Modifier,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = NeonCyan,
                 checkedTrackColor = NeonCyan.copy(alpha = 0.5f)

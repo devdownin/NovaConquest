@@ -10,7 +10,7 @@ package com.novaempire.core.domain.theme
  * Volontairement **non `@Serializable`** : le thème est une préférence d'application, pas un état de
  * partie. Il vivait auparavant dans `GameState.themeConfig`, donc dans le format de sauvegarde, ce
  * qui liait un réglage d'affichage à la compatibilité des sauvegardes. Il est désormais persisté à
- * part (`ThemePreferenceStore` côté `:app`).
+ * part, avec les autres préférences d'application (`SettingsStore` côté `:app`).
  */
 enum class ThemeType {
     DEFAULT,

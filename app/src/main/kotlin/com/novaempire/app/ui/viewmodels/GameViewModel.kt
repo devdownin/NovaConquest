@@ -12,8 +12,8 @@ import com.novaempire.app.audio.AudioManager
 import com.novaempire.app.audio.SoundType
 import com.novaempire.core.engine.GameEffect
 import com.novaempire.core.engine.save.LoadResult
-import com.novaempire.app.ui.theme.ThemePreferenceStore
-import com.novaempire.core.domain.theme.ThemeType
+import com.novaempire.app.settings.AppSettings
+import com.novaempire.app.settings.SettingsStore
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -38,17 +38,18 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     private val saveRepository: SaveRepository
 
-    // Préférence d'affichage, volontairement hors du GameState : elle doit exister avant qu'une
-    // partie soit chargée (menu principal, écrans de sélection) et ne doit rien devoir au format
-    // de sauvegarde. `null` = automatique, c'est-à-dire suivre le thème saisonnier.
-    private val themePreferenceStore = ThemePreferenceStore(application)
-    private val _themePreference = MutableStateFlow(themePreferenceStore.read())
-    val themePreference: StateFlow<ThemeType?> = _themePreference.asStateFlow()
+    // Préférences d'affichage et d'audio, volontairement hors du GameState : elles doivent exister
+    // avant qu'une partie soit chargée (menu principal, écrans de sélection) et ne rien devoir au
+    // format de sauvegarde.
+    private val settingsStore = SettingsStore(application)
+    private val _settings = MutableStateFlow(settingsStore.read())
+    val settings: StateFlow<AppSettings> = _settings.asStateFlow()
 
     init {
         val saveDir = File(application.filesDir, "saves")
         saveRepository = SaveManager(saveDir)
         AudioManager.init(application)
+        AudioManager.setVolumes(_settings.value.masterVolume, _settings.value.sfxVolume)
 
         // Auto-save once an end-of-turn cycle has actually settled. EndTurn is processed
         // asynchronously (AI turns can take seconds), so saving the snapshot synchronously in
@@ -115,15 +116,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Change le thème. [theme] à `null` = automatique (saisonnier).
+     * Applique et persiste les réglages, immédiatement.
      *
-     * Appliqué immédiatement — le thème est le seul réglage dont l'effet est visible sans attendre,
-     * l'aperçu instantané vaut mieux qu'un « APPLY » qui ne dit pas à quoi on s'engage.
+     * Pas de brouillon validé par un bouton : chaque réglage a un effet visible ou audible tout de
+     * suite, donc le voir en direct vaut mieux qu'un « APPLY » qui n'annonce pas à quoi il engage.
      */
-    fun setThemePreference(theme: ThemeType?) {
-        if (_themePreference.value == theme) return
-        themePreferenceStore.write(theme)
-        _themePreference.value = theme
+    fun updateSettings(settings: AppSettings) {
+        if (_settings.value == settings) return
+        settingsStore.write(settings)
+        _settings.value = settings
+        AudioManager.setVolumes(settings.masterVolume, settings.sfxVolume)
     }
 
     fun hasSavedGame(): Boolean = saveRepository.hasSavedGame()

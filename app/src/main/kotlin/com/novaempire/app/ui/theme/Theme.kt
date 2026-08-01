@@ -10,6 +10,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import com.novaempire.app.settings.AppSettings
+import com.novaempire.app.settings.LocalDisplaySettings
 import com.novaempire.core.domain.theme.ThemeResolver
 import com.novaempire.core.domain.theme.ThemeType
 
@@ -24,21 +26,28 @@ val LocalThemeType = staticCompositionLocalOf { ThemeType.DEFAULT }
 /** Réglages graphiques du thème actif ([LocalThemeType]). */
 val LocalGraphicsConfig = staticCompositionLocalOf { ThemeManager.DEFAULT_GRAPHICS }
 
+/** Palette de la carte tactique du thème actif ([LocalThemeType]). */
+val LocalMapPalette = staticCompositionLocalOf { MapPalette.DEFAULT }
+
 /**
- * @param themePreference choix du joueur, ou `null` pour « automatique » (thème saisonnier).
+ * Applique le thème **et** les réglages d'affichage : les deux décrivent la même chose — comment le
+ * jeu se présente — et les composants décoratifs ont besoin des deux au même endroit.
  */
 @Composable
 fun NovaEmpireTheme(
-    themePreference: ThemeType? = null,
+    settings: AppSettings = AppSettings(),
     content: @Composable () -> Unit
 ) {
     // Le thème ne dépend que de la préférence et de la date : sans `remember`, chaque recomposition
     // de la racine (donc chaque changement de GameState) reconstruisait un ColorScheme neuf et
     // invalidait tous les lecteurs de MaterialTheme.colorScheme.
-    val activeTheme = remember(themePreference) { ThemeResolver.resolve(themePreference) }
+    val activeTheme = remember(settings.theme) { ThemeResolver.resolve(settings.theme) }
     val colorScheme = remember(activeTheme) { ThemeManager.getColorSchemeForTheme(activeTheme) }
     val graphicsConfig = remember(activeTheme) { ThemeManager.getGraphicsConfig(activeTheme) }
-    val typography = remember(colorScheme) { novaTypography(colorScheme) }
+    val mapPalette = remember(activeTheme) { ThemeManager.getMapPalette(activeTheme) }
+    val typography = remember(colorScheme, settings.highContrast) {
+        novaTypography(colorScheme, settings.highContrast)
+    }
 
     val view = LocalView.current
     if (!view.isInEditMode) {
@@ -51,7 +60,9 @@ fun NovaEmpireTheme(
 
     CompositionLocalProvider(
         LocalThemeType provides activeTheme,
-        LocalGraphicsConfig provides graphicsConfig
+        LocalGraphicsConfig provides graphicsConfig,
+        LocalMapPalette provides mapPalette,
+        LocalDisplaySettings provides settings
     ) {
         MaterialTheme(
             colorScheme = colorScheme,

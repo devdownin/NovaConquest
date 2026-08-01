@@ -39,6 +39,9 @@
 | TH10 | 🟠 Moyen — ✅ corrigé | Testabilité | Toute la logique de thème était dans `:app` : **zéro test**, la CI ne l'exerçait jamais |
 | TH11 | 🟡 Faible — ✅ corrigé | Config | `particleCountMultiplier` mort ; palette dupliquée entre le code et `default.json` |
 | TH12 | 🟡 Faible — ✅ corrigé | Produit | Le choix « DEFAULT » ne pouvait pas exister : il était **toujours écrasé** par le thème saisonnier |
+| **TH13** | 🔴 **Majeur — ✅ corrigé** | Portée | La **palette de la carte tactique était codée en dur** : changer de thème ne changeait pas l'écran principal |
+| **TH14** | 🟠 **Moyen — ✅ corrigé** | Produit | Les autres réglages (volumes, effets, contraste) n'étaient **ni lus ni persistés** — « APPLY SETTINGS » ne faisait rien |
+| TH15 | 🟠 Moyen — ✅ corrigé | Testabilité | **Aucun test d'interface** sur le sélecteur, et aucune source `androidTest` dans le dépôt |
 
 ---
 
@@ -226,7 +229,7 @@ principal, sélection de faction), il aurait été *par sauvegarde* plutôt que 
 une valeur de `ThemeType` aurait touché la compatibilité des sauvegardes.
 
 **Correction.** `GameState.themeConfig` et la classe `ThemeConfig` sont supprimés. La préférence est
-persistée par `ThemePreferenceStore` (`SharedPreferences`, une seule clé) et exposée par
+persistée par `SettingsStore` (`SharedPreferences`, cf. TH14) et exposée par
 `GameViewModel.themePreference: StateFlow<ThemeType?>`.
 
 Aucune migration de sauvegarde n'est nécessaire : `SavedGameSnapshotCodec` décode avec
@@ -269,7 +272,7 @@ réglages : le thème est le seul dont l'effet est visible sans rien valider, et
 vaut mieux qu'un bouton qui n'annonce pas à quoi il engage. L'écart est assumé et commenté dans le
 code — les autres réglages de cet écran restent, eux, ni lus ni persistés (cf. §5).
 
-Le chemin complet : `SettingsScreen` → `GameViewModel.setThemePreference` → `ThemePreferenceStore`
+Le chemin complet : `SettingsScreen` → `GameViewModel.updateSettings` → `SettingsStore`
 (écriture) + `StateFlow` (état) → `MainActivity` → `NovaEmpireTheme(themePreference)` →
 `ThemeResolver`. HALLOWEEN et WINTER, jusque-là accessibles ~23 jours par an, le sont maintenant
 toute l'année.
@@ -281,7 +284,7 @@ Conformément à la recommandation de la première passe, le partage est désorm
 | Où | Quoi | Testé par la CI |
 |---|---|---|
 | `:core:domain/theme` | `ThemeType`, `ThemeDefinition`/`ThemeColors`/`GraphicsConfig`, `ThemeParser`, `HexColor`, `ThemeResolver`, `ThemeDefaults` | ✅ |
-| `:app/ui/theme` | lecture des assets, `Color`/`ColorScheme`, `ThemePreferenceStore` | ❌ (Android) |
+| `:app` | lecture des assets, `Color`/`ColorScheme`, `SettingsStore` | ❌ (Android) |
 
 `android.graphics.Color.parseColor` disparaît au profit de `HexColor.parse`, un analyseur pur qui
 retourne `null` au lieu de lever — c'est ce qui rend la validation des couleurs testable **et** qui
@@ -328,7 +331,102 @@ sans casser le build.
 
 ---
 
-## 4. Fichiers touchés
+## 4. Corrigés dans un troisième temps
+
+### TH13 — 🔴 Le thème n'atteignait pas l'écran principal  ✅ **corrigé**
+
+C'est le constat GR3 de `AUDIT_GRAPHISMES.md`, resté ouvert depuis : toute la palette de la carte
+vivait dans `TacticalMapScreen.kt`, en littéraux.
+
+```kotlin
+TerrainType.EMPTY -> Color(0xFF181210)   // béton froid vide
+TerrainType.NEBULA -> Color(0xFF261530)  // violet brume épais
+val inkBlack = Color(0xFF130F0A)         // répété dans 8 fonctions de dessin
+```
+
+Passer en HALLOWEEN ou WINTER transformait donc les panneaux, le texte et les explosions, mais
+laissait les hexagones exactement identiques — sur l'écran que le joueur regarde le plus.
+
+**Correction.** Une section `terrain` (17 couleurs) est ajoutée au modèle de thème et aux trois JSON
+livrés : fonds d'hexagone par terrain, détails dessinés par-dessus (`asteroidRock`, `nebulaHaze`),
+encre des contours, hexagone inexploré, dégradé d'explosion, fond de jauge de PV. Côté `:app`,
+`MapPalette` les convertit une fois et `LocalMapPalette` les publie ; les fonctions de dessin la
+reçoivent en paramètre, comme le faisait déjà `GraphicsConfig`. Il ne reste **aucune couleur
+littérale** dans `TacticalMapScreen`.
+
+Deux garde-fous de conception :
+
+- la section est **facultative** — chaque champ a pour valeur par défaut la couleur historique, donc
+  un thème tiers qui l'omet reste valide et rend comme avant ;
+- `default.json` reprend exactement les anciennes valeurs, **le thème par défaut est donc inchangé
+  au pixel près**. Seuls HALLOWEEN et WINTER gagnent une carte à leurs couleurs.
+
+Les palettes de carte d'HALLOWEEN et WINTER sont des propositions, cohérentes avec les couleurs
+d'interface déjà validées de chaque thème (mêmes familles de teintes, luminance comparable aux
+valeurs d'origine) — mais **aucun rendu n'a pu être observé**, cf. la limite en tête de document.
+C'est le seul endroit de ce lot où un œil de graphiste reste nécessaire.
+
+**Ce qui n'est délibérément pas thémé : les couleurs de faction.** Elles restent identiques d'un
+thème à l'autre. Le joueur doit reconnaître ses flottes du premier coup d'œil ; une couleur
+d'appartenance qui change avec la saison serait un piège de lisibilité, pas une décoration. C'est un
+choix, pas un oubli — et il est écrit dans `THEME_GUIDE_FR.md`.
+
+### TH14 — 🟠 Les réglages ne servaient à rien  ✅ **corrigé**
+
+`SettingsScreen` affichait quatre réglages branchés sur des `remember` locaux. Personne ne les
+lisait, rien ne les écrivait, et les deux boutons du bas faisaient la même chose :
+
+```kotlin
+IndustrialButton(text = "CANCEL",         onClick = onBackClick, …)
+IndustrialButton(text = "APPLY SETTINGS", onClick = onBackClick, …)   // strictement identique
+```
+
+**Correction.** `AppSettings` (thème, volume général, volume des effets, effets holographiques,
+contraste élevé) est persisté par `SettingsStore` et exposé par `GameViewModel.settings`. Chaque
+réglage a maintenant un consommateur réel :
+
+| Réglage | Effet |
+|---|---|
+| Master Volume | `AudioManager` applique le volume à toutes les lectures (elles étaient toutes à `1f`) |
+| SFX Volume | multiplie le volume des bruits de **combat** seulement — baisser les « SFX » ne doit pas étouffer les clics d'interface |
+| Holographic Effects | coupe le flou « verre dépoli » des panneaux, les trames de fond (`HalftoneBackground`, `NoiseOverlay`) et le balayage de la carte |
+| High Contrast Mode | contours de carte opaques et épaissis (4 px au lieu de 2,5), texte secondaire remonté à la couleur du texte principal |
+
+Les effets décoratifs se désactivent **eux-mêmes** en lisant `LocalDisplaySettings`, plutôt
+qu'en imposant une condition à chacun de leurs appelants — `HalftoneBackground` est utilisé par cinq
+écrans.
+
+Le schéma brouillon/`APPLY` disparaît : tout s'applique et se persiste immédiatement, et les deux
+boutons sont remplacés par un seul `BACK`. Un « APPLY » n'a de sens que s'il existe un « CANCEL » qui
+annule vraiment ; ici chaque réglage a un effet visible ou audible tout de suite, donc l'aperçu en
+direct est à la fois plus simple et plus honnête. C'était aussi la seule façon de lever
+l'incohérence signalée en TH8 (le thème s'appliquait déjà en direct, `CANCEL` ne l'annulait pas).
+
+### TH15 — 🟠 Le sélecteur est couvert par des tests  ✅ **corrigé**
+
+Le dépôt n'avait **aucune source `androidTest`** ; le job `android-test` de la CI ne lançait donc
+rien, et sur `main` uniquement.
+
+La couverture est découpée selon ce que chaque niveau peut réellement vérifier :
+
+| Test | Où | Quand |
+|---|---|---|
+| `ThemeSelectorLabelsTest` (4 cas) | `app/src/test` — JVM pur | **à chaque poussée** |
+| `ThemeSelectorTest` (6 cas) | `app/src/androidTest` — Compose | job `android-test`, sur `main` |
+
+Pour que le premier existe, la partie non graphique du sélecteur (options, `testTag`, texte d'état)
+est extraite dans `ThemeSelectorLabels.kt`, **sans aucun import Compose**. Le fichier se compile et
+se teste sur la JVM ; le composable ne garde que le rendu. Le pipeline gagne au passage une étape
+`gradle :app:testDebugUnitTest` — les tests JVM du module Android n'étaient jamais exécutés.
+
+Le test d'interface couvre l'affichage des quatre options, la remontée de chaque choix (dont
+`DEFAULT`, le défaut d'origine de TH12), le retour à l'automatique, la ligne d'état et les
+interrupteurs. Il cible par `testTag` et non par texte : la ligne d'état contient elle aussi le nom
+du thème actif, donc un test lancé un 31 octobre trouverait deux nœuds pour « HALLOWEEN ».
+
+---
+
+## 5. Fichiers touchés
 
 ### `:core:domain` — modèle et logique pure (nouveau)
 
@@ -347,38 +445,55 @@ sans casser le build.
 
 | Fichier | Rôle |
 |---|---|
-| `ui/theme/ThemeManager.kt` | Assets → `ColorScheme` ; conversion au chargement, chargement par thème, rôles Material dérivés |
-| `ui/theme/ThemePreferenceStore.kt` | Persistance `SharedPreferences` (nouveau) |
-| `ui/theme/Theme.kt` | Résolution unique, mémoïsation, `LocalThemeType` / `LocalGraphicsConfig` |
-| `ui/theme/Type.kt` | `Typography` constante → `novaTypography(colorScheme)` |
+| `settings/AppSettings.kt` | Modèle des préférences + `LocalDisplaySettings` (nouveau) |
+| `settings/SettingsStore.kt` | Persistance `SharedPreferences` (nouveau) |
+| `ui/theme/ThemeManager.kt` | Assets → `ColorScheme` + `MapPalette` ; conversion au chargement, chargement par thème, rôles Material dérivés |
+| `ui/theme/MapPalette.kt` | Palette de carte convertie en couleurs Compose (nouveau) |
+| `ui/theme/Theme.kt` | Résolution unique, mémoïsation, `LocalThemeType` / `LocalGraphicsConfig` / `LocalMapPalette` / `LocalDisplaySettings` |
+| `ui/theme/Type.kt` | `Typography` constante → `novaTypography(colorScheme, highContrast)` |
 | `ui/theme/ThemeDefinition.kt` | **Supprimé** (déplacé dans `:core:domain`) |
-| `ui/viewmodels/GameViewModel.kt` | `themePreference` + `setThemePreference` |
-| `MainActivity.kt` | Câblage préférence → thème → écran de réglages |
-| `ui/screens/SettingsScreen.kt` | Sélecteur de thème |
-| `ui/screens/TacticalMapScreen.kt` | `LocalGraphicsConfig`, `planetShadowAlpha`, éclats d'explosion |
-| `ui/components/GraphicNoirComponents.kt` | `LocalGraphicsConfig` |
+| `audio/AudioManager.kt` | Volumes appliqués (tout se jouait à `1f`) |
+| `ui/viewmodels/GameViewModel.kt` | `settings` + `updateSettings` |
+| `MainActivity.kt` | Câblage réglages → thème → écran de réglages |
+| `ui/screens/SettingsScreen.kt` | Sélecteur de thème, réglages branchés, application immédiate |
+| `ui/screens/ThemeSelectorLabels.kt` | Options et libellés, sans Compose — donc testables sur la JVM (nouveau) |
+| `ui/screens/TacticalMapScreen.kt` | `LocalMapPalette`, `planetShadowAlpha`, éclats d'explosion, contraste élevé |
+| `ui/components/GraphicNoirComponents.kt` | `LocalGraphicsConfig`, flou coupé avec les effets |
+| `ui/components/BackgroundEffects.kt` | Trames coupées avec les effets |
+| `src/test/…/ThemeSelectorLabelsTest.kt` | 4 tests JVM (nouveau) |
+| `src/androidTest/…/ThemeSelectorTest.kt` | 6 tests Compose (nouveau) |
+
+### Racine
+
+| Fichier | Rôle |
+|---|---|
+| `.github/workflows/ci.yml` | Étape `:app:testDebugUnitTest` — les tests JVM du module Android n'étaient jamais lancés |
+| `THEME_GUIDE_FR.md`, `CLAUDE.md` | Documentation du système de thèmes |
 
 ---
 
-## 5. Ce qui reste ouvert
+## 6. Ce qui reste ouvert
 
-Rien de ce qui précède n'est en attente ; ce qui suit est hors du périmètre « gestion des thèmes »
-ou demande un travail de contenu.
+Aucun point de cet audit n'est en attente. Ce qui suit relève de choix assumés ou de sujets voisins.
 
-- **La palette de la carte tactique reste codée en dur** — couleurs de terrain, encre des contours,
-  couleurs de faction. C'est le constat GR3 de `AUDIT_GRAPHISMES.md`, et il tient toujours : changer
-  de thème transforme l'interface, les panneaux, le texte et les explosions, mais laisse les
-  hexagones quasiment identiques. Le chemin est connu (ajouter une section `terrain` aux JSON, que
-  `ThemeParser` tolère déjà grâce à `ignoreUnknownKeys`) mais c'est autant du travail de direction
-  artistique que du code.
-- **Les autres réglages de `SettingsScreen`** (volumes, effets holographiques, mode contraste élevé)
-  restent branchés sur un `remember` local : personne ne les lit, `APPLY SETTINGS` ne les persiste
-  pas. `ThemePreferenceStore` est dimensionné pour les accueillir, mais chacun demande d'abord un
-  consommateur côté rendu ou audio.
-- **Aucun test d'interface** ne couvre le sélecteur : le dépôt n'a pas de source `androidTest`, et
-  la CI ne lance les tests instrumentés que sur `main`. La logique derrière le sélecteur est testée,
-  le composable lui-même ne l'est pas.
-- **La bascule saisonnière n'est plus instantanée** : le thème actif est mémoïsé pour la durée de la
+- **Les couleurs de faction ne sont pas thémées, et ne devraient pas l'être.** Ce sont des couleurs
+  d'appartenance : le joueur doit reconnaître ses flottes sans réfléchir, et les faire varier avec la
+  saison serait un piège de lisibilité. Elles restent dans `Color.kt`, via `getFactionColor`. Ce qui
+  *serait* légitime, c'est un mode daltonien — mais c'est le constat GR7 de `AUDIT_GRAPHISMES.md`,
+  pas un problème de thème.
+- **`getFactionColor` vit toujours dans un fichier d'écran** (`FactionSelectionScreen.kt`) alors
+  qu'elle est appelée depuis la carte. Déjà relevé en GR7 ; ce lot ne l'a pas déplacée pour ne pas
+  élargir le périmètre.
+- **Les palettes de carte d'HALLOWEEN et WINTER n'ont pas été vues.** Elles sont cohérentes avec les
+  couleurs d'interface déjà validées de chaque thème, mais aucun rendu n'a pu être produit dans cet
+  environnement (cf. la limite en tête de document). C'est le seul livrable de ce lot qui appelle une
+  relecture visuelle.
+- **« RESET TUTORIAL DATA » ne fait toujours rien** (`onClick = { }`). Il n'y a pas de données de
+  tutoriel à effacer dans le dépôt : le bouton attend une fonctionnalité qui n'existe pas encore.
+- **La bascule saisonnière n'est pas instantanée** : le thème actif est mémoïsé pour la durée de la
   composition (cf. TH6). Une application ouverte depuis la veille au soir ne passera à HALLOWEEN
   qu'à la prochaine recréation de l'activité. Contrepartie assumée d'avoir cessé de relire l'horloge
   à chaque recomposition.
+- **Les tests Compose ne tournent que sur `main`.** C'est la configuration existante du job
+  `android-test` (émulateur), pas un choix de ce lot. La partie testable sans appareil a été extraite
+  précisément pour ne pas dépendre de cette contrainte.
