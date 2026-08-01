@@ -62,7 +62,6 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.math.roundToInt
-import kotlin.math.roundToInt
 
 /** Hex radius in density-independent units — 30.dp reproduces the historical 60 px on a 2x screen. */
 private val HEX_RADIUS_DP = 30.dp
@@ -128,9 +127,9 @@ fun TacticalMapScreen(
     val currentOnCapturePlanet by rememberUpdatedState(onCapturePlanet)
     val currentOnLoadUnit by rememberUpdatedState(onLoadUnit)
     val currentOnDeployUnit by rememberUpdatedState(onDeployUnit)
-    // Le thème effectif est résolu une seule fois par NovaEmpireTheme. Lire ici
-    // `gameState.themeConfig.currentTheme` brut court-circuitait la résolution saisonnière : la
-    // carte se dessinait avec les réglages DEFAULT alors que l'interface était en HALLOWEEN.
+    // Le thème effectif est résolu une seule fois par NovaEmpireTheme. Cet écran lisait autrefois
+    // la préférence brute depuis le GameState, sans la résoudre : la carte se dessinait avec les
+    // réglages DEFAULT alors que l'interface était en HALLOWEEN.
     val graphicsConfig = com.novaempire.app.ui.theme.LocalGraphicsConfig.current
 
     val laserProgress = remember { Animatable(0f) }
@@ -700,6 +699,13 @@ fun TacticalMapScreen(
                                 radius = explosionRadius,
                                 center = Offset(dx, dy)
                             )
+                            drawExplosionShards(
+                                centerX = dx,
+                                centerY = dy,
+                                radius = explosionRadius,
+                                progress = explosionScale.value,
+                                multiplier = graphicsConfig.particleCountMultiplier
+                            )
                         }
                     }
                 }
@@ -1262,7 +1268,52 @@ fun pixelToHex(x: Float, y: Float, centerX: Float, centerY: Float, hexRadius: Fl
     return hexRound(q.toDouble(), r.toDouble(), -q.toDouble() - r.toDouble())
 }
 
-fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float, owner: Faction?, graphicsConfig: com.novaempire.app.ui.theme.GraphicsConfig) {
+/** Nombre d'éclats d'une explosion à `particleCountMultiplier = 1`. */
+private const val BASE_EXPLOSION_SHARDS = 10
+
+/**
+ * Éclats d'encre projetés par une explosion — le système que `particleCountMultiplier` pilote.
+ *
+ * Le réglage existait dans les JSON de thème et dans le guide (« 2.0 pour des explosions
+ * massives ») mais n'avait aucun système à commander : l'explosion n'était qu'un dégradé radial.
+ *
+ * Les angles et longueurs sont dérivés de l'indice de l'éclat, pas d'un tirage aléatoire : un
+ * `Random` par passe de dessin ferait scintiller les éclats à chaque frame de l'animation.
+ */
+fun DrawScope.drawExplosionShards(
+    centerX: Float,
+    centerY: Float,
+    radius: Float,
+    progress: Float,
+    multiplier: Float
+) {
+    val count = (BASE_EXPLOSION_SHARDS * multiplier).roundToInt()
+    if (count <= 0) return
+
+    val fade = (1f - progress).coerceIn(0f, 1f)
+    if (fade <= 0f) return
+
+    for (i in 0 until count) {
+        // Angle d'or : répartition régulière quel que soit le nombre d'éclats, sans motif visible.
+        val angle = i * 2.399963f
+        val dirX = cos(angle)
+        val dirY = sin(angle)
+        // Longueur variable mais stable d'une frame à l'autre.
+        val reach = 0.75f + ((i * 37) % 50) / 100f
+        val inner = radius * 0.45f
+        val outer = radius * reach
+
+        drawLine(
+            color = BrunEncre.copy(alpha = fade * 0.75f),
+            start = Offset(centerX + dirX * inner, centerY + dirY * inner),
+            end = Offset(centerX + dirX * outer, centerY + dirY * outer),
+            strokeWidth = 2f,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float, owner: Faction?, graphicsConfig: com.novaempire.core.domain.theme.GraphicsConfig) {
     val planetColor = owner?.let { getFactionColor(it) } ?: NeonGreen
     val inkBlack = Color(0xFF130F0A)
 

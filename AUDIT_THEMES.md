@@ -1,18 +1,27 @@
 # Audit — Gestion des thèmes
 
-> Portée : le système de thèmes de bout en bout — modèle (`ThemeConfig`/`ThemeType` dans
-> `:core:domain`), chargement et résolution (`ThemeManager`), application Compose (`Theme.kt`,
-> `Type.kt`, `Color.kt`), consommation (`TacticalMapScreen`, `GraphicNoirComponents`,
+> Portée : le système de thèmes de bout en bout — modèle et résolution (`:core:domain/theme`),
+> chargement et application Compose (`ThemeManager`, `Theme.kt`, `Type.kt`, `Color.kt`),
+> persistance de la préférence, consommation (`TacticalMapScreen`, `GraphicNoirComponents`,
 > `SettingsScreen`), assets (`app/src/main/assets/themes/*.json`) et documentation
 > (`THEME_GUIDE_FR.md`).
 >
 > ## ⚠️ Limite de cet audit
 >
 > **Aucun rendu n'a pu être observé.** Le proxy réseau refuse `dl.google.com` (403 sur le tunnel
-> CONNECT), l'Android Gradle Plugin est donc inaccessible : ni build, ni émulateur, ni capture.
-> Les corrections ci-dessous ont été relues ligne à ligne mais **n'ont pas été compilées**. Les
-> modules purs (`:core:*`) ne sont pas touchés par ce lot, la CI ne couvre donc rien de ce code —
-> voir TH10.
+> CONNECT), l'Android Gradle Plugin est donc inaccessible : ni build Gradle du dépôt, ni émulateur,
+> ni capture. Un défaut purement visuel échapperait à cette analyse.
+>
+> Ce qui **a** pu être vérifié, en reconstruisant les modules purs dans un projet Gradle autonome
+> (Kotlin 1.9.23, JDK 21, dépendances Maven Central uniquement) :
+>
+> - `:core:hex` + `:core:domain` + `:core:engine` compilent, **204 tests passent, 0 échec** — dont
+>   les 22 tests de thème ajoutés par ce lot ;
+> - les sources de `:app` ont été type-checkées contre tout sauf le classpath Android/Compose : il
+>   ne reste **aucune erreur** portant sur l'API de thème ou sur du code de ce dépôt, seulement les
+>   symboles `android.*` / `androidx.*` absents de ce montage.
+>
+> Autrement dit : la logique est testée, la couche Compose est relue mais **pas compilée**.
 
 ## 1. Résumé exécutif
 
@@ -25,11 +34,11 @@
 | **TH5** | 🟠 **Moyen — ✅ corrigé** | Rendu | Seuls **12 rôles Material sur ~30** étaient définis ; `Snackbar`, `Switch`, bordures gardaient le mauve Material par défaut |
 | TH6 | 🟡 Faible — ✅ corrigé | Performance | Le `ColorScheme` était **reconstruit à chaque recomposition** de la racine, invalidant tous ses lecteurs |
 | TH7 | 🟡 Faible — ✅ corrigé | Config | `planetShadowAlpha` documenté et présent dans les JSON mais **jamais lu** ; valeur de secours désalignée du JSON par défaut |
-| **TH8** | 🔴 **Majeur — ouvert** | Produit | **Aucun moyen de choisir un thème** : `themeConfig` n'est écrit nulle part, il n'existe ni intent ni écran de sélection |
-| TH9 | 🟠 Moyen — ouvert | Architecture | Le thème, une **préférence utilisateur**, vit dans le `GameState` sérialisé — donc dans le format de sauvegarde |
-| TH10 | 🟠 Moyen — ouvert | Testabilité | Toute la logique de thème est dans `:app` : **zéro test**, la CI ne l'exerce jamais |
-| TH11 | 🟡 Faible — ouvert | Config | `particleCountMultiplier` toujours mort ; palette dupliquée entre `Color.kt` et `default.json` |
-| TH12 | 🟡 Faible — ouvert | Produit | Le choix « DEFAULT » ne peut pas exister : il est **toujours écrasé** par le thème saisonnier |
+| **TH8** | 🔴 **Majeur — ✅ corrigé** | Produit | **Aucun moyen de choisir un thème** : `themeConfig` n'était écrit nulle part, il n'existait ni intent ni écran de sélection |
+| TH9 | 🟠 Moyen — ✅ corrigé | Architecture | Le thème, une **préférence utilisateur**, vivait dans le `GameState` sérialisé — donc dans le format de sauvegarde |
+| TH10 | 🟠 Moyen — ✅ corrigé | Testabilité | Toute la logique de thème était dans `:app` : **zéro test**, la CI ne l'exerçait jamais |
+| TH11 | 🟡 Faible — ✅ corrigé | Config | `particleCountMultiplier` mort ; palette dupliquée entre le code et `default.json` |
+| TH12 | 🟡 Faible — ✅ corrigé | Produit | Le choix « DEFAULT » ne pouvait pas exister : il était **toujours écrasé** par le thème saisonnier |
 
 ---
 
@@ -78,17 +87,18 @@ sans bruit puis faisait planter le premier rendu.
 La validation se faisait donc à la mauvaise couche : le plus tard possible, au plus près de l'écran.
 
 **Correction.** Les couleurs sont converties **une fois au chargement**, dans `resolveTheme`, et
-chaque conversion a une valeur de secours prise sur la palette de référence :
+chaque rôle a une valeur de secours :
 
 ```kotlin
-private fun parseColor(colorString: String, fallback: Color): Color =
-    try { Color(android.graphics.Color.parseColor(colorString)) }
-    catch (e: IllegalArgumentException) { Log.e(TAG, "Couleur invalide…"); fallback }
+fun color(value: String, fallbackValue: String): Color =
+    Color(HexColor.parse(value) ?: HexColor.parse(fallbackValue)!!)
 ```
 
-Un thème partiellement invalide s'affiche maintenant en mode dégradé avec un log explicite, au lieu
-de faire tomber l'application. Effet de bord bienvenu : plus aucun parsing de chaîne dans le chemin
-de composition (cf. TH6).
+`HexColor.parse` (ajouté par TH10, dans `:core:domain`) retourne `null` au lieu de lever — l'échec
+devient une valeur que l'appelant traite, et l'analyse est testable sur la JVM. Un thème
+partiellement invalide s'affiche donc en mode dégradé avec un log explicite, au lieu de faire tomber
+l'application ; et `ShippedThemesTest` fait échouer le build avant d'en arriver là. Effet de bord
+bienvenu : plus aucun parsing de chaîne dans le chemin de composition (cf. TH6).
 
 ### TH3 — 🟠 Trois résolutions concurrentes du thème actif  ✅ **corrigé**
 
@@ -201,106 +211,174 @@ WINTER l'ombrage plus léger (0.5) que leurs auteurs avaient demandés.
 
 ---
 
-## 3. Ouverts
+## 3. Corrigés dans un second temps
 
-### TH8 — 🔴 Le joueur ne peut pas choisir son thème
+Les cinq points ci-dessous étaient laissés ouverts par la première passe parce qu'ils demandaient
+des décisions de conception plutôt que des corrections de défaut. Ils sont traités ici, dans leur
+ordre de dépendance : la préférence doit exister (TH9) avant qu'on puisse la choisir (TH8), et
+« automatique » doit être exprimable (TH12) avant que le choix ait un sens.
 
-C'est le vrai trou du système, et il est purement produit :
+### TH9 — 🟠 La préférence sort du format de sauvegarde  ✅ **corrigé**
 
-- `GameState.themeConfig` **n'est écrit nulle part**. Aucun `.copy(themeConfig = …)` dans tout le
-  dépôt, aucun `GameIntent` de changement de thème, aucun `when` correspondant dans
-  `GameEngine.reduce`. La valeur est donc constante : `ThemeType.DEFAULT`.
-- `SettingsScreen` propose « Holographic Effects » et « High Contrast Mode » — deux interrupteurs
-  branchés sur un `remember` local, que « APPLY SETTINGS » ne persiste pas et que personne ne lit —
-  mais **aucun sélecteur de thème**.
+`ThemeConfig` était un champ `@Serializable` de `GameState`, donc écrit dans chaque autosave. Trois
+conséquences, toutes réelles : le thème n'existait pas tant qu'aucune partie n'était chargée (menu
+principal, sélection de faction), il aurait été *par sauvegarde* plutôt que par joueur, et renommer
+une valeur de `ThemeType` aurait touché la compatibilité des sauvegardes.
 
-Conséquence : les thèmes HALLOWEEN et WINTER ne sont atteignables que par la fenêtre calendaire
-(25 oct.–5 nov., 20 déc.–5 janv.), soit ~23 jours par an, et le joueur ne peut ni les activer hors
-saison ni les refuser pendant.
+**Correction.** `GameState.themeConfig` et la classe `ThemeConfig` sont supprimés. La préférence est
+persistée par `ThemePreferenceStore` (`SharedPreferences`, une seule clé) et exposée par
+`GameViewModel.themePreference: StateFlow<ThemeType?>`.
 
-Chemin de correction, dans l'ordre de dépendance : (1) trancher TH9 — où vit la préférence ; (2) un
-sélecteur dans `SettingsScreen` (les trois thèmes + une option « Automatique/Saisonnier ») ; (3) la
-persistance associée. Rien de tout ça n'est fait ici : c'est une décision de conception, pas une
-correction de défaut.
+Aucune migration de sauvegarde n'est nécessaire : `SavedGameSnapshotCodec` décode avec
+`ignoreUnknownKeys = true`, la clé `themeConfig` des anciennes sauvegardes est simplement ignorée.
+Vérifié — la suite `:core:engine` (dont `SaveMigrationsTest` et les tests de codec) passe sans
+modification.
 
-### TH9 — 🟠 Une préférence d'affichage stockée dans le format de sauvegarde
+`ThemeType` perd son `@Serializable` : ce n'est plus un état de partie, et le retirer rend la
+séparation structurelle plutôt que documentaire.
 
-`ThemeConfig` vit dans `:core:domain`, est `@Serializable`, et est un champ de `GameState` — donc
-sérialisé dans chaque autosave par `SavedGameSnapshotCodec`. Trois conséquences :
+### TH12 — 🟡 « Automatique » devient une valeur à part entière  ✅ **corrigé**
 
-1. **Portée fausse.** Un thème est une préférence d'application, pas un état de partie. Rangé là, il
-   serait par construction *par sauvegarde* : charger une vieille partie changerait l'apparence du
-   jeu.
-2. **Avant la partie, rien.** Menu principal, sélection de faction, écran de chargement s'affichent
-   sur un `GameState` initial — le thème sauvegardé serait ignoré sur tous ces écrans.
-3. **Couplage au format de sauvegarde.** Comme le rappelle `CLAUDE.md`, il n'y a **pas de couche de
-   migration**. Ajouter une valeur à `ThemeType` est sûr (les anciennes sauvegardes contiennent
-   `"DEFAULT"`), mais en **renommer ou supprimer** une invaliderait toutes les sauvegardes
-   existantes — un risque disproportionné pour un réglage d'affichage.
-
-Recommandation : sortir la préférence du `GameState` vers un `DataStore`/`SharedPreferences` exposé
-par `GameViewModel`, et ne garder `ThemeType` dans `:core:domain` que si un contenu de jeu en dépend
-réellement (ce n'est pas le cas aujourd'hui). À faire **avant** TH8, dont c'est le préalable.
-
-### TH10 — 🟠 Aucun test, et pas testable en l'état
-
-`ThemeManager` est un `object` global à état mutable, initialisé par `init(Context)` depuis
-`MainActivity.onCreate`, dans le module `:app`. Or la CI n'exécute que
-`:core:hex:test :core:domain:test :core:engine:test` — **aucune ligne du système de thèmes n'est
-couverte**, y compris les parties qui n'ont rien d'Android :
-
-- la fenêtre saisonnière de `getActiveTheme` (bornes de dates, priorité choix/saison) : logique
-  pure, testable telle quelle ;
-- le parsing d'une définition de thème et la tolérance aux valeurs invalides : ne dépend d'`android`
-  que par `Color.parseColor`, trivialement remplaçable ;
-- la validité des JSON livrés (chaque `ThemeType` a-t-il un fichier ? toutes les clés ? toutes les
-  couleurs parsables ?) — un test qui aurait rendu TH2 et TH4 impossibles à écrire.
-
-Recommandation : déplacer la résolution saisonnière et le modèle de thème vers `:core:domain` (ou un
-`:core:theme`), ne laisser dans `:app` que la conversion `String → Color` et la construction du
-`ColorScheme`, puis injecter le manager plutôt que d'y accéder en singleton. Même remarque que pour
-`UtilityEvaluator` dans `suggestions.md` : le singleton global est la cause racine.
-
-### TH11 — 🟡 Un réglage encore mort, et une palette dupliquée
-
-- **`particleCountMultiplier`** est parsé, exposé, documenté (« Mettez 2.0 pour des explosions
-  massives ») — et lu par personne. Contrairement à `planetShadowAlpha`, il n'a pas de site d'appel
-  évident : le rendu des combats de `TacticalMapScreen` n'a pas de système de particules
-  paramétrable. Le guide a été corrigé pour ne plus promettre un effet inexistant ; brancher le
-  réglage reste à faire (ou supprimer le champ).
-- **Trois copies de la palette par défaut** coexistent : les constantes de `Color.kt`,
-  `assets/themes/default.json`, et les valeurs de secours de `ThemeManager` (qui réutilisent
-  `Color.kt`, ce qui limite la casse). Elles concordent aujourd'hui ; rien ne le garantit demain.
-  Un test de non-régression comparant `default.json` aux constantes suffirait — voir TH10.
-
-### TH12 — 🟡 « DEFAULT » n'est pas un choix exprimable
+L'ancienne signature ne pouvait pas distinguer les deux cas :
 
 ```kotlin
-fun getActiveTheme(savedTheme: ThemeType? = null): ThemeType {
-    if (savedTheme != null && savedTheme != ThemeType.DEFAULT) return savedTheme
-    // … sinon, fenêtre calendaire
+if (savedTheme != null && savedTheme != ThemeType.DEFAULT) return savedTheme  // DEFAULT = pas de choix
+```
+
+La préférence est désormais un `ThemeType?` où **`null` = automatique**. Choisir explicitement
+`DEFAULT` en pleine période de fêtes est respecté ; ne rien choisir laisse le calendrier décider.
+C'est le comportement par défaut à l'installation, donc la bascule saisonnière fonctionne toujours
+sans réglage.
+
+Le test qui verrouille exactement le défaut d'origine :
+
+```kotlin
+@Test fun `choisir DEFAULT pendant une fenetre saisonniere est respecte`() {
+    assertEquals(ThemeType.DEFAULT, ThemeResolver.resolve(ThemeType.DEFAULT, LocalDate.of(2026, 12, 25)))
 }
 ```
 
-`DEFAULT` est traité comme « pas de choix », donc systématiquement écrasé par le thème saisonnier.
-Le joueur qui, en décembre, veut explicitement la palette d'origine n'a aucun moyen de la demander.
-Le modèle manque simplement d'une valeur « Automatique » distincte de « Thème par défaut » —
-`ThemeConfig.currentTheme: ThemeType? = null` (null = automatique) ou une entrée `AUTO`.
+### TH8 — 🔴 Le joueur peut enfin choisir son thème  ✅ **corrigé**
 
-Corriger ça isolément serait une régression (`MainActivity` passe toujours `DEFAULT` : le thème
-saisonnier disparaîtrait purement et simplement). C'est donc à traiter **avec** TH8/TH9, pas avant.
+`SettingsScreen` gagne une section `THEME` avec quatre options — `AUTOMATIC`, `NOIR FUTURISM`,
+`HALLOWEEN`, `WINTER` — et une ligne d'état qui dit ce que l'automatique donne *aujourd'hui*
+(« Seasonal — currently DEFAULT ») ou signale qu'un choix manuel désactive les thèmes saisonniers.
+
+Le choix s'applique **immédiatement**, à l'inverse du schéma brouillon/`APPLY SETTINGS` des autres
+réglages : le thème est le seul dont l'effet est visible sans rien valider, et un aperçu instantané
+vaut mieux qu'un bouton qui n'annonce pas à quoi il engage. L'écart est assumé et commenté dans le
+code — les autres réglages de cet écran restent, eux, ni lus ni persistés (cf. §5).
+
+Le chemin complet : `SettingsScreen` → `GameViewModel.setThemePreference` → `ThemePreferenceStore`
+(écriture) + `StateFlow` (état) → `MainActivity` → `NovaEmpireTheme(themePreference)` →
+`ThemeResolver`. HALLOWEEN et WINTER, jusque-là accessibles ~23 jours par an, le sont maintenant
+toute l'année.
+
+### TH10 — 🟠 La logique de thème descend dans `:core:domain`, et la CI l'exerce  ✅ **corrigé**
+
+Conformément à la recommandation de la première passe, le partage est désormais :
+
+| Où | Quoi | Testé par la CI |
+|---|---|---|
+| `:core:domain/theme` | `ThemeType`, `ThemeDefinition`/`ThemeColors`/`GraphicsConfig`, `ThemeParser`, `HexColor`, `ThemeResolver`, `ThemeDefaults` | ✅ |
+| `:app/ui/theme` | lecture des assets, `Color`/`ColorScheme`, `ThemePreferenceStore` | ❌ (Android) |
+
+`android.graphics.Color.parseColor` disparaît au profit de `HexColor.parse`, un analyseur pur qui
+retourne `null` au lieu de lever — c'est ce qui rend la validation des couleurs testable **et** qui
+supprime définitivement le crash de TH2 à sa racine.
+
+Quatre classes de test, 22 cas, dans `:core:domain` (que la CI exécute déjà via
+`gradle :core:domain:test`) :
+
+- `ThemeResolverTest` — bornes des fenêtres saisonnières (24/25 octobre, 5/6 novembre, 19/20
+  décembre, 5/6 janvier), passage du nouvel an, priorité choix/saison ;
+- `HexColorTest` — `#AARRGGBB`, `#RRGGBB`, casse, espaces, et les entrées invalides qui faisaient
+  planter l'application ;
+- `ThemeParserTest` — clé manquante, clés inconnues tolérées, couleur invalide et réglage hors
+  bornes signalés sans faire échouer le parsing ;
+- `ShippedThemesTest` — valide les **fichiers réellement livrés**.
+
+Ce dernier méritait un peu de plomberie : le `build.gradle.kts` de `:core:domain` expose
+`app/src/main/assets` à son classpath de **test** uniquement.
+
+```kotlin
+sourceSets { named("test") { resources.srcDir("../../app/src/main/assets") } }
+```
+
+Les JSON restent donc là où l'application les lit — aucun changement de chemin à l'exécution — mais
+la CI vérifie désormais que chaque `ThemeType` a son fichier, qu'il parse, que ses douze couleurs
+sont valides, que ses réglages graphiques sont dans les bornes et que son champ `name` correspond à
+l'énumération. Les défauts TH2 et TH4 seraient aujourd'hui des échecs de build.
+
+### TH11 — 🟡 Le dernier réglage mort est branché, la palette n'est plus dupliquée  ✅ **corrigé**
+
+**`particleCountMultiplier`** n'avait aucun système à piloter : l'explosion de combat n'était qu'un
+dégradé radial. `drawExplosionShards` en ajoute un — des éclats d'encre projetés depuis l'impact,
+dont le nombre est `10 × particleCountMultiplier`. Les angles suivent l'angle d'or et les longueurs
+dérivent de l'indice de l'éclat : pas de `Random` dans la passe de dessin, sinon les éclats
+scintilleraient à chaque frame de l'animation. Les thèmes livrés donnent 10 éclats (DEFAULT),
+12 (HALLOWEEN) et 15 (WINTER) ; le guide promettait « 2.0 pour des explosions massives », c'est
+maintenant vrai (20).
+
+**La palette de secours** ne duplique plus rien : `ThemeManager` la construit à partir de
+`ThemeDefaults.FALLBACK`, une copie compilée du thème par défaut, et `ShippedThemesTest` vérifie
+qu'elle est **identique** à `themes/default.json`. C'est exactement le type de dérive qui existait
+déjà (`planetShadowAlpha` valait 0.7 côté code et 0.6 côté JSON) ; elle est maintenant impossible
+sans casser le build.
 
 ---
 
 ## 4. Fichiers touchés
 
-| Fichier | Nature |
-|---|---|
-| `app/…/ui/theme/Type.kt` | `Typography` constante → `novaTypography(colorScheme)` (TH1) |
-| `app/…/ui/theme/ThemeManager.kt` | Conversion au chargement + valeurs de secours (TH2), chargement par thème (TH4), rôles Material dérivés (TH5), `DEFAULT_GRAPHICS` unifié (TH7) |
-| `app/…/ui/theme/Theme.kt` | Mémoïsation (TH6), `LocalThemeType`/`LocalGraphicsConfig` (TH3), nettoyage |
-| `app/…/ui/screens/TacticalMapScreen.kt` | Lecture via `LocalGraphicsConfig` (TH3), `planetShadowAlpha` branché (TH7) |
-| `app/…/ui/components/GraphicNoirComponents.kt` | Lecture via `LocalGraphicsConfig` (TH3) |
-| `THEME_GUIDE_FR.md` | Procédure d'ajout à jour, portée réelle et champs morts signalés |
+### `:core:domain` — modèle et logique pure (nouveau)
 
-**Non compilé** — cf. la limite en tête de document.
+| Fichier | Rôle |
+|---|---|
+| `theme/ThemeType.kt` | Énumération + convention `assetPath` (déplacé depuis `models/ThemeConfig.kt`) |
+| `theme/ThemeDefinition.kt` | Modèle `@Serializable`, validation (`problems()`), `ThemeParser`, `ThemeDefaults.FALLBACK` |
+| `theme/HexColor.kt` | Analyse hexadécimale non levante |
+| `theme/ThemeResolver.kt` | Résolution préférence × calendrier |
+| `state/GameState.kt` | Champ `themeConfig` retiré |
+| `models/ThemeConfig.kt` | **Supprimé** |
+| `build.gradle.kts` | JUnit + assets exposés au classpath de test |
+| `src/test/…/theme/*` | 4 classes, 22 tests |
+
+### `:app` — couche Compose
+
+| Fichier | Rôle |
+|---|---|
+| `ui/theme/ThemeManager.kt` | Assets → `ColorScheme` ; conversion au chargement, chargement par thème, rôles Material dérivés |
+| `ui/theme/ThemePreferenceStore.kt` | Persistance `SharedPreferences` (nouveau) |
+| `ui/theme/Theme.kt` | Résolution unique, mémoïsation, `LocalThemeType` / `LocalGraphicsConfig` |
+| `ui/theme/Type.kt` | `Typography` constante → `novaTypography(colorScheme)` |
+| `ui/theme/ThemeDefinition.kt` | **Supprimé** (déplacé dans `:core:domain`) |
+| `ui/viewmodels/GameViewModel.kt` | `themePreference` + `setThemePreference` |
+| `MainActivity.kt` | Câblage préférence → thème → écran de réglages |
+| `ui/screens/SettingsScreen.kt` | Sélecteur de thème |
+| `ui/screens/TacticalMapScreen.kt` | `LocalGraphicsConfig`, `planetShadowAlpha`, éclats d'explosion |
+| `ui/components/GraphicNoirComponents.kt` | `LocalGraphicsConfig` |
+
+---
+
+## 5. Ce qui reste ouvert
+
+Rien de ce qui précède n'est en attente ; ce qui suit est hors du périmètre « gestion des thèmes »
+ou demande un travail de contenu.
+
+- **La palette de la carte tactique reste codée en dur** — couleurs de terrain, encre des contours,
+  couleurs de faction. C'est le constat GR3 de `AUDIT_GRAPHISMES.md`, et il tient toujours : changer
+  de thème transforme l'interface, les panneaux, le texte et les explosions, mais laisse les
+  hexagones quasiment identiques. Le chemin est connu (ajouter une section `terrain` aux JSON, que
+  `ThemeParser` tolère déjà grâce à `ignoreUnknownKeys`) mais c'est autant du travail de direction
+  artistique que du code.
+- **Les autres réglages de `SettingsScreen`** (volumes, effets holographiques, mode contraste élevé)
+  restent branchés sur un `remember` local : personne ne les lit, `APPLY SETTINGS` ne les persiste
+  pas. `ThemePreferenceStore` est dimensionné pour les accueillir, mais chacun demande d'abord un
+  consommateur côté rendu ou audio.
+- **Aucun test d'interface** ne couvre le sélecteur : le dépôt n'a pas de source `androidTest`, et
+  la CI ne lance les tests instrumentés que sur `main`. La logique derrière le sélecteur est testée,
+  le composable lui-même ne l'est pas.
+- **La bascule saisonnière n'est plus instantanée** : le thème actif est mémoïsé pour la durée de la
+  composition (cf. TH6). Une application ouverte depuis la veille au soir ne passera à HALLOWEEN
+  qu'à la prochaine recréation de l'activité. Contrepartie assumée d'avoir cessé de relire l'horloge
+  à chaque recomposition.

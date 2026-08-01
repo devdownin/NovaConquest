@@ -60,18 +60,18 @@ laisse la carte quasiment inchangée. Voir `AUDIT_THEMES.md` (TH8) et `AUDIT_GRA
 - `outlineStrokeWidth` : L'épaisseur des traits d'encre BD autour des éléments de la carte.
 - `planetShadowAlpha` : L'intensité de l'ombrage en hachures sur les planètes.
 - `blurRadius` : La puissance du verre dépoli (Frosted Glass) de l'interface utilisateur.
-- `particleCountMultiplier` : ⚠️ **Non branché à ce jour** — le champ est lu depuis le JSON mais
-  aucun système de particules ne l'utilise encore. Le renseigner n'a aucun effet visible.
+- `particleCountMultiplier` : Le nombre d'éclats d'encre projetés par une explosion de combat. La
+  base est de 10 éclats ; mettez `2.0` pour des explosions massives (20), `0.5` pour un effet
+  minimaliste (5), `0` pour les supprimer.
 
 ## Étape 3 : Enregistrer le Thème dans le Modèle de Données
 
 Pour que l'application puisse trouver votre JSON, ouvrez le fichier source :
-`core/domain/src/main/kotlin/com/novaempire/core/domain/models/ThemeConfig.kt`
+`core/domain/src/main/kotlin/com/novaempire/core/domain/theme/ThemeType.kt`
 
 Ajoutez le nom de votre thème dans l'énumération `ThemeType` (le nom doit correspondre EXACTEMENT au `name` du JSON) :
 
 ```kotlin
-@Serializable
 enum class ThemeType {
     DEFAULT,
     HALLOWEEN,
@@ -89,12 +89,33 @@ est absent ou malformé, seul ce thème-là est perdu (les autres continuent de 
 est visible dans le Logcat sous le tag `ThemeManager`. Une couleur hexadécimale invalide est
 remplacée par la couleur correspondante du thème par défaut, également avec un log.
 
-## Étape 4 : Activer le Thème (Tests ou Saisonnier)
+### Vérifier son thème sans lancer le jeu
 
-Pour tester immédiatement votre thème, modifiez la fonction `getActiveTheme` dans `ThemeManager.kt` :
-
-```kotlin
-fun getActiveTheme(savedTheme: ThemeType? = null): ThemeType {
-    return ThemeType.CYBERPUNK // Force votre thème
-    // ...
+```powershell
+./gradlew :core:domain:test --tests "com.novaempire.core.domain.theme.ShippedThemesTest"
 ```
+
+Ce test lit les fichiers réellement livrés et échoue si un `ThemeType` n'a pas son JSON, s'il manque
+une clé, si une couleur n'est pas analysable, si un réglage graphique est hors bornes ou si le champ
+`name` ne correspond pas à l'énumération. C'est le moyen le plus rapide de valider un nouveau thème.
+
+## Étape 4 : Activer le Thème
+
+Le thème se choisit dans le jeu : **Menu principal → SETTINGS → THEME**. Les options sont
+`AUTOMATIC` (suit le calendrier saisonnier), puis un choix explicite par thème. Le changement est
+appliqué immédiatement et conservé d'une session à l'autre.
+
+Les thèmes saisonniers ne s'activent d'eux-mêmes que si la préférence est sur `AUTOMATIC` :
+
+| Fenêtre | Thème |
+|---|---|
+| 25 octobre → 5 novembre | `HALLOWEEN` |
+| 20 décembre → 5 janvier | `WINTER` |
+| le reste de l'année | `DEFAULT` |
+
+Ces fenêtres sont définies dans `core/domain/.../theme/ThemeResolver.kt`. Un thème que vous ajoutez
+n'y est pas rattaché : il est accessible via le sélecteur, et il faut modifier `seasonalTheme` pour
+lui donner sa propre période.
+
+*Note : la bascule saisonnière est évaluée au démarrage de l'écran, pas en continu — une application
+laissée ouverte toute la nuit ne changera de thème qu'au prochain lancement.*

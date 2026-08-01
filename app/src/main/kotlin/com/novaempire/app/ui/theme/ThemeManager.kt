@@ -6,46 +6,32 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
-import com.novaempire.core.domain.models.ThemeType
-import org.json.JSONObject
-import java.util.Calendar
+import com.novaempire.core.domain.theme.GraphicsConfig
+import com.novaempire.core.domain.theme.HexColor
+import com.novaempire.core.domain.theme.ThemeDefaults
+import com.novaempire.core.domain.theme.ThemeDefinition
+import com.novaempire.core.domain.theme.ThemeParser
+import com.novaempire.core.domain.theme.ThemeType
 
+/**
+ * Traduit les définitions de thème (`:core:domain`, pur Kotlin et testé) en objets Compose.
+ *
+ * Tout ce qui peut être testé sur la JVM — modèle, parsing, validation des couleurs, résolution
+ * saisonnière — vit dans `:core:domain`. Il ne reste ici que ce qui dépend d'Android : la lecture
+ * des assets et la construction du [ColorScheme].
+ */
 object ThemeManager {
     private const val TAG = "ThemeManager"
 
-    /** Réglages graphiques de secours — alignés sur `assets/themes/default.json`. */
-    val DEFAULT_GRAPHICS = GraphicsConfig(
-        outlineStrokeWidth = 3f,
-        planetShadowAlpha = 0.6f,
-        blurRadius = 12f,
-        particleCountMultiplier = 1f
-    )
+    /** Réglages graphiques de secours, identiques au thème par défaut livré. */
+    val DEFAULT_GRAPHICS: GraphicsConfig = ThemeDefaults.FALLBACK.graphics
 
-    /**
-     * Un thème prêt à l'emploi : les couleurs sont converties **au chargement**, pas à chaque
-     * recomposition. Une chaîne hexadécimale invalide dans un JSON écrit à la main devenait sinon
-     * une `IllegalArgumentException` levée en pleine composition, donc un crash au lancement.
-     */
     private data class ResolvedTheme(val colorScheme: ColorScheme, val graphics: GraphicsConfig)
 
     private val loadedThemes = mutableMapOf<ThemeType, ResolvedTheme>()
 
-    private val fallbackColorScheme = novaColorScheme(
-        primary = NeonCyan,
-        secondary = NeonRed,
-        tertiary = NeonOrange,
-        background = VoidBlack,
-        surface = SurfaceDark,
-        surfaceVariant = SurfaceLight,
-        onPrimary = TextPrimary,
-        onSecondary = TextPrimary,
-        onTertiary = TextPrimary,
-        onBackground = TextPrimary,
-        onSurface = TextPrimary,
-        onSurfaceVariant = TextSecondary
-    )
-
-    private val fallbackTheme = ResolvedTheme(fallbackColorScheme, DEFAULT_GRAPHICS)
+    /** Thème de secours dérivé de la copie compilée du thème par défaut — plus de palette dupliquée. */
+    private val fallbackTheme = resolveTheme(ThemeDefaults.FALLBACK)
 
     /**
      * Charge un fichier par valeur de [ThemeType], en `themes/<nom en minuscules>.json`.
@@ -58,72 +44,54 @@ object ThemeManager {
     fun init(context: Context) {
         loadedThemes.clear()
         for (themeType in ThemeType.entries) {
-            val path = "themes/${themeType.name.lowercase()}.json"
-            try {
-                val json = context.assets.open(path).bufferedReader().use { it.readText() }
-                loadedThemes[themeType] = resolveTheme(parseThemeDefinition(json))
+            val raw = try {
+                context.assets.open(themeType.assetPath).bufferedReader().use { it.readText() }
             } catch (e: Exception) {
-                Log.e(TAG, "Impossible de charger le thème $themeType depuis $path: ${e.message}")
+                Log.e(TAG, "Asset de thème illisible: ${themeType.assetPath} (${e.message})")
+                continue
             }
+            val definition = ThemeParser.parseOrNull(raw)
+            if (definition == null) {
+                Log.e(TAG, "JSON de thème invalide: ${themeType.assetPath}")
+                continue
+            }
+            // Les défauts non bloquants (couleur illisible, réglage hors bornes) sont journalisés
+            // puis absorbés par les valeurs de secours role par role. `ShippedThemesTest` en fait
+            // un échec de build, donc ce chemin ne devrait jamais servir en production.
+            definition.problems().forEach { Log.w(TAG, "${themeType.assetPath}: $it") }
+            loadedThemes[themeType] = resolveTheme(definition)
         }
         Log.d(TAG, "Thèmes chargés: ${loadedThemes.keys}")
     }
 
-    private fun parseThemeDefinition(jsonStr: String): ThemeDefinition {
-        val jsonObj = JSONObject(jsonStr)
-        val colorsObj = jsonObj.getJSONObject("colors")
-        val graphicsObj = jsonObj.getJSONObject("graphics")
+    /**
+     * Convertit les couleurs **au chargement**, pas au rendu : une chaîne hexadécimale invalide
+     * faisait auparavant lever `android.graphics.Color.parseColor` en pleine composition, donc
+     * planter l'application. Ici, chaque rôle a une valeur de secours.
+     */
+    private fun resolveTheme(def: ThemeDefinition): ResolvedTheme {
+        val fallback = ThemeDefaults.FALLBACK.colors
+        fun color(value: String, fallbackValue: String): Color =
+            Color(HexColor.parse(value) ?: HexColor.parse(fallbackValue)!!)
 
-        return ThemeDefinition(
-            name = jsonObj.getString("name"),
-            colors = ThemeColors(
-                primary = colorsObj.getString("primary"),
-                secondary = colorsObj.getString("secondary"),
-                tertiary = colorsObj.getString("tertiary"),
-                background = colorsObj.getString("background"),
-                surface = colorsObj.getString("surface"),
-                surfaceVariant = colorsObj.getString("surfaceVariant"),
-                onPrimary = colorsObj.getString("onPrimary"),
-                onSecondary = colorsObj.getString("onSecondary"),
-                onTertiary = colorsObj.getString("onTertiary"),
-                onBackground = colorsObj.getString("onBackground"),
-                onSurface = colorsObj.getString("onSurface"),
-                onSurfaceVariant = colorsObj.getString("onSurfaceVariant")
+        return ResolvedTheme(
+            colorScheme = novaColorScheme(
+                primary = color(def.colors.primary, fallback.primary),
+                secondary = color(def.colors.secondary, fallback.secondary),
+                tertiary = color(def.colors.tertiary, fallback.tertiary),
+                background = color(def.colors.background, fallback.background),
+                surface = color(def.colors.surface, fallback.surface),
+                surfaceVariant = color(def.colors.surfaceVariant, fallback.surfaceVariant),
+                onPrimary = color(def.colors.onPrimary, fallback.onPrimary),
+                onSecondary = color(def.colors.onSecondary, fallback.onSecondary),
+                onTertiary = color(def.colors.onTertiary, fallback.onTertiary),
+                onBackground = color(def.colors.onBackground, fallback.onBackground),
+                onSurface = color(def.colors.onSurface, fallback.onSurface),
+                onSurfaceVariant = color(def.colors.onSurfaceVariant, fallback.onSurfaceVariant)
             ),
-            graphics = GraphicsConfig(
-                outlineStrokeWidth = graphicsObj.getDouble("outlineStrokeWidth").toFloat(),
-                planetShadowAlpha = graphicsObj.getDouble("planetShadowAlpha").toFloat(),
-                blurRadius = graphicsObj.getDouble("blurRadius").toFloat(),
-                particleCountMultiplier = graphicsObj.getDouble("particleCountMultiplier").toFloat()
-            )
+            graphics = def.graphics
         )
     }
-
-    private fun resolveTheme(def: ThemeDefinition): ResolvedTheme = ResolvedTheme(
-        colorScheme = novaColorScheme(
-            primary = parseColor(def.colors.primary, NeonCyan),
-            secondary = parseColor(def.colors.secondary, NeonRed),
-            tertiary = parseColor(def.colors.tertiary, NeonOrange),
-            background = parseColor(def.colors.background, VoidBlack),
-            surface = parseColor(def.colors.surface, SurfaceDark),
-            surfaceVariant = parseColor(def.colors.surfaceVariant, SurfaceLight),
-            onPrimary = parseColor(def.colors.onPrimary, TextPrimary),
-            onSecondary = parseColor(def.colors.onSecondary, TextPrimary),
-            onTertiary = parseColor(def.colors.onTertiary, TextPrimary),
-            onBackground = parseColor(def.colors.onBackground, TextPrimary),
-            onSurface = parseColor(def.colors.onSurface, TextPrimary),
-            onSurfaceVariant = parseColor(def.colors.onSurfaceVariant, TextSecondary)
-        ),
-        graphics = def.graphics
-    )
-
-    private fun parseColor(colorString: String, fallback: Color): Color =
-        try {
-            Color(android.graphics.Color.parseColor(colorString))
-        } catch (e: IllegalArgumentException) {
-            Log.e(TAG, "Couleur invalide dans un thème: '$colorString', valeur de secours utilisée")
-            fallback
-        }
 
     /**
      * Construit un [ColorScheme] à partir des douze rôles exposés par les JSON, puis **dérive** les
@@ -179,18 +147,4 @@ object ThemeManager {
 
     private fun resolve(themeType: ThemeType): ResolvedTheme =
         loadedThemes[themeType] ?: loadedThemes[ThemeType.DEFAULT] ?: fallbackTheme
-
-    fun getActiveTheme(savedTheme: ThemeType? = null): ThemeType {
-        if (savedTheme != null && savedTheme != ThemeType.DEFAULT) return savedTheme
-
-        val calendar = Calendar.getInstance()
-        val month = calendar.get(Calendar.MONTH)
-        val day = calendar.get(Calendar.DAY_OF_MONTH)
-
-        return when {
-            (month == Calendar.OCTOBER && day >= 25) || (month == Calendar.NOVEMBER && day <= 5) -> ThemeType.HALLOWEEN
-            (month == Calendar.DECEMBER && day >= 20) || (month == Calendar.JANUARY && day <= 5) -> ThemeType.WINTER
-            else -> ThemeType.DEFAULT
-        }
-    }
 }

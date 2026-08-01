@@ -18,12 +18,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.novaempire.app.ui.components.IndustrialButton
+import com.novaempire.app.ui.theme.LocalThemeType
 import com.novaempire.app.ui.theme.NeonCyan
 import com.novaempire.app.ui.theme.NeonRed
 import com.novaempire.app.ui.theme.TextSecondary
+import com.novaempire.core.domain.theme.ThemeType
 
+/**
+ * @param themePreference choix du joueur, `null` = automatique (saisonnier).
+ * @param onThemePreferenceChange appliqué **immédiatement**, contrairement aux réglages ci-dessous
+ *   qui suivent le schéma brouillon/APPLY (et ne sont toujours pas persistés).
+ */
 @Composable
-fun SettingsScreen(onBackClick: () -> Unit) {
+fun SettingsScreen(
+    onBackClick: () -> Unit,
+    themePreference: ThemeType? = null,
+    onThemePreferenceChange: (ThemeType?) -> Unit = {}
+) {
     var masterVolume by remember { mutableStateOf(0.8f) }
     var sfxVolume by remember { mutableStateOf(0.7f) }
     var holoEffects by remember { mutableStateOf(true) }
@@ -56,6 +67,16 @@ fun SettingsScreen(onBackClick: () -> Unit) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        SettingsSection(title = "THEME") {
+            ThemeSelector(
+                preference = themePreference,
+                activeTheme = LocalThemeType.current,
+                onSelect = onThemePreferenceChange
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
         SettingsSection(title = "GAMEPLAY") {
             IndustrialButton(
                 text = "RESET TUTORIAL DATA",
@@ -84,6 +105,48 @@ fun SettingsScreen(onBackClick: () -> Unit) {
                 modifier = Modifier.weight(2f)
             )
         }
+    }
+}
+
+/**
+ * Le sélecteur qui manquait : sans lui, HALLOWEEN et WINTER n'étaient atteignables que par leur
+ * fenêtre calendaire — une vingtaine de jours par an — et le joueur ne pouvait ni les demander hors
+ * saison ni les refuser pendant.
+ */
+@Composable
+fun ThemeSelector(
+    preference: ThemeType?,
+    activeTheme: ThemeType,
+    onSelect: (ThemeType?) -> Unit
+) {
+    // `null` en tête : c'est le comportement par défaut du jeu, et la seule option qui laisse les
+    // thèmes saisonniers s'activer d'eux-mêmes.
+    val options: List<Pair<ThemeType?, String>> = listOf(
+        null to "AUTOMATIC",
+        ThemeType.DEFAULT to "NOIR FUTURISM",
+        ThemeType.HALLOWEEN to "HALLOWEEN",
+        ThemeType.WINTER to "WINTER"
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.forEach { (value, label) ->
+            IndustrialButton(
+                text = label,
+                onClick = { onSelect(value) },
+                color = if (value == preference) NeonCyan else TextSecondary,
+                isPrimary = value == preference,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        Text(
+            text = if (preference == null) {
+                "Seasonal — currently ${activeTheme.name}"
+            } else {
+                "Manual override — seasonal themes disabled"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(top = 4.dp)
+        )
     }
 }
 

@@ -12,10 +12,14 @@ import com.novaempire.app.audio.AudioManager
 import com.novaempire.app.audio.SoundType
 import com.novaempire.core.engine.GameEffect
 import com.novaempire.core.engine.save.LoadResult
+import com.novaempire.app.ui.theme.ThemePreferenceStore
+import com.novaempire.core.domain.theme.ThemeType
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -33,6 +37,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     val notifications: SharedFlow<Pair<String, String>> = _notifications.asSharedFlow()
 
     private val saveRepository: SaveRepository
+
+    // Préférence d'affichage, volontairement hors du GameState : elle doit exister avant qu'une
+    // partie soit chargée (menu principal, écrans de sélection) et ne doit rien devoir au format
+    // de sauvegarde. `null` = automatique, c'est-à-dire suivre le thème saisonnier.
+    private val themePreferenceStore = ThemePreferenceStore(application)
+    private val _themePreference = MutableStateFlow(themePreferenceStore.read())
+    val themePreference: StateFlow<ThemeType?> = _themePreference.asStateFlow()
 
     init {
         val saveDir = File(application.filesDir, "saves")
@@ -101,6 +112,18 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
         engine.dispose()
         AudioManager.release()
+    }
+
+    /**
+     * Change le thème. [theme] à `null` = automatique (saisonnier).
+     *
+     * Appliqué immédiatement — le thème est le seul réglage dont l'effet est visible sans attendre,
+     * l'aperçu instantané vaut mieux qu'un « APPLY » qui ne dit pas à quoi on s'engage.
+     */
+    fun setThemePreference(theme: ThemeType?) {
+        if (_themePreference.value == theme) return
+        themePreferenceStore.write(theme)
+        _themePreference.value = theme
     }
 
     fun hasSavedGame(): Boolean = saveRepository.hasSavedGame()
