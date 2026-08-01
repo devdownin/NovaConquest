@@ -10,32 +10,44 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
-import com.novaempire.core.domain.models.ThemeType
+import com.novaempire.app.settings.AppSettings
+import com.novaempire.app.settings.LocalDisplaySettings
+import com.novaempire.core.domain.theme.ThemeResolver
+import com.novaempire.core.domain.theme.ThemeType
 
 /**
- * Thème effectivement appliqué (choix sauvegardé résolu contre le calendrier saisonnier).
- * Tout le monde doit lire *ça* plutôt que rappeler `ThemeManager.getActiveTheme()` : trois appelants
- * résolvaient le thème par trois chemins différents et pouvaient se retrouver en désaccord — la
- * carte tactique dessinait avec les réglages DEFAULT pendant qu'elle s'affichait aux couleurs
- * d'Halloween.
+ * Thème effectivement appliqué (préférence du joueur résolue contre le calendrier saisonnier).
+ * Tout le monde doit lire *ça* plutôt que résoudre le thème de son côté : trois appelants le
+ * faisaient par trois chemins différents et pouvaient se retrouver en désaccord — la carte tactique
+ * dessinait avec les réglages DEFAULT pendant qu'elle s'affichait aux couleurs d'Halloween.
  */
 val LocalThemeType = staticCompositionLocalOf { ThemeType.DEFAULT }
 
 /** Réglages graphiques du thème actif ([LocalThemeType]). */
 val LocalGraphicsConfig = staticCompositionLocalOf { ThemeManager.DEFAULT_GRAPHICS }
 
+/** Palette de la carte tactique du thème actif ([LocalThemeType]). */
+val LocalMapPalette = staticCompositionLocalOf { MapPalette.DEFAULT }
+
+/**
+ * Applique le thème **et** les réglages d'affichage : les deux décrivent la même chose — comment le
+ * jeu se présente — et les composants décoratifs ont besoin des deux au même endroit.
+ */
 @Composable
 fun NovaEmpireTheme(
-    themeType: ThemeType = ThemeType.DEFAULT,
+    settings: AppSettings = AppSettings(),
     content: @Composable () -> Unit
 ) {
-    // Le thème ne dépend que de `themeType` et de la date : sans `remember`, chaque recomposition
+    // Le thème ne dépend que de la préférence et de la date : sans `remember`, chaque recomposition
     // de la racine (donc chaque changement de GameState) reconstruisait un ColorScheme neuf et
     // invalidait tous les lecteurs de MaterialTheme.colorScheme.
-    val activeTheme = remember(themeType) { ThemeManager.getActiveTheme(themeType) }
+    val activeTheme = remember(settings.theme) { ThemeResolver.resolve(settings.theme) }
     val colorScheme = remember(activeTheme) { ThemeManager.getColorSchemeForTheme(activeTheme) }
     val graphicsConfig = remember(activeTheme) { ThemeManager.getGraphicsConfig(activeTheme) }
-    val typography = remember(colorScheme) { novaTypography(colorScheme) }
+    val mapPalette = remember(activeTheme) { ThemeManager.getMapPalette(activeTheme) }
+    val typography = remember(colorScheme, settings.highContrast) {
+        novaTypography(colorScheme, settings.highContrast)
+    }
 
     val view = LocalView.current
     if (!view.isInEditMode) {
@@ -48,7 +60,9 @@ fun NovaEmpireTheme(
 
     CompositionLocalProvider(
         LocalThemeType provides activeTheme,
-        LocalGraphicsConfig provides graphicsConfig
+        LocalGraphicsConfig provides graphicsConfig,
+        LocalMapPalette provides mapPalette,
+        LocalDisplaySettings provides settings
     ) {
         MaterialTheme(
             colorScheme = colorScheme,

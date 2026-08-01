@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
+import com.novaempire.app.settings.LocalDisplaySettings
 import kotlin.random.Random
 
 // Both composables pre-render to a Bitmap once per unique canvas size, then blit with a single
@@ -32,6 +33,10 @@ fun HalftoneBackground(
     dotSize: Float = 2f,
     spacing: Float = 12f
 ) {
+    // Effet purement décoratif : il se désactive lui-même quand le joueur coupe les effets
+    // holographiques, plutôt que d'imposer la condition à chacun de ses appelants.
+    if (!LocalDisplaySettings.current.holographicEffects) return
+
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
 
     val bitmap = remember(canvasSize, color, dotSize, spacing) {
@@ -70,6 +75,10 @@ fun NoiseOverlay(
     modifier: Modifier = Modifier,
     alpha: Float = 0.10f   // grain film fort — signature Bilal
 ) {
+    // Effet purement décoratif : il se désactive lui-même quand le joueur coupe les effets
+    // holographiques, plutôt que d'imposer la condition à chacun de ses appelants.
+    if (!LocalDisplaySettings.current.holographicEffects) return
+
     val step = 16
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
 

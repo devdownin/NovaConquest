@@ -85,6 +85,9 @@ fun IndustrialPanel(
     // sinon figé sur la valeur du premier rendu et ignorait le thème choisi. Un CompositionLocal
     // statique ne coûte rien dans le chemin de rendu.
     val blurRadius = com.novaempire.app.ui.theme.LocalGraphicsConfig.current.blurRadius
+    // Le flou « verre dépoli » est l'effet le plus coûteux de l'interface — c'est lui que coupe le
+    // réglage « Holographic Effects ».
+    val blurEnabled = com.novaempire.app.settings.LocalDisplaySettings.current.holographicEffects
     Surface(
         modifier = modifier,
         color = Color.Transparent,
@@ -96,7 +99,7 @@ fun IndustrialPanel(
                 modifier = Modifier
                     .matchParentSize()
                     .then(
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                        if (blurEnabled && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                             Modifier.graphicsLayer {
                                 renderEffect = androidx.compose.ui.graphics.BlurEffect(
                                     blurRadius, blurRadius, androidx.compose.ui.graphics.TileMode.Clamp

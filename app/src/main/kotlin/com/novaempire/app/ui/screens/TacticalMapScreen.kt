@@ -62,7 +62,6 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.math.roundToInt
-import kotlin.math.roundToInt
 
 /** Hex radius in density-independent units — 30.dp reproduces the historical 60 px on a 2x screen. */
 private val HEX_RADIUS_DP = 30.dp
@@ -128,10 +127,12 @@ fun TacticalMapScreen(
     val currentOnCapturePlanet by rememberUpdatedState(onCapturePlanet)
     val currentOnLoadUnit by rememberUpdatedState(onLoadUnit)
     val currentOnDeployUnit by rememberUpdatedState(onDeployUnit)
-    // Le thème effectif est résolu une seule fois par NovaEmpireTheme. Lire ici
-    // `gameState.themeConfig.currentTheme` brut court-circuitait la résolution saisonnière : la
-    // carte se dessinait avec les réglages DEFAULT alors que l'interface était en HALLOWEEN.
+    // Le thème effectif est résolu une seule fois par NovaEmpireTheme. Cet écran lisait autrefois
+    // la préférence brute depuis le GameState, sans la résoudre : la carte se dessinait avec les
+    // réglages DEFAULT alors que l'interface était en HALLOWEEN.
     val graphicsConfig = com.novaempire.app.ui.theme.LocalGraphicsConfig.current
+    val mapPalette = com.novaempire.app.ui.theme.LocalMapPalette.current
+    val displaySettings = com.novaempire.app.settings.LocalDisplaySettings.current
 
     val laserProgress = remember { Animatable(0f) }
     val explosionScale = remember { Animatable(0f) }
@@ -494,17 +495,7 @@ fun TacticalMapScreen(
                     val isExplored = exploredHexes.contains(tile.coord)
 
                     if (isExplored) {
-                        val baseColor = when (tile.terrain) {
-                            TerrainType.EMPTY -> Color(0xFF181210)  // béton froid vide
-                            TerrainType.ASTEROIDS -> Color(0xFF241C14)  // roche brun-gris
-                            TerrainType.NEBULA -> Color(0xFF261530)  // violet brume épais
-                            TerrainType.PLANET -> Color(0xFF162018)  // vert-noir profond
-                            TerrainType.BLACK_HOLE -> Color(0xFF1A0A00)  // brun-noir abyssal
-                            TerrainType.WORMHOLE -> Color(0xFF12152A)  // bleu nuit
-                            TerrainType.PLASMA_CLOUD -> Color(0xFF2A1208)  // brun rouille sombre
-                            TerrainType.ION_STORM -> Color(0xFF20202E)  // gris-bleu lourd
-                            TerrainType.ANOMALY -> Color(0xFF142218)  // vert-brun étrange
-                        }
+                        val baseColor = mapPalette.terrainColor(tile.terrain)
 
                         val alpha = if (isVisible) 1f else 0.4f
 
@@ -513,10 +504,15 @@ fun TacticalMapScreen(
                             color = baseColor.copy(alpha = alpha), fill = true
                         )
 
+                        // En contraste élevé, le contour reste opaque et s'épaissit : c'est lui qui
+                        // porte la lisibilité de la grille, surtout sur les tuiles estompées par le
+                        // brouillard de guerre.
                         drawHexagonPath(
                             centerX = x, centerY = y, radius = hexRadius,
-                            color = Color(0xFF130F0A).copy(alpha = alpha * 0.85f),
-                            strokeWidth = 2.5f  // contour encre épaisse BD
+                            color = mapPalette.ink.copy(
+                                alpha = if (displaySettings.highContrast) 1f else alpha * 0.85f
+                            ),
+                            strokeWidth = if (displaySettings.highContrast) 4f else 2.5f
                         )
 
                         // Selection-dependent overlays (movement/attack range, targets, selected
@@ -531,14 +527,14 @@ fun TacticalMapScreen(
                         )
 
                         when (tile.terrain) {
-                            TerrainType.PLANET -> drawPlanet(x, y, hexRadius, tile.owner, graphicsConfig)
-                            TerrainType.ASTEROIDS -> drawAsteroids(x, y, hexRadius)
-                            TerrainType.NEBULA -> drawNebula(x, y, hexRadius)
-                            TerrainType.BLACK_HOLE -> drawBlackHole(x, y, hexRadius)
-                            TerrainType.WORMHOLE -> drawWormhole(x, y, hexRadius)
-                            TerrainType.PLASMA_CLOUD -> drawPlasmaCloud(x, y, hexRadius)
-                            TerrainType.ION_STORM -> drawIonStorm(x, y, hexRadius)
-                            TerrainType.ANOMALY -> drawAnomaly(x, y, hexRadius)
+                            TerrainType.PLANET -> drawPlanet(x, y, hexRadius, tile.owner, graphicsConfig, mapPalette)
+                            TerrainType.ASTEROIDS -> drawAsteroids(x, y, hexRadius, mapPalette)
+                            TerrainType.NEBULA -> drawNebula(x, y, hexRadius, mapPalette)
+                            TerrainType.BLACK_HOLE -> drawBlackHole(x, y, hexRadius, mapPalette)
+                            TerrainType.WORMHOLE -> drawWormhole(x, y, hexRadius, mapPalette)
+                            TerrainType.PLASMA_CLOUD -> drawPlasmaCloud(x, y, hexRadius, mapPalette)
+                            TerrainType.ION_STORM -> drawIonStorm(x, y, hexRadius, mapPalette)
+                            TerrainType.ANOMALY -> drawAnomaly(x, y, hexRadius, mapPalette)
                             TerrainType.EMPTY -> {}
                         }
 
@@ -556,11 +552,14 @@ fun TacticalMapScreen(
 
                         val unit = gameState.units[tile.coord]
                         if (unit != null && (isVisible || unit.faction == gameState.activeFaction)) {
-                            drawUnit(x, y, unit, hexRadius)
+                            drawUnit(x, y, unit, hexRadius, mapPalette)
                         }
                     } else {
-                        drawHexagonPath(x, y, hexRadius, color = Color(0xFF0D0A07), fill = true)
-                        drawHexagonPath(x, y, hexRadius, color = Color(0xFF130F0A), fill = false, strokeWidth = 2.5f)
+                        drawHexagonPath(x, y, hexRadius, color = mapPalette.unexplored, fill = true)
+                        drawHexagonPath(
+                            x, y, hexRadius, color = mapPalette.ink, fill = false,
+                            strokeWidth = if (displaySettings.highContrast) 4f else 2.5f
+                        )
                     }
                 }
             }
@@ -600,14 +599,17 @@ fun TacticalMapScreen(
                 siegeableCoords.forEach { if (it !in capturableCoords) overlayHex(it, NeonOrange.copy(alpha = 0.85f), fill = false, strokeWidth = 3f) }
                 selectedHex?.let { overlayHex(it, NeonCyan, fill = false, strokeWidth = 4f) }
 
-                // Blueprint scanline sweep (animation — lives here to avoid terrain redraw)
-                val scanlineY = sweepProgress.value * size.height
-                drawLine(
-                    color = NeonCyan.copy(alpha = 0.10f),
-                    start = Offset(-size.width, scanlineY - size.height / 2f),
-                    end = Offset(size.width, scanlineY - size.height / 2f),
-                    strokeWidth = 2f
-                )
+                // Blueprint scanline sweep (animation — lives here to avoid terrain redraw).
+                // Purement décoratif : coupé avec les effets holographiques.
+                if (displaySettings.holographicEffects) {
+                    val scanlineY = sweepProgress.value * size.height
+                    drawLine(
+                        color = NeonCyan.copy(alpha = 0.10f),
+                        start = Offset(-size.width, scanlineY - size.height / 2f),
+                        end = Offset(size.width, scanlineY - size.height / 2f),
+                        strokeWidth = 2f
+                    )
+                }
 
                 // Pulsing halo on units that still have actions available this turn
                 val pulseAlpha = 0.25f + pulseProgress.value * 0.45f
@@ -689,9 +691,9 @@ fun TacticalMapScreen(
                             drawCircle(
                                 brush = Brush.radialGradient(
                                     colorStops = arrayOf(
-                                        0.0f to Color(0xFF8B3A0A).copy(alpha = (1f - explosionScale.value) * 0.95f),
-                                        0.4f to Color(0xFF3D1A06).copy(alpha = (0.7f - explosionScale.value).coerceAtLeast(0f)),
-                                        0.8f to Color(0xFF1A0D04).copy(alpha = (0.3f - explosionScale.value).coerceAtLeast(0f)),
+                                        0.0f to mapPalette.explosionCore.copy(alpha = (1f - explosionScale.value) * 0.95f),
+                                        0.4f to mapPalette.explosionMid.copy(alpha = (0.7f - explosionScale.value).coerceAtLeast(0f)),
+                                        0.8f to mapPalette.explosionEdge.copy(alpha = (0.3f - explosionScale.value).coerceAtLeast(0f)),
                                         1.0f to Color.Transparent
                                     ),
                                     center = Offset(dx, dy),
@@ -699,6 +701,13 @@ fun TacticalMapScreen(
                                 ),
                                 radius = explosionRadius,
                                 center = Offset(dx, dy)
+                            )
+                            drawExplosionShards(
+                                centerX = dx,
+                                centerY = dy,
+                                radius = explosionRadius,
+                                progress = explosionScale.value,
+                                multiplier = graphicsConfig.particleCountMultiplier
                             )
                         }
                     }
@@ -723,7 +732,7 @@ fun TacticalMapScreen(
                         )
                     }
                     val animUnit = gameState.units[anim.to] ?: gameState.units[anim.from]
-                    if (animUnit != null) drawUnit(animX, animY, animUnit, hexRadius)
+                    if (animUnit != null) drawUnit(animX, animY, animUnit, hexRadius, mapPalette)
                 }
             }
         }
@@ -1262,9 +1271,61 @@ fun pixelToHex(x: Float, y: Float, centerX: Float, centerY: Float, hexRadius: Fl
     return hexRound(q.toDouble(), r.toDouble(), -q.toDouble() - r.toDouble())
 }
 
-fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float, owner: Faction?, graphicsConfig: com.novaempire.app.ui.theme.GraphicsConfig) {
+/** Nombre d'éclats d'une explosion à `particleCountMultiplier = 1`. */
+private const val BASE_EXPLOSION_SHARDS = 10
+
+/**
+ * Éclats d'encre projetés par une explosion — le système que `particleCountMultiplier` pilote.
+ *
+ * Le réglage existait dans les JSON de thème et dans le guide (« 2.0 pour des explosions
+ * massives ») mais n'avait aucun système à commander : l'explosion n'était qu'un dégradé radial.
+ *
+ * Les angles et longueurs sont dérivés de l'indice de l'éclat, pas d'un tirage aléatoire : un
+ * `Random` par passe de dessin ferait scintiller les éclats à chaque frame de l'animation.
+ */
+fun DrawScope.drawExplosionShards(
+    centerX: Float,
+    centerY: Float,
+    radius: Float,
+    progress: Float,
+    multiplier: Float
+) {
+    val count = (BASE_EXPLOSION_SHARDS * multiplier).roundToInt()
+    if (count <= 0) return
+
+    val fade = (1f - progress).coerceIn(0f, 1f)
+    if (fade <= 0f) return
+
+    for (i in 0 until count) {
+        // Angle d'or : répartition régulière quel que soit le nombre d'éclats, sans motif visible.
+        val angle = i * 2.399963f
+        val dirX = cos(angle)
+        val dirY = sin(angle)
+        // Longueur variable mais stable d'une frame à l'autre.
+        val reach = 0.75f + ((i * 37) % 50) / 100f
+        val inner = radius * 0.45f
+        val outer = radius * reach
+
+        drawLine(
+            color = BrunEncre.copy(alpha = fade * 0.75f),
+            start = Offset(centerX + dirX * inner, centerY + dirY * inner),
+            end = Offset(centerX + dirX * outer, centerY + dirY * outer),
+            strokeWidth = 2f,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+fun DrawScope.drawPlanet(
+    x: Float,
+    y: Float,
+    hexRadius: Float,
+    owner: Faction?,
+    graphicsConfig: com.novaempire.core.domain.theme.GraphicsConfig,
+    palette: MapPalette
+) {
     val planetColor = owner?.let { getFactionColor(it) } ?: NeonGreen
-    val inkBlack = Color(0xFF130F0A)
+    val inkBlack = palette.ink
 
     // Disque planète — gradient mat, pas de glow électrique
     drawCircle(
@@ -1354,9 +1415,9 @@ fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float, owner: Faction?, 
     }
 }
 
-fun DrawScope.drawUnit(x: Float, y: Float, unit: GameUnit, hexRadius: Float) {
+fun DrawScope.drawUnit(x: Float, y: Float, unit: GameUnit, hexRadius: Float, palette: MapPalette) {
     val factionColor = getFactionColor(unit.faction)
-    val inkBlack = Color(0xFF130F0A)
+    val inkBlack = palette.ink
     // Proportional to the hex (25/60 of the historical radius) so sprites scale with the board.
     val size = hexRadius * 0.42f
 
@@ -1493,18 +1554,18 @@ fun DrawScope.drawUnit(x: Float, y: Float, unit: GameUnit, hexRadius: Float) {
     val barWidth = hexRadius * 0.67f
     val barHeight = 3.5f
     val barTop = y + size + 9f
-    drawRect(Color(0xFF2D2620), Offset(x - barWidth / 2, barTop), Size(barWidth, barHeight))
+    drawRect(palette.healthBarBackground, Offset(x - barWidth / 2, barTop), Size(barWidth, barHeight))
     drawRect(factionColor.copy(alpha = 0.85f), Offset(x - barWidth / 2, barTop), Size(barWidth * hpPercent, barHeight))
     drawRect(inkBlack, Offset(x - barWidth / 2, barTop), Size(barWidth, barHeight), style = Stroke(width = 1f))
 }
 
-fun DrawScope.drawAsteroids(x: Float, y: Float, hexRadius: Float) {
+fun DrawScope.drawAsteroids(x: Float, y: Float, hexRadius: Float, palette: MapPalette) {
     val offsets = listOf(
         Offset(-15f, -20f), Offset(10f, -25f), Offset(20f, 10f),
         Offset(-25f, 15f), Offset(0f, 25f), Offset(-5f, 0f)
     )
     val sizes = listOf(8f, 12f, 10f, 14f, 6f, 16f)
-    val inkBlack = Color(0xFF130F0A)
+    val inkBlack = palette.ink
 
     offsets.forEachIndexed { index, offset ->
         val ax = x + offset.x
@@ -1520,17 +1581,17 @@ fun DrawScope.drawAsteroids(x: Float, y: Float, hexRadius: Float) {
         path.lineTo(ax - r, ay)
         path.close()
 
-        drawPath(path, color = Color(0xFF2A1C10), style = Fill)           // roche sombre
+        drawPath(path, color = palette.asteroidRock, style = Fill)           // roche sombre
         drawPath(path, color = inkBlack, style = Stroke(width = 2.5f))    // encre épaisse
         drawPath(path, color = NeonOrange.copy(alpha = 0.5f), style = Stroke(width = 1f))  // rouille
     }
 }
 
-fun DrawScope.drawNebula(x: Float, y: Float, hexRadius: Float) {
+fun DrawScope.drawNebula(x: Float, y: Float, hexRadius: Float, palette: MapPalette) {
     // Nuage violet-brume Bilal — pas de violet électrique
     drawCircle(
         brush = Brush.radialGradient(
-            colors = listOf(VioletBrume.copy(alpha = 0.6f), Color.Transparent),
+            colors = listOf(palette.nebulaHaze.copy(alpha = 0.6f), Color.Transparent),
             center = Offset(x - 10f, y - 10f),
             radius = hexRadius * 0.72f
         ),
@@ -1677,9 +1738,9 @@ fun hexRound(fracQ: Double, fracR: Double, fracS: Double): HexCoord {
     return HexCoord(q, r, s)
 }
 
-fun DrawScope.drawBlackHole(x: Float, y: Float, hexRadius: Float) {
-    val inkBlack = Color(0xFF130F0A)
-    val eventHorizonColor = Color(0xFF1A0A00)
+fun DrawScope.drawBlackHole(x: Float, y: Float, hexRadius: Float, palette: MapPalette) {
+    val inkBlack = palette.ink
+    val eventHorizonColor = palette.blackHole
 
     // Accretion disk (distortion effect via gradient)
     drawCircle(
@@ -1734,9 +1795,9 @@ fun DrawScope.drawBlackHole(x: Float, y: Float, hexRadius: Float) {
     )
 }
 
-fun DrawScope.drawWormhole(x: Float, y: Float, hexRadius: Float) {
-    val inkBlack = Color(0xFF130F0A)
-    val wormholeColor = Color(0xFF12152A)
+fun DrawScope.drawWormhole(x: Float, y: Float, hexRadius: Float, palette: MapPalette) {
+    val inkBlack = palette.ink
+    val wormholeColor = palette.wormhole
 
     // Spiral arms simulation with overlapping rotated ellipses
     for (i in 0 until 4) {
@@ -1793,8 +1854,8 @@ fun DrawScope.drawWormhole(x: Float, y: Float, hexRadius: Float) {
     )
 }
 
-fun DrawScope.drawPlasmaCloud(x: Float, y: Float, hexRadius: Float) {
-    val inkBlack = Color(0xFF130F0A)
+fun DrawScope.drawPlasmaCloud(x: Float, y: Float, hexRadius: Float, palette: MapPalette) {
+    val inkBlack = palette.ink
 
     // Rust/orange turbulent cloud
     drawCircle(
@@ -1846,13 +1907,13 @@ fun DrawScope.drawPlasmaCloud(x: Float, y: Float, hexRadius: Float) {
     }
 }
 
-fun DrawScope.drawIonStorm(x: Float, y: Float, hexRadius: Float) {
-    val inkBlack = Color(0xFF130F0A)
+fun DrawScope.drawIonStorm(x: Float, y: Float, hexRadius: Float, palette: MapPalette) {
+    val inkBlack = palette.ink
 
     // Heavy grey-blue cloud base
     drawCircle(
         brush = Brush.radialGradient(
-            colors = listOf(Color(0xFF20202E).copy(alpha = 0.7f), Color.Transparent),
+            colors = listOf(palette.ionStorm.copy(alpha = 0.7f), Color.Transparent),
             center = Offset(x, y),
             radius = hexRadius * 0.85f
         ),
@@ -1893,13 +1954,13 @@ fun DrawScope.drawIonStorm(x: Float, y: Float, hexRadius: Float) {
     drawPath(lightning2, color = NeonCyan.copy(alpha = 0.7f), style = Stroke(width = 2f))
 }
 
-fun DrawScope.drawAnomaly(x: Float, y: Float, hexRadius: Float) {
-    val inkBlack = Color(0xFF130F0A)
+fun DrawScope.drawAnomaly(x: Float, y: Float, hexRadius: Float, palette: MapPalette) {
+    val inkBlack = palette.ink
 
     // Strange green-brown base
     drawCircle(
         brush = Brush.radialGradient(
-            colors = listOf(Color(0xFF142218).copy(alpha = 0.6f), Color.Transparent),
+            colors = listOf(palette.anomaly.copy(alpha = 0.6f), Color.Transparent),
             center = Offset(x, y),
             radius = hexRadius * 0.75f
         ),
