@@ -134,20 +134,6 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
     }
 
     private suspend fun handleIntent(intent: GameIntent) {
-        if (intent is GameIntent.Undo) {
-            // Taking back an action must work even while the AI is thinking? No: the snapshot
-            // would be from before the AI's round and would hand the player a rewound galaxy.
-            // The guard below covers it, so this only ever runs on the player's own turn.
-            val previous = undoHistory.rollback()
-            if (previous == null) {
-                _errors.emit("Nothing to undo.")
-            } else {
-                _state.value = previous
-                _canUndo.value = undoHistory.canUndo
-            }
-            return
-        }
-
         if (_isAiThinking.value &&
             intent !is GameIntent.LoadGame &&
             intent !is GameIntent.StartNewGame &&
@@ -156,6 +142,21 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
             intent !is GameIntent.SelectFaction
         ) {
             _errors.emit("AI is thinking, please wait.")
+            return
+        }
+
+        // Placed *after* the AI guard on purpose: rolling back mid-round would hand the player a
+        // state from before the AI moved. Today `EndTurn` also empties the history on entry, so
+        // the stack would be empty anyway — but relying on that would make the safety of this
+        // branch depend on where an unrelated call happens to sit.
+        if (intent is GameIntent.Undo) {
+            val previous = undoHistory.rollback()
+            if (previous == null) {
+                _errors.emit("Nothing to undo.")
+            } else {
+                _state.value = previous
+                _canUndo.value = undoHistory.canUndo
+            }
             return
         }
 
