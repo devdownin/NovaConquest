@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.engine.GameEngine
 import com.novaempire.core.engine.GameIntent
+import com.novaempire.core.engine.save.CampaignProgressRepository
+import com.novaempire.core.engine.save.CampaignProgressStore
 import com.novaempire.core.engine.save.SaveManager
 import com.novaempire.core.engine.save.SaveRepository
 import com.novaempire.app.audio.AudioManager
@@ -20,6 +22,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.SharingStarted
@@ -55,6 +58,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     private val saveRepository: SaveRepository
 
+    // Campaign progress lives on its own file rather than in the turn autosave, which skips
+    // terminal states by design — so the one moment progress is created (winning a mission) was
+    // the one moment nothing was written. See CampaignProgressStore.
+    private val campaignProgress: CampaignProgressRepository
+
     // Préférences d'affichage et d'audio, volontairement hors du GameState : elles doivent exister
     // avant qu'une partie soit chargée (menu principal, écrans de sélection) et ne rien devoir au
     // format de sauvegarde.
@@ -65,8 +73,30 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     init {
         val saveDir = File(application.filesDir, "saves")
         saveRepository = SaveManager(saveDir)
+        campaignProgress = CampaignProgressStore(File(saveDir, "campaign_progress.json"))
         AudioManager.init(application)
         AudioManager.setVolumes(_settings.value.masterVolume, _settings.value.sfxVolume)
+
+        // Restore the earned record, then mirror it back to disk whenever it changes.
+        viewModelScope.launch {
+            val stored = withContext(Dispatchers.IO) { campaignProgress.read() }
+            engine.processIntent(GameIntent.RestoreCampaignProgress(stored))
+
+            // Wait for the restore to actually land before mirroring: intents are processed on a
+            // channel, so the first state emissions still carry an empty record — writing one of
+            // those back would erase the file that was just read.
+            engine.state.first { it.campaignState.toProgress() == stored }
+
+            var lastWritten = stored
+            engine.state.collect { state ->
+                val current = state.campaignState.toProgress()
+                if (current != lastWritten) {
+                    lastWritten = current
+                    val saved = withContext(Dispatchers.IO) { campaignProgress.write(current) }
+                    if (!saved) _notifications.emit("ÉCHEC DE L'ENREGISTREMENT DE LA PROGRESSION" to "RED")
+                }
+            }
+        }
 
         // Auto-save once an end-of-turn cycle has actually settled. EndTurn is processed
         // asynchronously (AI turns can take seconds), so saving the snapshot synchronously in
@@ -177,14 +207,17 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         engine.processIntent(GameIntent.StartNewGameWithSize(mapSize, archetype))
     }
 
-    fun startCampaignMission(mission: com.novaempire.core.domain.models.CampaignMission) {
+    fun startCampaignMission(
+        mission: com.novaempire.core.domain.models.CampaignMission,
+        perkIds: Set<String> = emptySet()
+    ) {
         // Start a new game with mission parameters
         engine.processIntent(GameIntent.StartNewGameWithSize(mission.mapSize, mission.mapArchetype))
 
         // Select the correct faction
         engine.processIntent(GameIntent.SelectFaction(mission.playerFaction))
 
-        // Apply campaign state
-        engine.processIntent(GameIntent.StartCampaign(mission.id))
+        // Apply campaign state, charging any glory perks bought for this run
+        engine.processIntent(GameIntent.StartCampaign(mission.id, perkIds))
     }
 }

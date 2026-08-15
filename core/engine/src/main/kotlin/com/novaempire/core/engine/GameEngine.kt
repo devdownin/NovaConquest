@@ -127,9 +127,14 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         val mission = missionId?.let { id ->
             com.novaempire.core.domain.models.CampaignRegistry.MISSIONS.find { it.id == id }
         }
-        val campaign = if (mission != null && result.winner == mission.playerFaction)
-            state.campaignState.copy(completedMissions = state.campaignState.completedMissions + mission.id)
-        else state.campaignState
+        val won = mission != null && result.winner == mission.playerFaction
+        // Glory is paid on the *first* completion only. Without that guard the shortest mission
+        // becomes a perk farm: replay it, bank the reward, replay it again.
+        val firstCompletion = won && mission!!.id !in state.campaignState.completedMissions
+        val campaign = if (won) state.campaignState.copy(
+            completedMissions = state.campaignState.completedMissions + mission!!.id,
+            gloryPoints = state.campaignState.gloryPoints + if (firstCompletion) mission.gloryReward else 0
+        ) else state.campaignState
         val finalState = state.copy(
             winner = result.winner,
             victoryReason = result.reason,
@@ -138,6 +143,9 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         val banner = result.winner?.let { "VICTORY: ${it.displayName} — ${result.reason}" }
             ?: "MATCH NUL — ${result.reason}"
         _effects.emit(GameEffect.ShowNotification(banner, "GOLD"))
+        if (firstCompletion && mission!!.gloryReward > 0) {
+            _effects.emit(GameEffect.ShowNotification("+${mission.gloryReward} GLOIRE", "GOLD"))
+        }
         return finalState
     }
 
@@ -170,6 +178,7 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
             intent !is GameIntent.StartNewGame &&
             intent !is GameIntent.StartNewGameWithSize &&
             intent !is GameIntent.StartCampaign &&
+            intent !is GameIntent.RestoreCampaignProgress &&
             intent !is GameIntent.SelectFaction
         ) {
             _errors.emit("AI is thinking, please wait.")
@@ -299,13 +308,23 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
     /**
      * A fresh board must not erase campaign progress. `createInitialState` builds a brand-new
      * [GameState], whose default `campaignState` is empty — so launching the next mission wiped the
-     * record of the previous one. Completed missions (and glory) carry over; the active mission is
-     * deliberately cleared, since the new game has not started one yet.
+     * record of the previous one.
+     *
+     * Completed missions are **unioned**: a mission either record remembers stays completed. Glory
+     * is taken from [previous] alone, because that is the running total the durable store feeds and
+     * the only one that accounts for perks already bought — a maximum would silently refund them.
+     *
+     * [keepActiveMission] is for loading a save, where the mission being played belongs to the file
+     * and only the earned record comes from elsewhere. A fresh board clears it: no mission is
+     * running yet.
      */
-    private fun GameState.keepingCampaignProgress(previous: GameState): GameState = copy(
-        campaignState = com.novaempire.core.domain.state.CampaignState(
-            activeMissionId = null,
-            completedMissions = previous.campaignState.completedMissions,
+    private fun GameState.keepingCampaignProgress(
+        previous: GameState,
+        keepActiveMission: Boolean = false
+    ): GameState = copy(
+        campaignState = campaignState.copy(
+            activeMissionId = if (keepActiveMission) campaignState.activeMissionId else null,
+            completedMissions = campaignState.completedMissions + previous.campaignState.completedMissions,
             gloryPoints = previous.campaignState.gloryPoints
         )
     )
@@ -325,8 +344,19 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         is GameIntent.StartNewGameWithSize ->
             GameResult(createInitialState(intent.mapSize, intent.archetype).keepingCampaignProgress(state))
         is GameIntent.LoadGame ->
-            GameResult(updateVision(intent.loadedState))
+            // A save carries the campaign record as it stood when the file was written, which can
+            // be older than the durable progress store the engine was seeded with at boot.
+            GameResult(updateVision(intent.loadedState).keepingCampaignProgress(state, keepActiveMission = true))
         is GameIntent.StartCampaign -> handleStartCampaign(state, intent)
+        is GameIntent.RestoreCampaignProgress ->
+            GameResult(
+                state.copy(
+                    campaignState = state.campaignState.copy(
+                        completedMissions = intent.progress.completedMissions,
+                        gloryPoints = intent.progress.gloryPoints
+                    )
+                )
+            )
         is GameIntent.EndTurn ->
             GameResult(updateVision(TurnManager.advanceTurn(state)))
         // Handled before the reducer — it replaces the state wholesale rather than deriving one.
@@ -376,5 +406,17 @@ sealed class GameIntent {
     data class LoadUnit(val carrierCoord: HexCoord, val unitCoord: HexCoord) : GameIntent()
     data class DeployUnit(val carrierCoord: HexCoord, val deployCoord: HexCoord, val unitIndex: Int = 0) : GameIntent()
     data class UseHeroAbility(val heroId: String) : GameIntent()
-    data class StartCampaign(val missionId: String) : GameIntent()
+    data class StartCampaign(
+        val missionId: String,
+        /** Glory perks bought for this run; see `GloryRegistry`. */
+        val perkIds: Set<String> = emptySet()
+    ) : GameIntent()
+
+    /**
+     * Seeds the engine with progress read from disk at boot. Carries no board state: it only puts
+     * back what the player has already earned, which no game in progress can be asked to remember.
+     */
+    data class RestoreCampaignProgress(
+        val progress: com.novaempire.core.domain.state.CampaignProgress
+    ) : GameIntent()
 }

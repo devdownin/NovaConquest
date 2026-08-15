@@ -182,12 +182,41 @@ internal fun handleChangeRelation(state: GameState, intent: GameIntent.ChangeRel
 }
 
 internal fun handleStartCampaign(state: GameState, intent: GameIntent.StartCampaign): GameResult {
-    var next = state.copy(campaignState = state.campaignState.copy(activeMissionId = intent.missionId))
     val mission = com.novaempire.core.domain.models.CampaignRegistry.MISSIONS.find { it.id == intent.missionId }
+        ?: return GameResult(state, "Unknown mission: ${intent.missionId}.")
+
+    // Everything the loadout could refuse is checked before anything is applied. A half-started
+    // mission — board reset, glory charged, bonuses missing — is far worse than a refused launch.
+    val perks = intent.perkIds.mapNotNull { com.novaempire.core.domain.models.GloryRegistry.find(it) }
+    if (perks.size != intent.perkIds.size) return GameResult(state, "Unknown glory perk requested.")
+    val price = perks.sumOf { it.cost }
+    if (price > state.campaignState.gloryPoints) {
+        return GameResult(state, "Not enough glory: $price required, ${state.campaignState.gloryPoints} available.")
+    }
+
+    var next = state.copy(
+        campaignState = state.campaignState.copy(
+            activeMissionId = intent.missionId,
+            // Spent is spent, win or lose. Refunding on defeat would make every perk free to try,
+            // and choosing what to bring is most of what makes glory a decision at all.
+            gloryPoints = state.campaignState.gloryPoints - price
+        )
+    )
+
+    val players = next.playerStates.toMutableMap()
+
+    // Perk effects are read off the perk's own fields, so a new entry in `GloryRegistry` works
+    // here without touching this function — no `when` to forget to extend.
+    players[mission.playerFaction]?.let { p ->
+        players[mission.playerFaction] = p.copy(
+            credits = p.credits + perks.sumOf { it.bonusCredits },
+            techUnlocked = p.techUnlocked + perks.mapNotNull { it.grantsTechId }
+        )
+    }
+
     // A campaign mission is a duel: the scripted enemy must actually be at war, otherwise the
     // utility AI (which only engages WAR / NPC targets) stays passive and the mission is trivial.
-    if (mission != null && mission.playerFaction != mission.enemyFaction) {
-        val players = next.playerStates.toMutableMap()
+    if (mission.playerFaction != mission.enemyFaction) {
         players[mission.playerFaction]?.let { p ->
             players[mission.playerFaction] = p.copy(
                 relations = p.relations.toMutableMap().also { it[mission.enemyFaction] = DiplomaticRelation.WAR }
@@ -201,8 +230,9 @@ internal fun handleStartCampaign(state: GameState, intent: GameIntent.StartCampa
                 credits = e.credits + mission.enemyBonusCredits
             )
         }
-        next = next.copy(playerStates = players)
     }
+
+    next = next.copy(playerStates = players)
     return GameResult(next)
 }
 

@@ -93,6 +93,7 @@ class UndoHistory(private val depth: Int = DEFAULT_DEPTH) {
             is GameIntent.StartNewGame,
             is GameIntent.StartNewGameWithSize,
             is GameIntent.StartCampaign,
+            is GameIntent.RestoreCampaignProgress,
             is GameIntent.LoadGame -> false
             else -> true
         }
