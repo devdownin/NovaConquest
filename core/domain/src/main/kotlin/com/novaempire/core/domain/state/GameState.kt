@@ -1,7 +1,6 @@
 package com.novaempire.core.domain.state
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
-import com.novaempire.core.domain.models.ThemeConfig
 
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.GalacticEvent
@@ -20,7 +19,10 @@ data class CombatEvent(
 @Serializable
 data class GameState(
     val version: Int = 1,
-    val themeConfig: ThemeConfig = ThemeConfig(),
+    // Le thème vivait ici, donc dans chaque sauvegarde. C'est une préférence d'application : elle
+    // est désormais persistée à part (`SettingsStore`), ce qui la rend disponible dès le menu
+    // principal et la sort du format de sauvegarde. Les anciennes sauvegardes portent encore la clé
+    // `themeConfig` ; `ignoreUnknownKeys` la laisse tomber sans migration.
     val turn: Int = 1,
     val activeFaction: Faction = Faction.DOMINION,
     val humanFaction: Faction = Faction.DOMINION,

@@ -19,8 +19,11 @@ val InterFamily    = FontFamily.Monospace
  *
  * Le mapping conserve exactement l'apparence du thème DEFAULT :
  * `onBackground` y vaut `TextPrimary` et `onSurfaceVariant` vaut `TextSecondary`.
+ *
+ * @param highContrast remonte le texte secondaire à la couleur du texte principal. C'est le seul
+ *   texte volontairement estompé de l'application, donc le seul levier de lisibilité à ce niveau.
  */
-fun novaTypography(colorScheme: ColorScheme): Typography = Typography(
+fun novaTypography(colorScheme: ColorScheme, highContrast: Boolean = false): Typography = Typography(
     displayLarge = TextStyle(
         fontFamily = RajdhaniFamily,
         fontWeight = FontWeight.Black,
@@ -55,7 +58,7 @@ fun novaTypography(colorScheme: ColorScheme): Typography = Typography(
         fontWeight = FontWeight.Normal,
         fontSize = 13.sp,
         lineHeight = 19.sp,
-        color = colorScheme.onSurfaceVariant
+        color = if (highContrast) colorScheme.onBackground else colorScheme.onSurfaceVariant
     ),
     labelLarge = TextStyle(
         fontFamily = RajdhaniFamily,

@@ -38,7 +38,8 @@ object UtilityEvaluator : AIStrategy {
         // Strategic layer.
         currentState = evaluateDiplomacy(currentState, aiFaction, reduce)
         currentState = evaluateEconomyAndTech(currentState, aiFaction)
-        currentState = evaluateHeroes(currentState, aiFaction)
+        currentState = evaluateHeroes(currentState, aiFaction, reduce)
+        currentState = evaluateHeroAbilities(currentState, aiFaction, reduce)
         currentState = evaluateProduction(currentState, aiFaction)
 
         // Tactical layer: score candidate actions per unit and take the best. Iterate over a stable
@@ -46,6 +47,17 @@ object UtilityEvaluator : AIStrategy {
         val unitIds = currentState.units.values.filter { it.faction == aiFaction }.map { it.id }
         for (id in unitIds) {
             currentState = actUnit(currentState, id, aiFaction, reduce)
+        }
+
+        // La frappe de suppression de Vance ne vaut qu'après coup : elle rend leur tir aux unités
+        // qui ont déjà tiré. On la déclenche donc ici, puis on repasse sur les unités — `actUnit`
+        // revérifie `hasAttacked`, et `hasMoved` reste vrai, donc c'est bien un second tir et pas
+        // un second déplacement.
+        if (shouldUseSuppressiveStrike(currentState, aiFaction)) {
+            currentState = reduce(currentState, GameIntent.UseHeroAbility(HeroRegistry.VANCE))
+            for (id in unitIds) {
+                currentState = actUnit(currentState, id, aiFaction, reduce)
+            }
         }
 
         val refreshedUnits = currentState.units.mapValues {
@@ -229,19 +241,84 @@ object UtilityEvaluator : AIStrategy {
         (baseMovement + BonusRegistry.sum(BonusType.MOVEMENT_MODIFIER, state.playerStates[faction], state.activeEvent))
             .coerceAtLeast(1)
 
-    private fun evaluateHeroes(state: GameState, faction: Faction): GameState {
+    /**
+     * Recrute au plus un héros par tour, **via le réducteur**.
+     *
+     * L'IA écrivait auparavant crédits et roster à la main : deux chemins pour une même règle, donc
+     * toute règle ajoutée au recrutement (plafond, exclusivité, prérequis) l'aurait contournée en
+     * silence.
+     */
+    private fun evaluateHeroes(
+        state: GameState,
+        faction: Faction,
+        reduce: (GameState, GameIntent) -> GameState
+    ): GameState {
         val playerState = state.playerStates[faction] ?: return state
-        val selectedHero = chooseHero(state, playerState)
+        val selectedHero = chooseHero(state, playerState) ?: return state
+        return reduce(state, GameIntent.RecruitHero(selectedHero.id))
+    }
 
-        if (selectedHero != null) {
-            val newPlayerStates = state.playerStates.toMutableMap()
-            newPlayerStates[faction] = playerState.copy(
-                credits = playerState.credits - HeroCostCalculator.costFor(selectedHero, faction),
-                recruitedHeroes = playerState.recruitedHeroes + selectedHero.id
-            )
-            return state.copy(playerStates = newPlayerStates)
+    /**
+     * Aptitudes actives à usage unique, côté IA.
+     *
+     * L'IA recrutait des héros mais n'utilisait **aucune** de leurs aptitudes : le joueur humain
+     * disposait seul de quatre effets à usage unique (une salve de flotte supplémentaire, +80
+     * crédits, une réparation à mi-coque, une techno instantanée) — un avantage unilatéral qui
+     * grandissait avec chaque héros recruté.
+     *
+     * Seules les trois aptitudes stratégiques sont jouées ici ; celle de Vance attend la fin de la
+     * phase tactique (cf. [executeAITurn]).
+     */
+    private fun evaluateHeroAbilities(
+        state: GameState,
+        faction: Faction,
+        reduce: (GameState, GameIntent) -> GameState
+    ): GameState {
+        var s = state
+        for (heroId in listOf(HeroRegistry.KAEL, HeroRegistry.NIX, HeroRegistry.ELARA)) {
+            if (!canUseAbility(s, faction, heroId)) continue
+            if (!isAbilityWorthwhile(s, faction, heroId)) continue
+            s = reduce(s, GameIntent.UseHeroAbility(heroId))
         }
-        return state
+        return s
+    }
+
+    private fun canUseAbility(state: GameState, faction: Faction, heroId: String): Boolean {
+        val ps = state.playerStates[faction] ?: return false
+        return ps.recruitedHeroes.contains(heroId) && !ps.heroAbilitiesUsed.contains(heroId)
+    }
+
+    /** Une aptitude à usage unique ne se joue que quand elle rend son maximum. */
+    internal fun isAbilityWorthwhile(state: GameState, faction: Faction, heroId: String): Boolean {
+        val ps = state.playerStates[faction] ?: return false
+        return when (heroId) {
+            // Une recherche en cours, et assez chère pour que sauter la file vaille l'usage unique.
+            HeroRegistry.KAEL -> {
+                val research = ps.researchInProgress
+                research != null && research.turnsRemaining >= KAEL_MIN_TURNS_SAVED
+            }
+            // Une flotte réellement amochée : réparer un éraflé gâcherait l'aptitude.
+            HeroRegistry.NIX -> {
+                val fleet = state.units.values.filter { it.faction == faction }
+                fleet.size >= NIX_MIN_FLEET &&
+                    fleet.count { it.currentHp * 2 <= it.type.maxHp } >= NIX_MIN_WOUNDED
+            }
+            // Des caisses vides alors qu'il y a de quoi dépenser : le convoi débloque un tour.
+            HeroRegistry.ELARA -> ps.credits < ELARA_CREDITS_THRESHOLD
+            else -> false
+        }
+    }
+
+    /**
+     * Vance : rendre son tir à la flotte ne vaut que si plusieurs unités ont tiré et qu'il reste
+     * une cible à portée — sinon l'aptitude part sans rien toucher.
+     */
+    internal fun shouldUseSuppressiveStrike(state: GameState, faction: Faction): Boolean {
+        if (!canUseAbility(state, faction, HeroRegistry.VANCE)) return false
+        val spent = state.units.values.filter { it.faction == faction && it.hasAttacked }
+        if (spent.size < VANCE_MIN_UNITS_SPENT) return false
+        val enemies = enemyUnitsOf(state, faction)
+        return spent.any { unit -> enemies.any { unit.position.distanceTo(it.position) <= unit.type.range } }
     }
 
     /**
@@ -267,6 +344,17 @@ object UtilityEvaluator : AIStrategy {
                 HeroCostCalculator.costFor(hero, playerState.faction)
         }
     }
+
+    /** Tours de recherche restants au-delà desquels le prototype de Kael vaut son usage unique. */
+    private const val KAEL_MIN_TURNS_SAVED = 2
+    /** Taille de flotte minimale pour que la réparation de Nix ne soit pas gâchée. */
+    private const val NIX_MIN_FLEET = 2
+    /** Unités sous la moitié de leur coque à partir desquelles Nix intervient. */
+    private const val NIX_MIN_WOUNDED = 2
+    /** En dessous de ce solde, le convoi d'Elara débloque réellement un tour de production. */
+    private const val ELARA_CREDITS_THRESHOLD = 15
+    /** Unités ayant déjà tiré à partir desquelles la frappe de Vance vaut son usage unique. */
+    private const val VANCE_MIN_UNITS_SPENT = 2
 
     private fun heroScore(hero: Hero, faction: Faction, atWar: Boolean, woundedFleet: Boolean): Int {
         // Affinity dominates: a hero aligned with the faction is the natural hire.

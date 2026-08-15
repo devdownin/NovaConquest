@@ -26,7 +26,9 @@ import com.novaempire.core.domain.models.CampaignMission
 @Composable
 fun CampaignSelectionScreen(
     onStartMission: (CampaignMission) -> Unit,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    /** Missions already completed, so the list can show progress instead of looking untouched. */
+    completedMissions: Set<String> = emptySet()
 ) {
     var selectedMission by remember { mutableStateOf<CampaignMission?>(null) }
     val missions = CampaignRegistry.MISSIONS
@@ -75,6 +77,7 @@ fun CampaignSelectionScreen(
                             MissionItem(
                                 mission = mission,
                                 isSelected = mission == selectedMission,
+                                isCompleted = mission.id in completedMissions,
                                 onClick = { selectedMission = mission }
                             )
                         }
@@ -147,6 +150,7 @@ fun CampaignSelectionScreen(
 fun MissionItem(
     mission: CampaignMission,
     isSelected: Boolean,
+    isCompleted: Boolean = false,
     onClick: () -> Unit
 ) {
     Box(
@@ -167,9 +171,9 @@ fun MissionItem(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Mission ${mission.id}",
+                text = if (isCompleted) "Mission ${mission.id} — TERMINÉE" else "Mission ${mission.id}",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (isCompleted) NeonCyan else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

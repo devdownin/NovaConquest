@@ -19,5 +19,24 @@
     "planetShadowAlpha": 0.6,
     "blurRadius": 12.0,
     "particleCountMultiplier": 1.0
+  },
+  "terrain": {
+    "void": "#FF181210",
+    "asteroids": "#FF241C14",
+    "asteroidRock": "#FF2A1C10",
+    "nebula": "#FF261530",
+    "nebulaHaze": "#FF3D2848",
+    "planet": "#FF162018",
+    "blackHole": "#FF1A0A00",
+    "wormhole": "#FF12152A",
+    "plasmaCloud": "#FF2A1208",
+    "ionStorm": "#FF20202E",
+    "anomaly": "#FF142218",
+    "ink": "#FF130F0A",
+    "unexplored": "#FF0D0A07",
+    "explosionCore": "#FF8B3A0A",
+    "explosionMid": "#FF3D1A06",
+    "explosionEdge": "#FF1A0D04",
+    "healthBarBackground": "#FF2D2620"
   }
 }
