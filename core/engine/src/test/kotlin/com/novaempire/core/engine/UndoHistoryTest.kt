@@ -5,6 +5,7 @@ import com.novaempire.core.domain.models.MapArchetype
 import com.novaempire.core.domain.models.MapSize
 import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.state.GameState
+import com.novaempire.core.domain.state.PlayerState
 import com.novaempire.core.hex.HexCoord
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -14,8 +15,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Undo is the comfort feature a turn-based game needs: without it a mis-tap costs a fleet its
- * whole turn, and the map commits a move the instant you touch a hex.
+ * Undo saves the mis-tap that would otherwise cost a fleet its whole turn — but it stops at the
+ * fog of war, so it cannot be turned into free reconnaissance.
  */
 class UndoHistoryTest {
 
@@ -85,6 +86,46 @@ class UndoHistoryTest {
         for (intent in undoable) {
             assertTrue("$intent should be undoable", UndoHistory.isUndoable(intent))
         }
+    }
+
+    // ── the fog-of-war rule ─────────────────────────────────────────────────
+
+    private fun stateExploring(vararg hexes: HexCoord) = GameState(
+        activeFaction = Faction.DOMINION,
+        playerStates = mapOf(
+            Faction.DOMINION to PlayerState(faction = Faction.DOMINION, exploredHexes = hexes.toSet())
+        )
+    )
+
+    @Test
+    fun anActionThatUncoversNewGroundIsNotUndoable() {
+        val before = stateExploring(HexCoord(0, 0, 0))
+        val after = stateExploring(HexCoord(0, 0, 0), HexCoord(1, 0, -1))
+        assertTrue(UndoHistory.revealsNewTerritory(before, after))
+    }
+
+    @Test
+    fun anActionThatUncoversNothingStaysUndoable() {
+        val seen = arrayOf(HexCoord(0, 0, 0), HexCoord(1, 0, -1))
+        assertFalse(UndoHistory.revealsNewTerritory(stateExploring(*seen), stateExploring(*seen)))
+    }
+
+    @Test
+    fun onlyTheActingFactionsFogCounts() {
+        // The AI uncovering ground during its own turn must not close the player's history.
+        val before = GameState(
+            activeFaction = Faction.DOMINION,
+            playerStates = mapOf(
+                Faction.DOMINION to PlayerState(Faction.DOMINION, exploredHexes = setOf(HexCoord(0, 0, 0))),
+                Faction.XYLAR to PlayerState(Faction.XYLAR, exploredHexes = emptySet())
+            )
+        )
+        val after = before.copy(
+            playerStates = before.playerStates + (
+                Faction.XYLAR to PlayerState(Faction.XYLAR, exploredHexes = setOf(HexCoord(5, 0, -5)))
+                )
+        )
+        assertFalse(UndoHistory.revealsNewTerritory(before, after))
     }
 
     @Test

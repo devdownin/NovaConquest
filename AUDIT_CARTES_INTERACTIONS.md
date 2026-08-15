@@ -302,19 +302,28 @@ prévisualisation du glisser et le réducteur, dans la continuité de B3. Le cha
 pas de couche de migration) et les appels positionnels compilent encore. L'IA n'est pas affectée
 — elle n'itère qu'une fois par unité et ne déplace qu'une fois.
 
-### T3 — Annulation dans le tour, mode confort  ✅
+### T3 — Annulation dans le tour  ✅
 
 Il n'existait aucun undo. L'architecture le rendait pourtant presque gratuit : `GameState` est
 immuable et tout passe par `reduce`, donc une pile d'états suffit. `UndoHistory` (objet séparé,
 testable sans piloter la coroutine d'intents), profondeur 20, vidée à la fin de tour et au
 chargement d'une partie.
 
-**Le choix de conception, explicite** : l'annulation est libre. Revenir en arrière restaure
-`exploredHexes`, mais le joueur a déjà *vu* ce que le déplacement révélait — l'exploration par
-avance-regarde-annule reste donc possible. L'option stricte (refuser d'annuler un déplacement
-ayant levé du brouillard) a été écartée : elle punit précisément le cas pour lequel la
-fonctionnalité existe, la fausse manipulation. Bouton dans la barre de la carte, `Ctrl+Z` au
-clavier.
+**Le choix de conception, explicite : l'annulation s'arrête au brouillard.** Une action qui
+découvre du terrain jamais vu est définitive. Revenir en arrière restaurerait `exploredHexes`,
+mais pas la mémoire du joueur : avancer, regarder, annuler serait de la reconnaissance gratuite.
+
+Conséquence non évidente, et c'est le cœur de la mise en œuvre : une telle action doit vider
+**tout** l'historique, pas seulement s'abstenir de s'y inscrire. Revenir à n'importe quel état
+antérieur ré-occulterait la même zone — l'exploit serait simplement différé d'un coup.
+
+Bouton dans la barre de la carte, `Ctrl+Z` au clavier.
+
+⚠️ **Coût ergonomique à surveiller en partie d'essai.** Un éclaireur avance presque toujours dans
+le brouillard : en pratique, l'annulation sera indisponible après la plupart des déplacements
+d'exploration, et le bouton se grisera sans explication. C'est inhérent à l'option retenue, pas un
+défaut de réalisation — mais si cela se révèle frustrant, la piste serait d'afficher *pourquoi*
+l'historique s'est fermé plutôt que d'assouplir la règle.
 
 ---
 
@@ -343,12 +352,14 @@ confortable — sinon le curseur recentrerait la caméra dès la première touch
 
 Ajoutés par les chantiers de la §5bis : `MapInteractionTest` (18 cas, dont les mondes neutres),
 `PartialMovementTest` (6 cas : coût réel, deux déplacements dans un tour, épuisement du budget,
-terrain difficile, structure immobile) et `UndoHistoryTest` (6 cas : ordre inverse, éviction au-delà
-de la profondeur, politique par type d'intent).
+terrain difficile, structure immobile) et `UndoHistoryTest` (9 cas : ordre inverse, éviction au-delà
+de la profondeur, politique par type d'intent, et la règle du brouillard — y compris le fait que
+seule la faction agissante compte, pour que l'exploration de l'IA ne ferme pas l'historique du
+joueur).
 
 **Les tests `:app` existent enfin** : Robolectric 4.12.2 fait tourner les tests Compose sur la JVM
 dans le job normal, via une étape CI dédiée — un échec d'interface ne peut donc pas passer pour une
 régression du moteur.
 
-Exécution locale hors Gradle (AGP inaccessible ici) : **240 tests, 0 échec**.
+Exécution locale hors Gradle (AGP inaccessible ici) : **243 tests, 0 échec**.
 Compilation de `:app` : vérifiée par CI (« Assemble debug APK », vert).

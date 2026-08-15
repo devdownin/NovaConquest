@@ -11,6 +11,9 @@ import com.novaempire.core.domain.state.GameState
  *
  * Undo is cheap here because the reducer is pure: a snapshot is just the previous [GameState],
  * and unchanged sub-structures are shared rather than copied.
+ *
+ * Undo deliberately stops at the fog of war: an action that uncovers new ground is final, so the
+ * feature cannot be turned into free reconnaissance. See [Companion.revealsNewTerritory].
  */
 class UndoHistory(private val depth: Int = DEFAULT_DEPTH) {
 
@@ -32,20 +35,37 @@ class UndoHistory(private val depth: Int = DEFAULT_DEPTH) {
     fun clear() = stack.clear()
 
     companion object {
+
+        /**
+         * Whether the step from [before] to [after] uncovered ground the acting faction had never
+         * seen.
+         *
+         * Undo may not survive such a step. Rolling one back would restore `exploredHexes`, but
+         * not the player's memory: advance, look, undo would be free reconnaissance. Note this
+         * has to close the **whole** history, not merely skip recording the revealing action —
+         * returning to any earlier state would re-hide the same ground, so the exploit would only
+         * be deferred by one action.
+         *
+         * Explored hexes only ever grow (`explored + visibleNow`), so comparing sizes is enough
+         * and avoids walking two large sets.
+         */
+        fun revealsNewTerritory(before: GameState, after: GameState): Boolean {
+            val faction = before.activeFaction
+            val was = before.playerStates[faction]?.exploredHexes?.size ?: 0
+            val now = after.playerStates[faction]?.exploredHexes?.size ?: 0
+            return now > was
+        }
         /** A turn holds a handful of actions; an unbounded stack would pin every galaxy forever. */
         const val DEFAULT_DEPTH = 20
 
         /**
-         * Whether an intent can be taken back.
+         * Whether the *kind* of intent can be taken back at all.
          *
-         * Everything a player does inside their own turn is undoable. The turn boundary and the
-         * game-lifecycle intents are not — they close the history instead.
+         * Everything a player does inside their own turn qualifies. The turn boundary and the
+         * game-lifecycle intents do not — they close the history instead.
          *
-         * This is the *comfort* reading of undo, chosen deliberately: rolling a move back also
-         * restores `exploredHexes`, but the player has already seen what the move revealed, so
-         * scouting by move-look-undo is possible. The stricter alternative — refusing to undo a
-         * move that uncovered fog — was rejected because it punishes the honest mis-tap, which is
-         * the case this feature exists for.
+         * This is only half the policy: an otherwise-undoable action still forfeits the history
+         * if it uncovered fog. See [revealsNewTerritory].
          */
         fun isUndoable(intent: GameIntent): Boolean = when (intent) {
             is GameIntent.EndTurn,

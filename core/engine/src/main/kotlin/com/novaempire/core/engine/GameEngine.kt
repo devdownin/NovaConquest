@@ -224,7 +224,12 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
             val currentState = _state.value
             val result = reduce(currentState, intent)
             if (result.error == null) {
-                if (UndoHistory.isUndoable(intent)) pushUndo(currentState) else clearUndo()
+                // An action that uncovered fog forfeits the *entire* history, not just its own
+                // step: rolling back to any earlier state would re-hide the same ground and hand
+                // the player free reconnaissance one action later.
+                val undoable = UndoHistory.isUndoable(intent) &&
+                    !UndoHistory.revealsNewTerritory(currentState, result.newState)
+                if (undoable) pushUndo(currentState) else clearUndo()
             }
             if (result.error != null) {
                 _errors.emit(result.error)
