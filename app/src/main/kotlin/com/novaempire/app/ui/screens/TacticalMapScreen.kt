@@ -1040,13 +1040,6 @@ fun TacticalMapScreen(
                                 end = Offset(currentEx, currentEy),
                                 strokeWidth = 8f
                             )
-                            drawExplosionShards(
-                                centerX = dx,
-                                centerY = dy,
-                                radius = explosionRadius,
-                                progress = explosionScale.value,
-                                multiplier = graphicsConfig.particleCountMultiplier
-                            )
                         }
 
                         if (explosionScale.value > 0f) {
@@ -1056,9 +1049,9 @@ fun TacticalMapScreen(
                                 drawCircle(
                                     brush = Brush.radialGradient(
                                         colorStops = arrayOf(
-                                            0.0f to Color(0xFF8B3A0A).copy(alpha = (1f - explosionScale.value) * 0.95f),
-                                            0.4f to Color(0xFF3D1A06).copy(alpha = (0.7f - explosionScale.value).coerceAtLeast(0f)),
-                                            0.8f to Color(0xFF1A0D04).copy(alpha = (0.3f - explosionScale.value).coerceAtLeast(0f)),
+                                            0.0f to mapPalette.explosionCore.copy(alpha = (1f - explosionScale.value) * 0.95f),
+                                            0.4f to mapPalette.explosionMid.copy(alpha = (0.7f - explosionScale.value).coerceAtLeast(0f)),
+                                            0.8f to mapPalette.explosionEdge.copy(alpha = (0.3f - explosionScale.value).coerceAtLeast(0f)),
                                             1.0f to Color.Transparent
                                         ),
                                         center = Offset(dx, dy),
@@ -1066,6 +1059,13 @@ fun TacticalMapScreen(
                                     ),
                                     radius = explosionRadius,
                                     center = Offset(dx, dy)
+                                )
+                                drawExplosionShards(
+                                    centerX = dx,
+                                    centerY = dy,
+                                    radius = explosionRadius,
+                                    progress = explosionScale.value,
+                                    multiplier = graphicsConfig.particleCountMultiplier
                                 )
                             }
                         }
@@ -1639,7 +1639,58 @@ fun SiegePreviewOverlay(
     }
 }
 
-fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float, owner: Faction?, graphicsConfig: com.novaempire.app.ui.theme.GraphicsConfig) {
+private const val BASE_EXPLOSION_SHARDS = 10
+
+/**
+ * Éclats d'encre projetés par une explosion — le système que `particleCountMultiplier` pilote.
+ *
+ * Le réglage existait dans les JSON de thème et dans le guide (« 2.0 pour des explosions
+ * massives ») mais n'avait aucun système à commander : l'explosion n'était qu'un dégradé radial.
+ *
+ * Les angles et longueurs sont dérivés de l'indice de l'éclat, pas d'un tirage aléatoire : un
+ * `Random` par passe de dessin ferait scintiller les éclats à chaque frame de l'animation.
+ */
+fun DrawScope.drawExplosionShards(
+    centerX: Float,
+    centerY: Float,
+    radius: Float,
+    progress: Float,
+    multiplier: Float
+) {
+    val count = (BASE_EXPLOSION_SHARDS * multiplier).roundToInt()
+    if (count <= 0) return
+
+    val fade = (1f - progress).coerceIn(0f, 1f)
+    if (fade <= 0f) return
+
+    for (i in 0 until count) {
+        // Angle d'or : répartition régulière quel que soit le nombre d'éclats, sans motif visible.
+        val angle = i * 2.399963f
+        val dirX = cos(angle)
+        val dirY = sin(angle)
+        // Longueur variable mais stable d'une frame à l'autre.
+        val reach = 0.75f + ((i * 37) % 50) / 100f
+        val inner = radius * 0.45f
+        val outer = radius * reach
+
+        drawLine(
+            color = BrunEncre.copy(alpha = fade * 0.75f),
+            start = Offset(centerX + dirX * inner, centerY + dirY * inner),
+            end = Offset(centerX + dirX * outer, centerY + dirY * outer),
+            strokeWidth = 2f,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+fun DrawScope.drawPlanet(
+    x: Float,
+    y: Float,
+    hexRadius: Float,
+    owner: Faction?,
+    graphicsConfig: com.novaempire.core.domain.theme.GraphicsConfig,
+    palette: MapPalette
+) {
     val planetColor = owner?.let { getFactionColor(it) } ?: NeonGreen
     val inkBlack = palette.ink
 
@@ -2127,9 +2178,9 @@ fun TerrainTooltipOverlay(
     }
 }
 
-fun DrawScope.drawBlackHole(x: Float, y: Float, hexRadius: Float) {
-    val inkBlack = Color(0xFF130F0A)
-    val eventHorizonColor = Color(0xFF1A0A00)
+fun DrawScope.drawBlackHole(x: Float, y: Float, hexRadius: Float, palette: MapPalette) {
+    val inkBlack = palette.ink
+    val eventHorizonColor = palette.blackHole
 
     // Accretion disk (distortion effect via gradient)
     drawCircle(
