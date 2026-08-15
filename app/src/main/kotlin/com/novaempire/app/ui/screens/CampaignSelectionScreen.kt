@@ -98,6 +98,10 @@ fun CampaignSelectionScreen(
                                 mission = mission,
                                 isSelected = mission == selectedMission,
                                 isCompleted = mission.id in completedMissions,
+                                // Une mission verrouillée reste visible et sélectionnable : voir
+                                // ce qui vient donne une raison de finir la précédente. Seul le
+                                // lancement est refusé.
+                                isLocked = mission.isLockedFor(completedMissions),
                                 onClick = { selectedMission = mission }
                             )
                         }
@@ -112,6 +116,8 @@ fun CampaignSelectionScreen(
                     backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
                 ) {
                     if (selectedMission != null) {
+                        val mission = selectedMission!!
+                        val locked = mission.isLockedFor(completedMissions)
                         Column(
                             modifier = Modifier.fillMaxSize().padding(24.dp),
                             verticalArrangement = Arrangement.SpaceBetween
@@ -126,12 +132,22 @@ fun CampaignSelectionScreen(
                                 )
                                 HeaderLine(modifier = Modifier.padding(vertical = 8.dp))
                                 Text(
-                                    text = selectedMission!!.description,
+                                    // Le briefing quand la mission en a un, la description sèche
+                                    // sinon : une campagne dont on ne lit que des conditions de
+                                    // victoire n'a pas d'histoire.
+                                    text = selectedMission!!.briefing.ifBlank { selectedMission!!.description },
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
+                                if (locked) {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text(
+                                        text = "VERROUILLÉE — terminez d'abord « ${prerequisiteName(mission)} »",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
                                 Spacer(modifier = Modifier.height(24.dp))
-                                val mission = selectedMission!!
                                 Text(
                                     // The mode is the whole point of a list: a checklist and a
                                     // choice of routes look identical without it.
@@ -232,7 +248,7 @@ fun CampaignSelectionScreen(
                                 text = if (spent > 0) "LAUNCH MISSION — $spent GLOIRE" else "LAUNCH MISSION",
                                 onClick = { onStartMission(selectedMission!!, selectedPerks) },
                                 isPrimary = true,
-                                enabled = remaining >= 0,
+                                enabled = remaining >= 0 && !locked,
                                 icon = { Icon(Icons.Default.PlayArrow, contentDescription = null, tint = NeonCyan) },
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -265,6 +281,20 @@ private fun describeObjective(objective: CampaignObjective): String = when (obje
     CampaignObjectiveType.DEFEAT_FACTION -> "Éliminer la faction ennemie"
     CampaignObjectiveType.CAPTURE_SPECIFIC_PLANET -> "Capturer le monde en ${objective.targetString}"
 }
+
+/**
+ * Whether [completedMissions] leaves this mission locked.
+ *
+ * Purement descriptif : `handleStartCampaign` refuse déjà un lancement verrouillé, et c'est lui qui
+ * fait autorité. L'écran ne fait que montrer la règle — le contraire est la divergence UI/moteur
+ * que ce dépôt reproduit depuis le début.
+ */
+private fun CampaignMission.isLockedFor(completedMissions: Set<String>): Boolean =
+    requiresMissionId?.let { it !in completedMissions } ?: false
+
+private fun prerequisiteName(mission: CampaignMission): String =
+    CampaignRegistry.MISSIONS.find { it.id == mission.requiresMissionId }?.name
+        ?: mission.requiresMissionId.orEmpty()
 
 /**
  * Lines describing a mission's scripted opening, empty when it starts the standard way.
@@ -341,6 +371,7 @@ fun MissionItem(
     mission: CampaignMission,
     isSelected: Boolean,
     isCompleted: Boolean = false,
+    isLocked: Boolean = false,
     onClick: () -> Unit
 ) {
     Box(
@@ -361,9 +392,17 @@ fun MissionItem(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = if (isCompleted) "Mission ${mission.id} — TERMINÉE" else "Mission ${mission.id}",
+                text = when {
+                    isCompleted -> "Mission ${mission.id} — TERMINÉE"
+                    isLocked -> "Mission ${mission.id} — VERROUILLÉE"
+                    else -> "Mission ${mission.id}"
+                },
                 style = MaterialTheme.typography.bodySmall,
-                color = if (isCompleted) NeonCyan else MaterialTheme.colorScheme.onSurfaceVariant
+                color = when {
+                    isCompleted -> NeonCyan
+                    isLocked -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
             )
         }
     }

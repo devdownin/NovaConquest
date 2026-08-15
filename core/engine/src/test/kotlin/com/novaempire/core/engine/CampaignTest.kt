@@ -4,6 +4,7 @@ import com.novaempire.core.domain.models.CampaignMission
 import com.novaempire.core.domain.models.CampaignObjective
 import com.novaempire.core.domain.models.CampaignObjectiveType
 import com.novaempire.core.domain.models.CampaignRegistry
+import com.novaempire.core.domain.models.EventTarget
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.GameMap
 import com.novaempire.core.domain.models.GloryRegistry
@@ -114,6 +115,7 @@ class CampaignTest {
         val engine = GameEngine(NoOpAI())
         val mission = CampaignRegistry.MISSIONS.first { it.id == "mission_3" }
         val before = GameState(
+            campaignState = CampaignState(completedMissions = prerequisitesOf(mission.id)),
             playerStates = mapOf(
                 mission.playerFaction to PlayerState(mission.playerFaction, credits = 100),
                 mission.enemyFaction to PlayerState(mission.enemyFaction, credits = 100)
@@ -237,7 +239,9 @@ class CampaignTest {
         val engine = GameEngine(NoOpAI())
         val mission = CampaignRegistry.MISSIONS.first { it.id == "mission_3" }
         val before = GameState(
-            campaignState = CampaignState(gloryPoints = 1),
+            // Prérequis satisfaits : sans cela le lancement échouerait sur le verrou et ce test
+            // passerait sans jamais éprouver le refus pour gloire insuffisante.
+            campaignState = CampaignState(completedMissions = prerequisitesOf(mission.id), gloryPoints = 1),
             playerStates = mapOf(
                 mission.playerFaction to PlayerState(mission.playerFaction, credits = 100),
                 mission.enemyFaction to PlayerState(mission.enemyFaction, credits = 100)
@@ -303,6 +307,21 @@ class CampaignTest {
 
     private val capital = HexCoord(0, 0, 0)
 
+    /**
+     * Every mission that must be finished before [missionId] can start.
+     *
+     * Tests about perks and setups are not tests about unlocking: they need a save where the chain
+     * is already satisfied, or they would all fail on the lock and stop covering what they name.
+     */
+    private fun prerequisitesOf(missionId: String): Set<String> {
+        val done = mutableSetOf<String>()
+        var current = CampaignRegistry.MISSIONS.find { it.id == missionId }?.requiresMissionId
+        while (current != null && done.add(current)) {
+            current = CampaignRegistry.MISSIONS.find { it.id == current }?.requiresMissionId
+        }
+        return done
+    }
+
     /** A launch-ready board for [missionId]: a small blob of hexes with the player's capital at 0,0. */
     private fun launchState(missionId: String, glory: Int): GameState {
         val mission = CampaignRegistry.MISSIONS.first { it.id == missionId }
@@ -318,7 +337,7 @@ class CampaignTest {
         return GameState(
             activeFaction = mission.playerFaction,
             humanFaction = mission.playerFaction,
-            campaignState = CampaignState(gloryPoints = glory),
+            campaignState = CampaignState(completedMissions = prerequisitesOf(missionId), gloryPoints = glory),
             playerStates = mapOf(
                 mission.playerFaction to PlayerState(mission.playerFaction, credits = 100, capitalCoord = capital),
                 mission.enemyFaction to PlayerState(mission.enemyFaction, credits = 100)
@@ -517,6 +536,161 @@ class CampaignTest {
             mission.setup.startingCredits?.let {
                 assertTrue("${mission.id} starts with negative credits", it >= 0)
             }
+        }
+    }
+
+    // ── Scripted events ───────────────────────────────────────────────────────
+
+    private fun runningMission(missionId: String, turn: Int) = GameState(
+        turn = turn,
+        campaignState = CampaignState(activeMissionId = missionId),
+        playerStates = CampaignRegistry.MISSIONS.first { it.id == missionId }.let {
+            mapOf(
+                it.playerFaction to PlayerState(it.playerFaction),
+                it.enemyFaction to PlayerState(it.enemyFaction)
+            )
+        }
+    )
+
+    @Test
+    fun aScriptedBeatFiresOnItsTurn() {
+        val beat = CampaignRegistry.MISSIONS.first { it.id == "mission_1" }.scriptedEvents.first()
+        val after = EventSystem.tick(runningMission("mission_1", beat.turn))
+
+        assertEquals(beat.event, after.activeEvent)
+        assertEquals(beat.duration, after.eventDurationRemaining)
+    }
+
+    @Test
+    fun aScriptedBeatOverridesAnEventAlreadyRunning() {
+        // Waiting for a free slot would let a random event swallow the mission's set piece, and it
+        // would vanish with no sign that anything was meant to happen.
+        val beat = CampaignRegistry.MISSIONS.first { it.id == "mission_1" }.scriptedEvents.first()
+        val busy = runningMission("mission_1", beat.turn).copy(
+            activeEvent = com.novaempire.core.domain.models.GalacticEvent.TECH_RUSH,
+            eventDurationRemaining = 4
+        )
+
+        assertEquals(beat.event, EventSystem.tick(busy).activeEvent)
+    }
+
+    @Test
+    fun noBeatIsDueOnAQuietTurn() {
+        val beat = CampaignRegistry.MISSIONS.first { it.id == "mission_1" }.scriptedEvents.first()
+        assertNull(EventSystem.scriptedEventDue(runningMission("mission_1", beat.turn + 1)))
+    }
+
+    @Test
+    fun aBeatAimedAtThePlayerLandsOnThePlayer() {
+        val mission = CampaignRegistry.MISSIONS.first { it.id == "mission_2" }
+        val beat = mission.scriptedEvents.first { it.target == EventTarget.PLAYER && it.event.isTargeted }
+
+        val after = EventSystem.tick(runningMission(mission.id, beat.turn))
+
+        assertEquals(mission.playerFaction, after.eventTargetFaction)
+    }
+
+    @Test
+    fun aBeatAimedAtTheEnemyLandsOnTheEnemy() {
+        // mission_3 hands the Hegemony a windfall mid-siege: the mission has a shape, not a slope.
+        val mission = CampaignRegistry.MISSIONS.first { it.id == "mission_3" }
+        val beat = mission.scriptedEvents.first { it.target == EventTarget.ENEMY }
+
+        val after = EventSystem.tick(runningMission(mission.id, beat.turn))
+
+        assertEquals(mission.enemyFaction, after.eventTargetFaction)
+    }
+
+    @Test
+    fun outsideACampaignNothingIsScripted() {
+        assertNull(EventSystem.scriptedEventDue(GameState(turn = 8)))
+    }
+
+    @Test
+    fun everyScriptedBeatCanActuallyFire() {
+        // A beat scheduled after the mission's own deadline is dead data: the mission ends first and
+        // the set piece never happens, silently. Turn 0 is equally dead — the counter starts at 1.
+        CampaignRegistry.MISSIONS.forEach { mission ->
+            mission.scriptedEvents.forEach { beat ->
+                assertTrue("${mission.id}: a beat on turn ${beat.turn} can never fire", beat.turn >= 1)
+                if (mission.turnLimit > 0) {
+                    assertTrue(
+                        "${mission.id}: beat on turn ${beat.turn} is past the deadline ${mission.turnLimit}",
+                        beat.turn <= mission.turnLimit
+                    )
+                }
+                assertTrue("${mission.id}: a beat with no duration does nothing", beat.duration > 0)
+            }
+            val turns = mission.scriptedEvents.map { it.turn }
+            assertEquals("${mission.id}: two beats share a turn, only one can fire", turns.size, turns.toSet().size)
+        }
+    }
+
+    // ── Sequential unlocking ──────────────────────────────────────────────────
+
+    @Test
+    fun aLockedMissionIsRefusedByTheEngineNotJustHiddenByTheScreen() {
+        val engine = GameEngine(NoOpAI())
+        val locked = CampaignRegistry.MISSIONS.first { it.requiresMissionId != null }
+        val before = GameState(campaignState = CampaignState(gloryPoints = 10))
+
+        val result = engine.reduce(before, GameIntent.StartCampaign(locked.id))
+
+        assertNotNull("a locked mission must be refused", result.error)
+        assertTrue(result.error!!.contains("Locked"))
+        assertEquals("nothing may change", before, result.newState)
+    }
+
+    @Test
+    fun completingThePrerequisiteUnlocksTheNextMission() {
+        val engine = GameEngine(NoOpAI())
+        val locked = CampaignRegistry.MISSIONS.first { it.requiresMissionId != null }
+        val unlocked = GameState(
+            campaignState = CampaignState(completedMissions = setOf(locked.requiresMissionId!!))
+        )
+
+        val result = engine.reduce(unlocked, GameIntent.StartCampaign(locked.id))
+
+        assertNull(result.error)
+        assertEquals(locked.id, result.newState.campaignState.activeMissionId)
+    }
+
+    @Test
+    fun thePrerequisiteChainIsSaneAndReachable() {
+        val ids = CampaignRegistry.MISSIONS.map { it.id }.toSet()
+        CampaignRegistry.MISSIONS.forEach { mission ->
+            val required = mission.requiresMissionId ?: return@forEach
+            assertTrue("${mission.id} requires unknown mission \"$required\"", required in ids)
+            assertTrue("${mission.id} requires itself", required != mission.id)
+        }
+        // At least one mission must be playable from a clean save, or the campaign cannot start.
+        assertTrue(
+            "every mission is locked — the campaign has no entry point",
+            CampaignRegistry.MISSIONS.any { it.requiresMissionId == null }
+        )
+        // No cycles: walking the chain from any mission must terminate.
+        CampaignRegistry.MISSIONS.forEach { start ->
+            val seen = mutableSetOf(start.id)
+            var current = start.requiresMissionId
+            while (current != null) {
+                assertTrue("prerequisite cycle involving ${start.id}", seen.add(current))
+                current = CampaignRegistry.MISSIONS.find { it.id == current }?.requiresMissionId
+            }
+        }
+    }
+
+    // ── Narration ─────────────────────────────────────────────────────────────
+
+    @Test
+    fun everyMissionThatSpeaksSpeaksOnBothOutcomes() {
+        // A mission with a victory text but no defeat text ends in silence exactly when the player
+        // most wants to be told what happened.
+        CampaignRegistry.MISSIONS.forEach { mission ->
+            if (mission.victoryText.isNotBlank() || mission.defeatText.isNotBlank()) {
+                assertTrue("${mission.id} wins in silence", mission.victoryText.isNotBlank())
+                assertTrue("${mission.id} loses in silence", mission.defeatText.isNotBlank())
+            }
+            assertTrue("${mission.id} has no description at all", mission.description.isNotBlank())
         }
     }
 

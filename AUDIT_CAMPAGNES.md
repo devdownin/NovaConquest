@@ -9,7 +9,7 @@
 > est inaccessible et Gradle ne démarre pas. Les correctifs sont en `:core:*` et couverts par des
 > tests JVM exercés en CI ; les retouches d'affichage sont revues statiquement et vérifiées à la
 > compilation seulement (`:app:assembleDebug` en CI). **Aucun des nombres d'équilibrage n'a été
-> joué** — voir §7.
+> joué** — voir §8.
 
 ## 1. Le constat de départ : un échafaudage, pas une campagne
 
@@ -268,7 +268,68 @@ laisserait une mission en poser une dans un champ d'astéroïdes, que la passe d
 > Ce que cela demande vraiment : que `MapFactory` expose des coordonnées de planètes neutres
 > garanties. C'est le déblocage naturel de ce levier, et il n'a rien d'urgent.
 
-## 7. Ce qui n'a pas pu être vérifié
+## 7. Corrigé — événements scriptés, narration, déverrouillage (P5)
+
+Les trois dernières suggestions légères, livrées ensemble parce qu'elles se renforcent : une mission
+qui a une forme, un texte et une place dans une suite est une mission, pas un paramétrage.
+
+### Événements scriptés
+
+`GalacticEvent` était purement aléatoire : une mission ne pouvait pas construire de pic dramatique.
+La machinerie d'effets existait déjà — seul le déclencheur manquait. `ScriptedEvent(turn, event,
+duration, target)` fait feu à un tour exact, avec `EventTarget` pour viser le joueur, l'ennemi, ou
+personne.
+
+**Un beat scripté écrase ce qui tourne.** Attendre un créneau libre laisserait un événement aléatoire
+avaler la scène clé de la mission, et elle disparaîtrait sans le moindre signe qu'il devait se passer
+quelque chose — la forme d'échec silencieux que cet audit passe son temps à débusquer.
+
+`EventSystem.tick` est appelé une fois par ronde, juste après l'incrément du compteur : une égalité
+exacte se déclenche donc une seule fois, sans état supplémentaire à mémoriser ni à sérialiser.
+
+| Mission | Beats | Effet recherché |
+|---|---|---|
+| The Awakening | tempête ionique au tour 8 | un pic à mi-parcours, quand le joueur croit sa ligne stable |
+| Stolen Riches | ruée économique au 5, razzia pirate au 18 | deux beats qui se répondent, la razzia tombant après l'investissement |
+| The Kaelen Gate | éruption solaire au 6, manne **ennemie** au 22 | à contretemps : aveuglé à l'approche, l'adversaire renforcé au siège |
+| Twin Anvils | razzia au 6, tempête au 12, éruption au 17 | trois vagues de plus en plus rapprochées |
+
+Un test garde-fou refuse un beat **qui ne pourrait jamais se produire** : au tour 0, après l'échéance
+de la mission, sans durée, ou deux beats sur le même tour. C'est de la donnée morte, et elle serait
+invisible en jeu.
+
+### Narration
+
+Trois champs — `briefing`, `victoryText`, `defeatText` — affichés à la sélection et sur l'écran de
+fin. L'épilogue est lu depuis l'état par `VictoryScreen` plutôt que passé en paramètre : l'écran sait
+déjà quelle mission tournait, et un paramètre de plus serait un fil à oublier de brancher.
+
+Un test refuse qu'une mission ait un texte de victoire sans texte de défaite : elle se tairait
+précisément au moment où le joueur veut le plus qu'on lui dise ce qui s'est passé.
+
+### Déverrouillage séquentiel
+
+`requiresMissionId` enchaîne les missions — ici *The Awakening → Stolen Riches → The Kaelen Gate*,
+avec *Twin Anvils* en entrée parallèle pour que la campagne ne soit pas un couloir.
+
+**La règle est dans le moteur, pas seulement à l'écran.** `handleStartCampaign` refuse une mission
+verrouillée ; l'écran ne fait que la montrer. Une règle qui ne vit que dans l'interface est une règle
+que le moteur n'a pas, et les deux finissent par diverger — c'est le défaut le plus fréquent de ce
+dépôt.
+
+Une mission verrouillée reste **visible et sélectionnable** : voir ce qui vient donne une raison de
+finir la précédente. Seul le lancement est refusé.
+
+Les tests d'intégrité vérifient qu'aucune mission ne se requiert elle-même, qu'aucun prérequis ne
+pointe dans le vide, qu'**au moins une mission est jouable sur une sauvegarde vierge** (sans quoi la
+campagne n'a pas d'entrée) et qu'il n'existe aucun cycle.
+
+> ⚠️ Ce lot a cassé trois tests existants qui lançaient mission_2 ou mission_3 sans prérequis. L'un
+> d'eux — le refus pour gloire insuffisante — serait **passé pour la mauvaise raison**, en échouant
+> désormais sur le verrou. C'est le danger propre à ce genre de changement : un test qui passe encore
+> tout en ayant cessé de vérifier ce que son nom annonce.
+
+## 8. Ce qui n'a pas pu être vérifié
 
 **L'équilibrage n'a toujours pas été joué**, et la surface non jouée vient de s'élargir :
 
@@ -301,24 +362,21 @@ L'écran de sélection n'a été relu que statiquement. La liste d'objectifs et 
 la même zone défilante et le bouton de lancement est en dehors, mais **je n'ai pas pu regarder cet
 écran** — et il vient de gagner deux blocs de texte.
 
-## 8. Suggestions pour la suite (non implémentées)
+## 9. Suggestions pour la suite (non implémentées)
 
 Par ordre de rapport valeur/effort :
 
 1. **Coordonnées de planètes neutres garanties.** `MapFactory` ne promet que les capitales ; sans
    un point d'ancrage neutre, `startingPlanets` reste inutilisable par les données de mission
    (voir §6).
-2. **Événements scriptés.** `GalacticEvent` est purement aléatoire. Déclencher un événement à un tour
-   donné (« au tour 8, tempête ionique ») créerait des pics dramatiques reproductibles sans nouveau
-   moteur — le système d'effets existe déjà.
-3. **Narration.** Il n'y a qu'un champ `description`. Un texte d'introduction et un texte de
-   conclusion (victoire / défaite) par mission coûtent presque rien et changent radicalement la
-   perception d'une campagne.
-4. **Déverrouillage séquentiel.** Maintenant que `completedMissions` est peuplé *et durable*, un
-   champ `requiresMissionId` permettrait un ordre de progression — l'écran de sélection sait déjà
-   quelles missions sont terminées.
+2. **Objectifs suivis dans la durée.** Les objectifs facultatifs sont jugés à l'instant de la
+   victoire ; « ne jamais perdre d'unité » demanderait un suivi dans `GameState`, donc sérialisé et
+   migré. C'est la seule forme d'objectif que la structure actuelle ne peut pas exprimer.
+3. **Ramifications.** `requiresMissionId` ne porte qu'un prérequis unique. Un déverrouillage
+   conditionné à *plusieurs* missions, ou à l'issue d'une mission plutôt qu'à sa réussite, ouvrirait
+   des campagnes en arbre plutôt qu'en chaîne.
 
-## 9. Ce qui fonctionnait déjà bien
+## 10. Ce qui fonctionnait déjà bien
 
 - **La guerre scriptée est forcée** : `handleStartCampaign` met le joueur et l'ennemi en `WAR`, sans
   quoi l'IA — qui n'engage que les factions en guerre — resterait passive et la mission serait vide.

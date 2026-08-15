@@ -73,6 +73,29 @@ data class MissionSetup(
     val startingPlanets: List<String> = emptyList()
 )
 
+/** Who a scripted event falls on. Untargeted events ignore this. */
+@Serializable
+enum class EventTarget { PLAYER, ENEMY, GLOBAL }
+
+/**
+ * A galactic event fired at a fixed turn instead of rolled.
+ *
+ * `GalacticEvent` was purely random, so a mission could not build a dramatic beat — no "at turn 8
+ * the ion storm hits". The effect machinery already exists; only the trigger was missing.
+ *
+ * A scripted beat **overrides** whatever is running. Waiting for a free slot would let a random
+ * event swallow the mission's set piece, and it would vanish with no sign that anything was meant
+ * to happen — the silent-failure shape this audit keeps finding.
+ */
+@Serializable
+data class ScriptedEvent(
+    /** Turn it fires on, matched exactly once when the round counter reaches it. */
+    val turn: Int,
+    val event: GalacticEvent,
+    val duration: Int = 3,
+    val target: EventTarget = EventTarget.GLOBAL
+)
+
 @Serializable
 data class CampaignMission(
     val id: String,
@@ -101,7 +124,23 @@ data class CampaignMission(
     /** Optional side goals, each paying its own glory. Never required to win. */
     val bonusObjectives: List<BonusObjective> = emptyList(),
     /** Scripted opening — see [MissionSetup]. Empty means the standard start. */
-    val setup: MissionSetup = MissionSetup()
+    val setup: MissionSetup = MissionSetup(),
+    /** Dramatic beats fired at fixed turns — see [ScriptedEvent]. */
+    val scriptedEvents: List<ScriptedEvent> = emptyList(),
+    /**
+     * Mission that must be completed first, or null when this one is available from the start.
+     *
+     * Enforced by `handleStartCampaign`, not only by the selection screen: gating in the UI alone
+     * is the divergence this codebase keeps producing — the rule belongs to the engine, and the
+     * screen merely shows it.
+     */
+    val requiresMissionId: String? = null,
+    /** Shown before launch. Falls back to [description] when empty. */
+    val briefing: String = "",
+    /** Shown on the end screen when the mission is won. */
+    val victoryText: String = "",
+    /** Shown on the end screen when the mission is lost. */
+    val defeatText: String = ""
 )
 
 object CampaignRegistry {
@@ -114,6 +153,17 @@ object CampaignRegistry {
             playerFaction = Faction.DOMINION,
             enemyFaction = Faction.XYLAR,
             gloryReward = 2,
+            briefing = "Les avant-postes du Dominion s'étirent au-delà des routes connues. Le Xylar y " +
+                "était déjà. Tenez quinze tours : la flotte de secours ne peut pas arriver plus tôt.",
+            victoryText = "La nuée reflue. Ce que vous avez tenu n'était qu'un caillou au bord du vide — " +
+                "mais le Dominion sait désormais que la frontière peut être tenue.",
+            defeatText = "Le silence sur la fréquence de l'avant-poste dure depuis trois jours. " +
+                "La frontière recule d'un secteur.",
+            // Un pic dramatique reproductible à mi-parcours : la nuée frappe pendant que le joueur
+            // croit avoir stabilisé sa ligne.
+            scriptedEvents = listOf(
+                ScriptedEvent(turn = 8, event = GalacticEvent.ION_STORM, duration = 3)
+            ),
             objectives = listOf(CampaignObjective(CampaignObjectiveType.SURVIVE_TURNS, targetValue = 15)),
             // A first mission should teach the idea without punishing anyone who ignores it: hold a
             // treasury while surviving, worth one point.
@@ -134,6 +184,19 @@ object CampaignRegistry {
             enemyBonusCredits = 100,
             turnLimit = 40,
             gloryReward = 3,
+            requiresMissionId = "mission_1",
+            briefing = "La nébuleuse de Cassian regorge de métaux rares, et la Hégémonie a déjà " +
+                "affrété ses transports. Remplissez vos coffres avant elle — ou retirez-lui les mains.",
+            victoryText = "Les coffres sont pleins et la Hégémonie repart les cales vides. " +
+                "Le commerce, parfois, se fait sans un coup de feu.",
+            defeatText = "Les convois kaelens quittent la nébuleuse chargés. Ce qu'ils emportent " +
+                "financera la prochaine guerre — la vôtre.",
+            // Deux beats qui se répondent : la ruée d'abord, la razzia ensuite, pile quand le joueur
+            // a fini d'investir.
+            scriptedEvents = listOf(
+                ScriptedEvent(turn = 5, event = GalacticEvent.ECONOMIC_BOOM, duration = 4, target = EventTarget.PLAYER),
+                ScriptedEvent(turn = 18, event = GalacticEvent.PIRATE_RAID, duration = 3, target = EventTarget.PLAYER)
+            ),
             // Two ways out: bank the money, or remove the rival who was going to take it. ANY makes
             // the mission a choice of strategy rather than a single script.
             objectives = listOf(
@@ -155,6 +218,19 @@ object CampaignRegistry {
             enemyBonusCredits = 60,
             turnLimit = 40,
             gloryReward = 4,
+            requiresMissionId = "mission_2",
+            briefing = "Le siège de la Hégémonie est à dix secteurs, derrière tout ce qu'elle possède. " +
+                "Vous partez avec une escadre et de quoi la réparer une fois. Il n'y aura pas de renforts.",
+            victoryText = "La Porte est tombée. Ce que la Hégémonie gardait derrière elle depuis " +
+                "quatre siècles vous appartient — et vous n'avez plus rien pour le défendre.",
+            defeatText = "L'escadre n'a pas franchi le dernier verrou. Les archives de la Porte " +
+                "resteront fermées encore longtemps.",
+            // Deux beats à contretemps : l'éruption aveugle le joueur pendant l'approche, puis
+            // l'ennemi reçoit une aide au moment du siège. La mission a une forme, pas une pente.
+            scriptedEvents = listOf(
+                ScriptedEvent(turn = 6, event = GalacticEvent.SOLAR_FLARE, duration = 3),
+                ScriptedEvent(turn = 22, event = GalacticEvent.ECONOMIC_BOOM, duration = 5, target = EventTarget.ENEMY)
+            ),
             // Tempo : un corps expéditionnaire, pas une économie. Le joueur arrive avec de quoi
             // frapper et presque rien pour reconstruire — la mission se joue sur ce qu'il amène.
             setup = MissionSetup(
@@ -186,6 +262,17 @@ object CampaignRegistry {
             enemyBonusCredits = 80,
             turnLimit = 35,
             gloryReward = 4,
+            briefing = "Deux enclumes, un marteau : la nuée frappe des deux côtés du corridor. " +
+                "Tenez vingt tours sans laisser les caisses descendre sous trois cents.",
+            victoryText = "Le corridor tient, et les comptes aussi. Rare combinaison.",
+            defeatText = "Le corridor a cédé. Ce qui restait dans les caisses n'aura servi à personne.",
+            // Trois vagues, de plus en plus rapprochées : la pression monte sans qu'aucune ligne de
+            // code de moteur ne soit ajoutée.
+            scriptedEvents = listOf(
+                ScriptedEvent(turn = 6, event = GalacticEvent.PIRATE_RAID, duration = 3, target = EventTarget.PLAYER),
+                ScriptedEvent(turn = 12, event = GalacticEvent.ION_STORM, duration = 3),
+                ScriptedEvent(turn = 17, event = GalacticEvent.SOLAR_FLARE, duration = 4)
+            ),
             // Tempo opposé à celui de la mission 3 : de quoi tenir, pas de quoi frapper. Le trésor
             // de départ est délibérément laissé au standard — augmenter les crédits ici affaiblirait
             // l'objectif économique de la mission elle-même.
