@@ -108,6 +108,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     is GameEffect.ShakeCamera -> {
                         // UI layer collects `effects` directly for haptic / animation
                     }
+                    is GameEffect.CombatResolved -> {
+                        // Consommé par `combatEvents`, que l'écran de carte collecte pour animer
+                        // le tir. Le son part séparément en PlaySound.
+                    }
                 }
             }
         }
