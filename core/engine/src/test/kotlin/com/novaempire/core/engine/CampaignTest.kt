@@ -401,7 +401,9 @@ class CampaignTest {
         assertEquals(100 + 150, player.credits)
         assertTrue(after.units.values.any { it.faction == Faction.DOMINION && it.type == UnitType.CRUISER })
         assertEquals(after.map.tiles.keys, player.exploredHexes)
-        assertEquals("2 + 3 + 3 spent", 10 - 8, after.campaignState.gloryPoints)
+        // Spelled out rather than summed from the registry: a test that recomputes the cost the
+        // same way the code does would agree with any mistake both of them made.
+        assertEquals("war chest 2 + vanguard 3 + charts 2", 10 - 7, after.campaignState.gloryPoints)
     }
 
     // ── Composite objectives ──────────────────────────────────────────────────
