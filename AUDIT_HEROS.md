@@ -383,3 +383,56 @@ faction la plus riche) et l'IA (il faudrait qu'elle anticipe). Signalé, non tra
 | `app/…/ui/screens/HeroAcademyScreen.kt` | Aptitude visible avant achat, faction humaine, bouton désactivé |
 | `core/engine/src/test/…/HeroAbilityTest.kt` | 12 tests (nouveau) |
 | `core/engine/src/test/…/AiHeroAbilityTest.kt` | 11 tests (nouveau) |
+
+## 11. Troisième passe — les trois factions sans champion
+
+### Le constat
+
+Sept factions jouables, quatre héros — et les quatre couvraient DOMINION, TRADERS, SYNTH et les
+mercenaires. **NOMADS, KAELEN et XYLAR n'avaient aucun champion d'affinité.**
+
+Ce n'est pas un manque cosmétique. L'affinité est **tarifée, pas verrouillée** (voir
+`HeroCostCalculator`) : un héros d'une autre faction coûte le double. Une faction sans héros à elle
+payait donc en permanence le prix fort — punie par un trou dans le contenu, pas par un choix. Et
+côté IA, `heroScore` accorde 10 points d'affinité : ces trois factions ne pouvaient jamais toucher
+ce bonus.
+
+### Les trois héros
+
+Chaque passif accorde délibérément quelque chose que sa faction **n'a pas déjà** : doubler le trait
+de faction donnerait un héros redondant et empilerait deux bonus de même nature dans un seul build.
+
+| Héros | Faction | Passif | Aptitude |
+|---|---|---|---|
+| **Wayfinder Sarn** | NOMADS | −1 d'entretien par unité | *Saut de Caravane* — toute la flotte peut se redéplacer |
+| **Archivist Ysar** | KAELEN | +4 PV sur les unités construites | *Archives Anciennes* — cartographie la galaxie |
+| **Broodmother Vashk** | XYLAR | +2 dégâts par tir | *Éclosion* — toute la production sort au tour suivant |
+
+### Le piège du `when`
+
+`handleUseHeroAbility` répartit sur `hero.id` et se termine par `else -> "Unknown hero ability."`.
+Ajouter un héros au registre **sans lui écrire de branche** produit un champion dont le bouton
+d'aptitude affiche une erreur — et rien ne casse à la compilation. C'est le défaut exact que cet
+audit a passé son temps à corriger ailleurs (`CAPTURE_SPECIFIC_PLANET`, `else -> false`).
+
+Un test le verrouille désormais : pour chaque héros du registre portant une aptitude,
+`handleUseHeroAbility` ne doit pas répondre « Unknown hero ability ».
+
+### Le même piège côté IA
+
+`evaluateHeroAbilities` itère une **liste écrite à la main** et `isAbilityWorthwhile` se termine par
+`else -> false`. Sans câblage, l'IA aurait recruté les trois nouveaux héros puis n'aurait jamais
+utilisé leur aptitude. Or ces trois factions sont, dans la grande majorité des parties, **jouées par
+l'IA** — le trou aurait donc été plus visible ici que pour les quatre héros existants.
+
+Sarn rejoint Vance dans le traitement **post-tactique** : les deux agissent sur ce que la flotte a
+déjà fait ce tour-ci, donc les déclencher dans la phase stratégique les gaspillerait à vide.
+
+Chaque aptitude reprend le garde-fou établi par Kael — refuser plutôt que se consumer pour rien :
+Sarn si rien n'a bougé, Ysar si la carte est déjà connue, Vashk si rien n'est en production.
+
+### Ce qui reste non vérifié
+
+Les coûts (45 / 55 / 50) et les valeurs de passif (−1 entretien, +4 PV, +2 dégâts) sont **des
+estimations non jouées**, comme tout l'équilibrage de ce dépôt. Le +2 dégâts de Vashk sur une faction
+déjà agressive est le plus susceptible d'être trop fort.

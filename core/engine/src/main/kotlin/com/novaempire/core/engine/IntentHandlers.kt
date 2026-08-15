@@ -451,6 +451,46 @@ internal fun handleUseHeroAbility(state: GameState, intent: GameIntent.UseHeroAb
                 notification = "$notification (${research.techId})"
             )
         }
+        HeroRegistry.SARN -> {
+            // Mobility burst, the counterpart to Vance's second volley. Refused when nothing has
+            // moved: a one-shot must not be spent on a fleet that is already free to go.
+            val stirred = state.units.values.any { it.faction == state.activeFaction && (it.hasMoved || it.movementUsed > 0) }
+            if (!stirred) return GameResult(state, "No fleet unit has moved yet — the caravan jump would be wasted.")
+            val newUnits = state.units.mapValues { (_, u) ->
+                if (u.faction == state.activeFaction) u.copy(hasMoved = false, movementUsed = 0) else u
+            }
+            GameResult(
+                state.withUpdatedPlayer(playerState.copy(heroAbilitiesUsed = markUsed)).copy(units = newUnits),
+                notification = notification
+            )
+        }
+        HeroRegistry.YSAR -> {
+            // Explored, not visible — the same distinction the star-charts perk rests on. The fog
+            // still hides fleets, so this grants planning rather than intelligence.
+            val everything = state.map.tiles.keys
+            if (playerState.exploredHexes.containsAll(everything))
+                return GameResult(state, "The galaxy is already charted — the archives would tell you nothing new.")
+            GameResult(
+                state.withUpdatedPlayer(playerState.copy(
+                    exploredHexes = playerState.exploredHexes + everything,
+                    heroAbilitiesUsed = markUsed
+                )),
+                notification = notification
+            )
+        }
+        HeroRegistry.VASHK -> {
+            // Hastens the queue rather than spawning ships here: TurnManager owns unit creation
+            // (spawn hex, HP bonuses, blocked orders), and a second copy of that would drift.
+            if (playerState.buildQueue.isEmpty())
+                return GameResult(state, "Nothing is in production — the brood has nothing to hatch.")
+            GameResult(
+                state.withUpdatedPlayer(playerState.copy(
+                    buildQueue = playerState.buildQueue.map { it.copy(turnsRemaining = 1, blocked = false) },
+                    heroAbilitiesUsed = markUsed
+                )),
+                notification = notification
+            )
+        }
         else -> GameResult(state, "Unknown hero ability.")
     }
 }

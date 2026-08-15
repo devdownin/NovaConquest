@@ -13,6 +13,7 @@ import com.novaempire.core.domain.state.ResearchProgress
 import com.novaempire.core.hex.HexCoord
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -32,7 +33,9 @@ class HeroAbilityTest {
         used: Set<String> = emptySet(),
         credits: Int = 10,
         research: ResearchProgress? = null,
-        units: Map<HexCoord, GameUnit> = emptyMap()
+        units: Map<HexCoord, GameUnit> = emptyMap(),
+        buildQueue: List<com.novaempire.core.domain.state.BuildOrder> = emptyList(),
+        explored: Set<HexCoord> = emptySet()
     ) = GameState(
         activeFaction = Faction.DOMINION,
         humanFaction = Faction.DOMINION,
@@ -42,7 +45,9 @@ class HeroAbilityTest {
                 credits = credits,
                 recruitedHeroes = heroes,
                 heroAbilitiesUsed = used,
-                researchInProgress = research
+                researchInProgress = research,
+                buildQueue = buildQueue,
+                exploredHexes = explored
             )
         ),
         map = GameMap(tiles = mapOf(coord to HexTile(coord, TerrainType.EMPTY))),
@@ -182,5 +187,92 @@ class HeroAbilityTest {
             assertTrue(hero.ability!!.name.isNotBlank())
             assertTrue(hero.ability!!.description.isNotBlank())
         }
+    }
+
+    /**
+     * Le piège de ce fichier : `handleUseHeroAbility` répartit sur `hero.id` et se termine par
+     * `else -> "Unknown hero ability."`. Ajouter un héros au registre sans lui écrire de branche
+     * produit donc un champion dont le bouton d'aptitude affiche une erreur — sans que rien ne
+     * casse à la compilation. Ce test échoue à la place.
+     */
+    @Test
+    fun `chaque aptitude du registre est branchee dans le moteur`() {
+        for (hero in HeroRegistry.ALL_HEROES.filter { it.ability != null }) {
+            val result = use(stateWith(heroes = setOf(hero.id)), hero.id)
+            assertNotEquals(
+                "${hero.id} est déclaré mais n'a pas de branche dans handleUseHeroAbility",
+                "Unknown hero ability.",
+                result.error
+            )
+        }
+    }
+
+    // ── Sarn (NOMADS) ─────────────────────────────────────────────────────────
+
+    private fun movedCruiser(hasMoved: Boolean, used: Int) = GameUnit(
+        type = UnitType.CRUISER, faction = Faction.DOMINION, position = coord,
+        currentHp = UnitType.CRUISER.maxHp, hasMoved = hasMoved, movementUsed = used
+    )
+
+    @Test
+    fun `Sarn rend leur mouvement aux unites deja deplacees`() {
+        val state = stateWith(heroes = setOf(HeroRegistry.SARN), units = mapOf(coord to movedCruiser(true, 3)))
+
+        val unit = use(state, HeroRegistry.SARN).newState.units[coord]!!
+        assertFalse(unit.hasMoved)
+        assertEquals(0, unit.movementUsed)
+    }
+
+    @Test
+    fun `Sarn refuse d'agir si rien n'a bouge`() {
+        // Même garde que Kael : une ressource à usage unique ne part pas sur un clic prématuré.
+        val state = stateWith(heroes = setOf(HeroRegistry.SARN), units = mapOf(coord to movedCruiser(false, 0)))
+
+        val result = use(state, HeroRegistry.SARN)
+        assertNotNull(result.error)
+        assertTrue("le héros reste disponible", player(result.newState).heroAbilitiesUsed.isEmpty())
+    }
+
+    // ── Ysar (KAELEN) ─────────────────────────────────────────────────────────
+
+    @Test
+    fun `Ysar cartographie la galaxie sans lever le brouillard`() {
+        val state = stateWith(heroes = setOf(HeroRegistry.YSAR))
+
+        val after = use(state, HeroRegistry.YSAR).newState
+        assertEquals(state.map.tiles.keys, player(after).exploredHexes)
+        // Exploré n'est pas visible : les flottes ennemies restent cachées.
+        assertTrue(player(after).visibleHexes.isEmpty())
+    }
+
+    @Test
+    fun `Ysar refuse d'agir sur une carte deja connue`() {
+        val state = stateWith(heroes = setOf(HeroRegistry.YSAR), explored = setOf(coord))
+
+        val result = use(state, HeroRegistry.YSAR)
+        assertNotNull(result.error)
+        assertTrue(player(result.newState).heroAbilitiesUsed.isEmpty())
+    }
+
+    // ── Vashk (XYLAR) ─────────────────────────────────────────────────────────
+
+    @Test
+    fun `Vashk fait sortir toute la production au tour suivant`() {
+        val queue = listOf(
+            com.novaempire.core.domain.state.BuildOrder(UnitType.DREADNOUGHT, coord, turnsRemaining = 5),
+            com.novaempire.core.domain.state.BuildOrder(UnitType.CARRIER, coord, turnsRemaining = 4, blocked = true)
+        )
+        val state = stateWith(heroes = setOf(HeroRegistry.VASHK), buildQueue = queue)
+
+        val after = player(use(state, HeroRegistry.VASHK).newState)
+        assertTrue("toute la file est prête", after.buildQueue.all { it.turnsRemaining == 1 })
+        assertTrue("un ordre bloqué repart proprement", after.buildQueue.none { it.blocked })
+    }
+
+    @Test
+    fun `Vashk refuse d'agir sans production en cours`() {
+        val result = use(stateWith(heroes = setOf(HeroRegistry.VASHK)), HeroRegistry.VASHK)
+        assertNotNull(result.error)
+        assertTrue(player(result.newState).heroAbilitiesUsed.isEmpty())
     }
 }

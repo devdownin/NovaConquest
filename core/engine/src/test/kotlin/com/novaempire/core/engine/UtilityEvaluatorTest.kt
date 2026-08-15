@@ -99,9 +99,15 @@ class UtilityEvaluatorTest {
 
     // ── Hero recruitment (H5) ─────────────────────────────────────────────────
 
-    private fun heroState(faction: Faction, atWar: Boolean, units: Map<HexCoord, GameUnit> = emptyMap()): Pair<GameState, PlayerState> {
+    private fun heroState(
+        faction: Faction,
+        atWar: Boolean,
+        units: Map<HexCoord, GameUnit> = emptyMap(),
+        recruited: Set<String> = emptySet()
+    ): Pair<GameState, PlayerState> {
         val ps = PlayerState(
             faction, credits = 500,
+            recruitedHeroes = recruited,
             relations = if (atWar) mapOf(Faction.KAELEN to DiplomaticRelation.WAR) else emptyMap()
         )
         return GameState(activeFaction = faction, playerStates = mapOf(faction to ps), units = units) to ps
@@ -115,15 +121,26 @@ class UtilityEvaluatorTest {
     }
 
     @Test
-    fun aiAtWarWithoutAffinityRecruitsCombatHero() {
-        // XYLAR has no affinity hero → posture decides: at war, damage wins.
+    fun aiPrefersItsOwnChampionOverAStrongerOutsider() {
+        // XYLAR used to have no hero of its own, which is why the three tests below borrowed it as
+        // the "no affinity" stand-in. Vashk now fills that gap, and affinity must win here too.
         val (state, ps) = heroState(Faction.XYLAR, atWar = true)
+        assertEquals(HeroRegistry.VASHK, UtilityEvaluator.chooseHero(state, ps)?.id)
+    }
+
+    // The posture fallback still matters — it decides once affinity is out of the running. Every
+    // playable faction now has a champion, so these cases put that champion out of the pool by
+    // marking it recruited rather than relying on a faction that happens to have none.
+
+    @Test
+    fun aiAtWarWithoutAffinityRecruitsCombatHero() {
+        val (state, ps) = heroState(Faction.XYLAR, atWar = true, recruited = setOf(HeroRegistry.VASHK))
         assertEquals(HeroRegistry.VANCE, UtilityEvaluator.chooseHero(state, ps)?.id)
     }
 
     @Test
     fun aiAtPeaceWithoutAffinityRecruitsEconomyHero() {
-        val (state, ps) = heroState(Faction.XYLAR, atWar = false)
+        val (state, ps) = heroState(Faction.XYLAR, atWar = false, recruited = setOf(HeroRegistry.VASHK))
         assertEquals(HeroRegistry.ELARA, UtilityEvaluator.chooseHero(state, ps)?.id)
     }
 
@@ -131,7 +148,10 @@ class UtilityEvaluatorTest {
     fun aiWithWoundedFleetPrefersHealer() {
         val pos = HexCoord(0, 0, 0)
         val wounded = GameUnit(type = UnitType.CRUISER, faction = Faction.XYLAR, position = pos, currentHp = 5)
-        val (state, ps) = heroState(Faction.XYLAR, atWar = false, units = mapOf(pos to wounded))
+        val (state, ps) = heroState(
+            Faction.XYLAR, atWar = false, units = mapOf(pos to wounded),
+            recruited = setOf(HeroRegistry.VASHK)
+        )
         assertEquals(HeroRegistry.NIX, UtilityEvaluator.chooseHero(state, ps)?.id)
     }
 
