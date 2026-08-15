@@ -2,6 +2,7 @@ package com.novaempire.core.engine
 
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.MapArchetype
+import com.novaempire.core.domain.models.ObjectiveMode
 import com.novaempire.core.domain.models.TechRegistry
 import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.state.GameState
@@ -24,15 +25,14 @@ object VictoryChecker {
                     return VictoryResult(mission.enemyFaction, "Defeat! Your forces have been annihilated.")
                 }
 
-                val isVictorious = when (mission.objective.type) {
-                    com.novaempire.core.domain.models.CampaignObjectiveType.SURVIVE_TURNS -> state.turn >= mission.objective.targetValue
-                    com.novaempire.core.domain.models.CampaignObjectiveType.ACCUMULATE_CREDITS -> (state.playerStates[mission.playerFaction]?.credits ?: 0) >= mission.objective.targetValue
-                    com.novaempire.core.domain.models.CampaignObjectiveType.DEFEAT_FACTION -> !state.units.values.any { it.faction == mission.enemyFaction } && !state.map.tiles.values.any { it.owner == mission.enemyFaction }
-                    // Previously fell into `else -> false`: the objective type existed in the enum
-                    // but had no implementation, so any mission using it was unwinnable — silently.
-                    com.novaempire.core.domain.models.CampaignObjectiveType.CAPTURE_SPECIFIC_PLANET ->
-                        parseTargetCoord(mission.objective.targetString)
-                            ?.let { state.map.tiles[it]?.owner == mission.playerFaction } ?: false
+                val isVictorious = when (mission.objectiveMode) {
+                    // `all` on an empty list is true, which would win the mission on turn one. The
+                    // emptiness check belongs here rather than only in a test, because the test can
+                    // only cover the missions that exist today.
+                    ObjectiveMode.ALL ->
+                        mission.objectives.isNotEmpty() && mission.objectives.all { isObjectiveMet(state, mission, it) }
+                    ObjectiveMode.ANY ->
+                        mission.objectives.any { isObjectiveMet(state, mission, it) }
                 }
                 if (isVictorious) {
                     return VictoryResult(mission.playerFaction, "Campaign Mission Complete: ${mission.name}")
@@ -107,6 +107,40 @@ object VictoryChecker {
 
         return null
     }
+
+    /**
+     * Whether one objective is satisfied by [state]. The single place an objective type is turned
+     * into a rule — required objectives, optional ones and any future use all go through here, so a
+     * new type cannot mean one thing to victory and another to the glory bonus.
+     */
+    internal fun isObjectiveMet(
+        state: GameState,
+        mission: com.novaempire.core.domain.models.CampaignMission,
+        objective: com.novaempire.core.domain.models.CampaignObjective
+    ): Boolean = when (objective.type) {
+        com.novaempire.core.domain.models.CampaignObjectiveType.SURVIVE_TURNS ->
+            state.turn >= objective.targetValue
+        com.novaempire.core.domain.models.CampaignObjectiveType.ACCUMULATE_CREDITS ->
+            (state.playerStates[mission.playerFaction]?.credits ?: 0) >= objective.targetValue
+        com.novaempire.core.domain.models.CampaignObjectiveType.DEFEAT_FACTION ->
+            !state.units.values.any { it.faction == mission.enemyFaction } &&
+                !state.map.tiles.values.any { it.owner == mission.enemyFaction }
+        // Previously fell into `else -> false`: the objective type existed in the enum but had no
+        // implementation, so any mission using it was unwinnable — silently.
+        com.novaempire.core.domain.models.CampaignObjectiveType.CAPTURE_SPECIFIC_PLANET ->
+            parseTargetCoord(objective.targetString)
+                ?.let { state.map.tiles[it]?.owner == mission.playerFaction } ?: false
+    }
+
+    /**
+     * Glory earned from [mission]'s optional objectives, judged against the winning [state].
+     *
+     * Evaluated at the moment of victory rather than tracked across the run: a side goal is a way
+     * the mission ended, not a flag raised somewhere in the middle. Tracking would need state that
+     * has to be serialized, defaulted and migrated for a reward the player sees once.
+     */
+    fun bonusGloryEarned(state: GameState, mission: com.novaempire.core.domain.models.CampaignMission): Int =
+        mission.bonusObjectives.sumOf { if (isObjectiveMet(state, mission, it.objective)) it.gloryReward else 0 }
 
     /**
      * Reads a `CAPTURE_SPECIFIC_PLANET` target written as `"q,r"` (the third cube coordinate is

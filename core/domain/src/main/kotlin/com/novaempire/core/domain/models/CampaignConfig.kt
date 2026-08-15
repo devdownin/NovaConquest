@@ -21,6 +21,31 @@ data class CampaignObjective(
     val targetString: String = ""
 )
 
+/** How a mission's list of required objectives combines into "won". */
+@Serializable
+enum class ObjectiveMode {
+    /** Every objective must be met — a checklist. */
+    ALL,
+
+    /** Any one objective ends the mission — parallel routes to the same victory. */
+    ANY
+}
+
+/**
+ * An objective that never gates victory and pays glory when it is met.
+ *
+ * Checked **at the moment the mission is won**, not tracked across the run: "hold 300 credits" means
+ * holding them at the end, not having passed through 300 at some point. That matches how the primary
+ * objectives already read the current state, and it keeps a side objective from needing bookkeeping
+ * inside `GameState` — which would have to be serialized, defaulted, and migrated.
+ */
+@Serializable
+data class BonusObjective(
+    val objective: CampaignObjective,
+    /** Extra glory paid on top of the mission's own reward. First completion only, like the rest. */
+    val gloryReward: Int
+)
+
 @Serializable
 data class CampaignMission(
     val id: String,
@@ -39,7 +64,15 @@ data class CampaignMission(
      * the easiest mission cannot be farmed for perks.
      */
     val gloryReward: Int = 0,
-    val objective: CampaignObjective
+    /**
+     * What must be achieved, combined per [objectiveMode]. Must not be empty: an empty checklist
+     * under [ObjectiveMode.ALL] reads as "everything is done" and wins the mission on turn one.
+     * `CampaignTest` guards this.
+     */
+    val objectives: List<CampaignObjective>,
+    val objectiveMode: ObjectiveMode = ObjectiveMode.ALL,
+    /** Optional side goals, each paying its own glory. Never required to win. */
+    val bonusObjectives: List<BonusObjective> = emptyList()
 )
 
 object CampaignRegistry {
@@ -52,7 +85,15 @@ object CampaignRegistry {
             playerFaction = Faction.DOMINION,
             enemyFaction = Faction.XYLAR,
             gloryReward = 2,
-            objective = CampaignObjective(CampaignObjectiveType.SURVIVE_TURNS, targetValue = 15)
+            objectives = listOf(CampaignObjective(CampaignObjectiveType.SURVIVE_TURNS, targetValue = 15)),
+            // A first mission should teach the idea without punishing anyone who ignores it: hold a
+            // treasury while surviving, worth one point.
+            bonusObjectives = listOf(
+                BonusObjective(
+                    CampaignObjective(CampaignObjectiveType.ACCUMULATE_CREDITS, targetValue = 120),
+                    gloryReward = 1
+                )
+            )
         ),
         CampaignMission(
             id = "mission_2",
@@ -64,7 +105,13 @@ object CampaignRegistry {
             enemyBonusCredits = 100,
             turnLimit = 40,
             gloryReward = 3,
-            objective = CampaignObjective(CampaignObjectiveType.ACCUMULATE_CREDITS, targetValue = 500)
+            // Two ways out: bank the money, or remove the rival who was going to take it. ANY makes
+            // the mission a choice of strategy rather than a single script.
+            objectives = listOf(
+                CampaignObjective(CampaignObjectiveType.ACCUMULATE_CREDITS, targetValue = 500),
+                CampaignObjective(CampaignObjectiveType.DEFEAT_FACTION)
+            ),
+            objectiveMode = ObjectiveMode.ANY
         ),
         // Exercises CAPTURE_SPECIFIC_PLANET, which had no implementation until now. The target is
         // KAELEN's own starting world: spawnPointsFor(5) hands index 4 — (-5,5,0) — to KAELEN, so
@@ -79,10 +126,35 @@ object CampaignRegistry {
             enemyBonusCredits = 60,
             turnLimit = 40,
             gloryReward = 4,
-            objective = CampaignObjective(
-                CampaignObjectiveType.CAPTURE_SPECIFIC_PLANET,
-                targetString = "-5,5"
+            objectives = listOf(
+                CampaignObjective(CampaignObjectiveType.CAPTURE_SPECIFIC_PLANET, targetString = "-5,5")
+            ),
+            bonusObjectives = listOf(
+                // Taking the gate quickly is worth more than taking it at all costs.
+                BonusObjective(
+                    CampaignObjective(CampaignObjectiveType.ACCUMULATE_CREDITS, targetValue = 250),
+                    gloryReward = 2
+                )
             )
+        ),
+        // Exercises ObjectiveMode.ALL — a checklist rather than a single goal. Deliberately carries
+        // no coordinate: a wrong hex is the one data error the integrity tests cannot catch, and
+        // this mission exists to prove the combination logic, not the map.
+        CampaignMission(
+            id = "mission_4",
+            name = "Twin Anvils",
+            description = "Hold the line and fill the vaults: outlast the Swarm for 20 turns without letting the treasury fall below 300.",
+            mapArchetype = MapArchetype.NEBULA_EXPANSE,
+            playerFaction = Faction.DOMINION,
+            enemyFaction = Faction.XYLAR,
+            enemyBonusCredits = 80,
+            turnLimit = 35,
+            gloryReward = 4,
+            objectives = listOf(
+                CampaignObjective(CampaignObjectiveType.SURVIVE_TURNS, targetValue = 20),
+                CampaignObjective(CampaignObjectiveType.ACCUMULATE_CREDITS, targetValue = 300)
+            ),
+            objectiveMode = ObjectiveMode.ALL
         )
     )
 }

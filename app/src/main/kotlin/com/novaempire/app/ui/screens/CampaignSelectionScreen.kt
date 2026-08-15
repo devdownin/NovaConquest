@@ -24,8 +24,11 @@ import com.novaempire.app.ui.components.InkWashOverlay
 import com.novaempire.app.ui.theme.NeonCyan
 import com.novaempire.core.domain.models.CampaignRegistry
 import com.novaempire.core.domain.models.CampaignMission
+import com.novaempire.core.domain.models.CampaignObjective
+import com.novaempire.core.domain.models.CampaignObjectiveType
 import com.novaempire.core.domain.models.GloryPerk
 import com.novaempire.core.domain.models.GloryRegistry
+import com.novaempire.core.domain.models.ObjectiveMode
 
 @Composable
 fun CampaignSelectionScreen(
@@ -126,18 +129,41 @@ fun CampaignSelectionScreen(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Spacer(modifier = Modifier.height(24.dp))
+                                val mission = selectedMission!!
                                 Text(
-                                    text = "Objectives:",
+                                    // The mode is the whole point of a list: a checklist and a
+                                    // choice of routes look identical without it.
+                                    text = when (mission.objectiveMode) {
+                                        ObjectiveMode.ALL -> "Objectifs — tous requis :"
+                                        ObjectiveMode.ANY -> "Objectifs — un seul suffit :"
+                                    },
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
-                                val obj = selectedMission!!.objective
-                                Text(
-                                    text = "• Type: ${obj.type.name}\n• Target: ${if (obj.targetString.isNotEmpty()) obj.targetString else obj.targetValue}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                mission.objectives.forEach { obj ->
+                                    Text(
+                                        text = "• ${describeObjective(obj)}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (mission.bonusObjectives.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text(
+                                        text = "Objectifs secondaires (facultatifs) :",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    mission.bonusObjectives.forEach { bonus ->
+                                        Text(
+                                            text = "• ${describeObjective(bonus.objective)} → +${bonus.gloryReward} gloire",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
                                 if (selectedMission!!.turnLimit > 0) {
                                     Text(
                                         text = "• Deadline: ${selectedMission!!.turnLimit} tours",
@@ -202,6 +228,20 @@ fun CampaignSelectionScreen(
             }
         }
     }
+}
+
+/**
+ * Plain-language label for an objective.
+ *
+ * Purely descriptive — whether an objective is *met* is `VictoryChecker`'s business alone. This
+ * formats what the mission asks for; it must never re-derive the rule, which is how the map screen
+ * and the engine drifted apart in earlier audits.
+ */
+private fun describeObjective(objective: CampaignObjective): String = when (objective.type) {
+    CampaignObjectiveType.SURVIVE_TURNS -> "Survivre ${objective.targetValue} tours"
+    CampaignObjectiveType.ACCUMULATE_CREDITS -> "Détenir ${objective.targetValue} crédits"
+    CampaignObjectiveType.DEFEAT_FACTION -> "Éliminer la faction ennemie"
+    CampaignObjectiveType.CAPTURE_SPECIFIC_PLANET -> "Capturer le monde en ${objective.targetString}"
 }
 
 /**

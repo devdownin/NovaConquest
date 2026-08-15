@@ -1,11 +1,14 @@
 package com.novaempire.core.engine
 
+import com.novaempire.core.domain.models.CampaignMission
+import com.novaempire.core.domain.models.CampaignObjective
 import com.novaempire.core.domain.models.CampaignObjectiveType
 import com.novaempire.core.domain.models.CampaignRegistry
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.GameMap
 import com.novaempire.core.domain.models.GloryRegistry
 import com.novaempire.core.domain.models.HexTile
+import com.novaempire.core.domain.models.ObjectiveMode
 import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.state.CampaignProgress
 import com.novaempire.core.domain.state.CampaignState
@@ -16,6 +19,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -280,20 +284,160 @@ class CampaignTest {
         assertEquals("duplicate perk ids", ids.size, ids.toSet().size)
     }
 
+    // ── Composite objectives ──────────────────────────────────────────────────
+
+    /** A state for [missionId] with [credits] in the player's treasury, on turn [turn]. */
+    private fun missionState(missionId: String, credits: Int, turn: Int): GameState {
+        val mission = CampaignRegistry.MISSIONS.first { it.id == missionId }
+        val home = HexCoord(0, 0, 0)
+        return GameState(
+            turn = turn,
+            activeFaction = mission.playerFaction,
+            humanFaction = mission.playerFaction,
+            campaignState = CampaignState(activeMissionId = missionId),
+            playerStates = mapOf(
+                mission.playerFaction to PlayerState(mission.playerFaction, credits = credits),
+                mission.enemyFaction to PlayerState(mission.enemyFaction, credits = 50)
+            ),
+            // An enemy planet, so DEFEAT_FACTION is not accidentally satisfied by an empty board.
+            map = GameMap(tiles = mapOf(
+                home to HexTile(home, TerrainType.PLANET, systemLevel = 1, owner = mission.playerFaction),
+                HexCoord(2, -2, 0) to HexTile(HexCoord(2, -2, 0), TerrainType.PLANET, owner = mission.enemyFaction)
+            )),
+            units = mapOf(
+                home to com.novaempire.core.domain.models.GameUnit(
+                    type = com.novaempire.core.domain.models.UnitType.CRUISER,
+                    faction = mission.playerFaction, position = home, currentHp = 25
+                )
+            )
+        )
+    }
+
+    @Test
+    fun allModeNeedsEveryObjective() {
+        // mission_4: survive 20 turns AND hold 300 credits.
+        assertNull("turns reached but treasury short", VictoryChecker.check(missionState("mission_4", credits = 100, turn = 25)))
+        assertNull("treasury full but too early", VictoryChecker.check(missionState("mission_4", credits = 400, turn = 5)))
+        val both = VictoryChecker.check(missionState("mission_4", credits = 400, turn = 25))
+        assertNotNull("both met must win", both)
+        assertEquals(Faction.DOMINION, both!!.winner)
+    }
+
+    @Test
+    fun anyModeNeedsOnlyOneObjective() {
+        // mission_2: bank 500 credits OR eliminate the rival. Neither met → no victory.
+        assertNull(VictoryChecker.check(missionState("mission_2", credits = 100, turn = 5)))
+        assertNotNull(
+            "the credits route alone must win",
+            VictoryChecker.check(missionState("mission_2", credits = 500, turn = 5))
+        )
+        // The other route: the enemy holds nothing and has no units left.
+        val poorButVictorious = missionState("mission_2", credits = 10, turn = 5).let { s ->
+            s.copy(map = s.map.copy(tiles = s.map.tiles.filterValues { it.owner != Faction.KAELEN }))
+        }
+        assertNotNull("the elimination route alone must win", VictoryChecker.check(poorButVictorious))
+    }
+
+    @Test
+    fun eachObjectiveTypeIsJudgedByTheSameRule() {
+        // isObjectiveMet is the single place a type becomes a rule. If required and optional
+        // objectives ever read it differently, a mission would be winnable but its side goal
+        // unpayable, or the reverse.
+        val mission = CampaignRegistry.MISSIONS.first { it.id == "mission_4" }
+        val state = missionState("mission_4", credits = 400, turn = 25)
+
+        assertTrue(VictoryChecker.isObjectiveMet(state, mission, CampaignObjective(CampaignObjectiveType.SURVIVE_TURNS, 20)))
+        assertFalse(VictoryChecker.isObjectiveMet(state, mission, CampaignObjective(CampaignObjectiveType.SURVIVE_TURNS, 99)))
+        assertTrue(VictoryChecker.isObjectiveMet(state, mission, CampaignObjective(CampaignObjectiveType.ACCUMULATE_CREDITS, 300)))
+        assertFalse(VictoryChecker.isObjectiveMet(state, mission, CampaignObjective(CampaignObjectiveType.ACCUMULATE_CREDITS, 900)))
+        assertFalse(
+            "the enemy still holds a world",
+            VictoryChecker.isObjectiveMet(state, mission, CampaignObjective(CampaignObjectiveType.DEFEAT_FACTION))
+        )
+        assertFalse(
+            "an unreadable target stays unmet rather than throwing",
+            VictoryChecker.isObjectiveMet(
+                state, mission,
+                CampaignObjective(CampaignObjectiveType.CAPTURE_SPECIFIC_PLANET, targetString = "nowhere")
+            )
+        )
+    }
+
+    // ── Glory: optional objectives ────────────────────────────────────────────
+
+    @Test
+    fun bonusGloryIsPaidOnlyForObjectivesActuallyMet() {
+        // mission_3 pays 2 extra for holding 250 credits at the moment of capture.
+        val mission = CampaignRegistry.MISSIONS.first { it.id == "mission_3" }
+        val bonus = mission.bonusObjectives.single()
+
+        val rich = gateState(owner = Faction.DOMINION).let { s ->
+            s.copy(playerStates = s.playerStates + (Faction.DOMINION to PlayerState(Faction.DOMINION, credits = 300)))
+        }
+        val broke = gateState(owner = Faction.DOMINION).let { s ->
+            s.copy(playerStates = s.playerStates + (Faction.DOMINION to PlayerState(Faction.DOMINION, credits = 10)))
+        }
+
+        assertEquals(bonus.gloryReward, VictoryChecker.bonusGloryEarned(rich, mission))
+        assertEquals(0, VictoryChecker.bonusGloryEarned(broke, mission))
+    }
+
+    @Test
+    fun winningWithABonusObjectiveMetPaysBothRewards() = runBlocking {
+        val mission = CampaignRegistry.MISSIONS.first { it.id == "mission_3" }
+        val bonus = mission.bonusObjectives.single()
+        val engine = GameEngine(NoOpAI())
+        val rich = gateState(owner = Faction.DOMINION).let { s ->
+            s.copy(playerStates = s.playerStates + (Faction.DOMINION to PlayerState(Faction.DOMINION, credits = 300)))
+        }
+
+        engine.processIntent(GameIntent.LoadGame(rich))
+        engine.processIntent(GameIntent.EndTurn)
+
+        assertEquals(
+            mission.gloryReward + bonus.gloryReward,
+            engine.awaitVictory().campaignState.gloryPoints
+        )
+    }
+
+    @Test
+    fun replayingAMissionPaysNoBonusGloryEither() = runBlocking {
+        // The base reward is first-completion only; a side objective that kept paying would just
+        // move the farm one level down. Replayed here *with the bonus objective met*, so a
+        // regression would show up as glory that grew.
+        val engine = GameEngine(NoOpAI())
+        val rich = gateState(owner = Faction.DOMINION).let { s ->
+            s.copy(playerStates = s.playerStates + (Faction.DOMINION to PlayerState(Faction.DOMINION, credits = 300)))
+        }
+
+        engine.processIntent(GameIntent.RestoreCampaignProgress(CampaignProgress(setOf("mission_3"), 4)))
+        engine.processIntent(GameIntent.LoadGame(rich))
+        engine.processIntent(GameIntent.EndTurn)
+
+        assertEquals(4, engine.awaitVictory().campaignState.gloryPoints)
+    }
+
     // ── Mission data integrity ────────────────────────────────────────────────
+
+    /** Every objective a mission declares, required or optional. */
+    private val CampaignMission.allObjectives: List<CampaignObjective>
+        get() = objectives + bonusObjectives.map { it.objective }
 
     @Test
     fun everyCaptureObjectiveCarriesAParsableTarget() {
         // Guards the trap that made this whole area fragile: a capture mission whose target cannot
-        // be parsed is silently unwinnable.
-        CampaignRegistry.MISSIONS
-            .filter { it.objective.type == CampaignObjectiveType.CAPTURE_SPECIFIC_PLANET }
-            .forEach {
-                assertNotNull(
-                    "${it.id} has an unparsable capture target: \"${it.objective.targetString}\"",
-                    VictoryChecker.parseTargetCoord(it.objective.targetString)
-                )
-            }
+        // be parsed is silently unwinnable. Optional objectives are checked too — an unreadable
+        // target there is a reward that can never be paid.
+        CampaignRegistry.MISSIONS.forEach { mission ->
+            mission.allObjectives
+                .filter { it.type == CampaignObjectiveType.CAPTURE_SPECIFIC_PLANET }
+                .forEach {
+                    assertNotNull(
+                        "${mission.id} has an unparsable capture target: \"${it.targetString}\"",
+                        VictoryChecker.parseTargetCoord(it.targetString)
+                    )
+                }
+        }
     }
 
     @Test
@@ -307,15 +451,43 @@ class CampaignTest {
     }
 
     @Test
+    fun everyMissionDeclaresAtLeastOneObjective() {
+        // An empty list under ALL reads as "everything is done": the mission would be won on turn
+        // one, in silence. VictoryChecker guards it too — this catches the data, that catches the
+        // rule.
+        CampaignRegistry.MISSIONS.forEach {
+            assertTrue("${it.id} declares no objective", it.objectives.isNotEmpty())
+        }
+    }
+
+    @Test
+    fun bonusObjectivesPayASensibleAmount() {
+        CampaignRegistry.MISSIONS.forEach { mission ->
+            mission.bonusObjectives.forEach {
+                assertTrue("${mission.id} has a bonus objective worth nothing", it.gloryReward > 0)
+            }
+        }
+    }
+
+    @Test
     fun surviveMissionsDeadlineDoesNotPreemptTheirObjective() {
-        // A SURVIVE_TURNS mission must be winnable: its deadline, if any, has to leave room for the
-        // survival target to be reached.
+        // A survival objective must be reachable within the mission's own deadline. Under ALL every
+        // objective has to fit; under ANY it is enough that one route does, so a long survival goal
+        // beside a short alternative is legitimate.
         CampaignRegistry.MISSIONS
-            .filter { it.objective.type == CampaignObjectiveType.SURVIVE_TURNS && it.turnLimit > 0 }
-            .forEach {
+            .filter { it.turnLimit > 0 }
+            .forEach { mission ->
+                val survivals = mission.objectives.filter { it.type == CampaignObjectiveType.SURVIVE_TURNS }
+                if (survivals.isEmpty()) return@forEach
+                val reachable = when (mission.objectiveMode) {
+                    ObjectiveMode.ALL -> survivals.all { mission.turnLimit >= it.targetValue }
+                    ObjectiveMode.ANY -> mission.objectives.any {
+                        it.type != CampaignObjectiveType.SURVIVE_TURNS || mission.turnLimit >= it.targetValue
+                    }
+                }
                 assertTrue(
-                    "${it.id}: deadline ${it.turnLimit} is before its survival target ${it.objective.targetValue}",
-                    it.turnLimit >= it.objective.targetValue
+                    "${mission.id}: deadline ${mission.turnLimit} leaves no reachable route",
+                    reachable
                 )
             }
     }
