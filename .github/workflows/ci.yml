@@ -64,6 +64,13 @@ jobs:
         if: github.event.inputs.skip_tests != 'true'
         run: gradle :core:hex:test :core:domain:test :core:engine:test
 
+      # Tests JVM du module Android : uniquement de la logique sans dépendance Android (libellés,
+      # options d'écran). Les tests d'interface Compose demandent un appareil et vivent dans
+      # androidTest, exécuté par le job `android-test` sur `main`.
+      - name: Unit tests — app (JVM)
+        if: github.event.inputs.skip_tests != 'true'
+        run: gradle :app:testDebugUnitTest
+
       - name: Assemble debug APK
         run: gradle :app:assembleDebug
 

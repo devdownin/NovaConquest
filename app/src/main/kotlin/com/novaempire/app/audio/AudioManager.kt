@@ -17,6 +17,22 @@ object AudioManager {
     private val soundMap = mutableMapOf<SoundType, Int>()
     private var isInitialized = false
 
+    // Les curseurs de volume de l'écran de réglages n'étaient branchés sur rien : tout se jouait à
+    // plein volume. `masterVolume` s'applique à tout, `sfxVolume` seulement aux bruits de combat —
+    // sans ça, baisser les « SFX » aurait aussi étouffé les clics d'interface.
+    private var masterVolume = 0.8f
+    private var sfxVolume = 0.7f
+
+    fun setVolumes(master: Float, sfx: Float) {
+        masterVolume = master.coerceIn(0f, 1f)
+        sfxVolume = sfx.coerceIn(0f, 1f)
+    }
+
+    private fun volumeFor(type: SoundType): Float = when (type) {
+        SoundType.COMBAT_LASER, SoundType.COMBAT_EXPLOSION -> masterVolume * sfxVolume
+        SoundType.UI_CLICK, SoundType.END_TURN -> masterVolume
+    }
+
     fun init(context: Context) {
         if (isInitialized) return
 
@@ -55,9 +71,12 @@ object AudioManager {
     fun playSound(type: SoundType) {
         if (!isInitialized) return
 
+        val volume = volumeFor(type)
+        if (volume <= 0f) return
+
         val soundId = soundMap[type]
         if (soundId != null) {
-            soundPool?.play(soundId, 1f, 1f, 1, 0, 1f)
+            soundPool?.play(soundId, volume, volume, 1, 0, 1f)
             Log.d("AudioManager", "Playing sound: $type")
         } else {
             // Log missing sound for dummy implementation

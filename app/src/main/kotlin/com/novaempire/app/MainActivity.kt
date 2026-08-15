@@ -95,7 +95,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             val gameViewModel: GameViewModel = viewModel()
             val gameState by gameViewModel.gameState.collectAsState()
-            NovaEmpireTheme(themeType = gameState.themeConfig.currentTheme) {
+            val settings by gameViewModel.settings.collectAsState()
+            NovaEmpireTheme(settings = settings) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -222,7 +223,9 @@ class MainActivity : ComponentActivity() {
                         }
                         AppScreen.SETTINGS -> {
                             SettingsScreen(
-                                onBackClick = { currentScreen = AppScreen.MAIN_MENU }
+                                onBackClick = { currentScreen = AppScreen.MAIN_MENU },
+                                settings = settings,
+                                onSettingsChange = gameViewModel::updateSettings
                             )
                         }
                     }
