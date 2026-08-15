@@ -2,11 +2,14 @@ package com.novaempire.app.ui.screens
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.requestFocus
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.novaempire.core.domain.models.Faction
@@ -33,6 +36,7 @@ import org.robolectric.annotation.Config
  * suite cannot see — that the screen actually composes, and that it exposes the accessibility
  * contract a screen-reader user depends on.
  */
+@OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
 class TacticalMapScreenTest {
