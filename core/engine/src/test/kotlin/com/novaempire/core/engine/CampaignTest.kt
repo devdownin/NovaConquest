@@ -124,7 +124,8 @@ class CampaignTest {
             100 + mission.enemyBonusCredits,
             after.playerStates[mission.enemyFaction]!!.credits
         )
-        assertEquals("the player's treasury is untouched", 100, after.playerStates[mission.playerFaction]!!.credits)
+        // The player's purse comes from the mission's scripted opening, never from the enemy's dial.
+        assertEquals(mission.setup.startingCredits, after.playerStates[mission.playerFaction]!!.credits)
     }
 
     // ── Progression (P0.2) ────────────────────────────────────────────────────
@@ -205,7 +206,9 @@ class CampaignTest {
     @Test
     fun perksAreChargedAndApplied() {
         val engine = GameEngine(NoOpAI())
-        val mission = CampaignRegistry.MISSIONS.first { it.id == "mission_3" }
+        // mission_1 on purpose: it has no scripted opening, so this isolates what the perks do.
+        // Stacking on a mission's scripted treasury is covered separately.
+        val mission = CampaignRegistry.MISSIONS.first { it.id == "mission_1" }
         val chest = GloryRegistry.find("perk_war_chest")!!
         val hulls = GloryRegistry.find("perk_prototype_hull")!!
         val before = GameState(
@@ -404,6 +407,117 @@ class CampaignTest {
         // Spelled out rather than summed from the registry: a test that recomputes the cost the
         // same way the code does would agree with any mistake both of them made.
         assertEquals("war chest 2 + vanguard 3 + charts 2", 10 - 7, after.campaignState.gloryPoints)
+    }
+
+    // ── Scripted starting conditions ──────────────────────────────────────────
+
+    @Test
+    fun aScriptedMissionOpensWithItsOwnFleetTechAndTreasury() {
+        // Mission 3 is a raid: hulls instead of an economy. Before this, every mission opened the
+        // same way and only the map and the enemy purse could differ.
+        val mission = CampaignRegistry.MISSIONS.first { it.id == "mission_3" }
+        val after = launch("mission_3", emptySet(), launchState("mission_3", 0)).newState
+        val player = after.playerStates[mission.playerFaction]!!
+
+        assertEquals(mission.setup.startingCredits, player.credits)
+        assertTrue("tech_hull_plating" in player.techUnlocked)
+        assertEquals(
+            "every scripted hull reaches the board",
+            mission.setup.startingFleet.size,
+            after.units.values.count { it.faction == mission.playerFaction }
+        )
+        assertTrue(
+            "the scripted fleet stands at the capital",
+            after.units.values.filter { it.faction == mission.playerFaction }
+                .all { it.position.distanceTo(capital) <= 1 }
+        )
+    }
+
+    @Test
+    fun aMissionWithoutASetupOpensTheStandardWay() {
+        val before = launchState("mission_1", 0)
+        val after = launch("mission_1", emptySet(), before).newState
+        assertEquals(100, after.playerStates[Faction.DOMINION]!!.credits)
+        assertTrue(after.units.isEmpty())
+    }
+
+    @Test
+    fun perkCreditsStackOnTopOfTheMissionsBaseTreasury() {
+        // The order is the whole point of routing both through one path: the mission sets the
+        // treasury, the perk adds to it. Either winning outright would be a silent balance bug.
+        val mission = CampaignRegistry.MISSIONS.first { it.id == "mission_3" }
+        val after = launch("mission_3", setOf("perk_war_chest"), launchState("mission_3", 10)).newState
+
+        assertEquals(mission.setup.startingCredits!! + 150, after.playerStates[mission.playerFaction]!!.credits)
+    }
+
+    @Test
+    fun aScriptedFleetAndABoughtShipBothReachTheBoard() {
+        val mission = CampaignRegistry.MISSIONS.first { it.id == "mission_3" }
+        val after = launch("mission_3", setOf("perk_vanguard"), launchState("mission_3", 10)).newState
+
+        assertEquals(
+            mission.setup.startingFleet.size + 1,
+            after.units.values.count { it.faction == mission.playerFaction }
+        )
+    }
+
+    @Test
+    fun aScriptedStartLiftsTheFogAroundTheNewFleet() {
+        // Without the vision recompute the starting squadron would sit in fog until something else
+        // happened to trigger one.
+        val after = launch("mission_3", emptySet(), launchState("mission_3", 0)).newState
+        assertTrue(after.playerStates[Faction.DOMINION]!!.visibleHexes.isNotEmpty())
+    }
+
+    // `startingPlanets` is the one lever no shipped mission uses yet — see AUDIT_CAMPAGNES.md §7 —
+    // so it is exercised here directly rather than through the registry.
+
+    @Test
+    fun aScriptedWorldChangesHandsBeforeTheFirstTurn() {
+        val outpost = HexCoord(2, -2, 0)
+        val board = launchState("mission_1", 0).let { s ->
+            s.copy(map = s.map.copy(tiles = s.map.tiles + (outpost to HexTile(outpost, TerrainType.PLANET, systemLevel = 2))))
+        }
+
+        val after = applyLoadout(board, Faction.DOMINION, Loadout(planets = listOf(outpost)))
+
+        assertEquals(Faction.DOMINION, after.map.tiles[outpost]!!.owner)
+    }
+
+    @Test
+    fun aScriptedWorldOnEmptySpaceIsLeftAloneRatherThanConjured() {
+        // Turning arbitrary terrain into a world would let a mission drop one inside an asteroid
+        // field, which MapFactory's connectivity pass never promised to keep reachable.
+        val empty = HexCoord(1, -1, 0)
+        val board = launchState("mission_1", 0)
+        assertEquals(TerrainType.EMPTY, board.map.tiles[empty]!!.terrain)
+
+        val after = applyLoadout(board, Faction.DOMINION, Loadout(planets = listOf(empty)))
+
+        assertNull(after.map.tiles[empty]!!.owner)
+        assertEquals(TerrainType.EMPTY, after.map.tiles[empty]!!.terrain)
+    }
+
+    @Test
+    fun everyScriptedSetupReferencesThingsThatExist() {
+        // The trap this whole area keeps producing: data pointing at a renamed id, bought and
+        // charged, granting nothing.
+        val techIds = com.novaempire.core.domain.models.TechRegistry.ALL_TECHS.map { it.id }.toSet()
+        CampaignRegistry.MISSIONS.forEach { mission ->
+            mission.setup.startingTechs.forEach {
+                assertTrue("${mission.id} starts with unknown tech \"$it\"", it in techIds)
+            }
+            mission.setup.startingPlanets.forEach {
+                assertNotNull(
+                    "${mission.id} has an unparsable starting planet \"$it\"",
+                    VictoryChecker.parseTargetCoord(it)
+                )
+            }
+            mission.setup.startingCredits?.let {
+                assertTrue("${mission.id} starts with negative credits", it >= 0)
+            }
+        }
     }
 
     // ── Composite objectives ──────────────────────────────────────────────────

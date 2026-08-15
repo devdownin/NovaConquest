@@ -46,6 +46,33 @@ data class BonusObjective(
     val gloryReward: Int
 )
 
+/**
+ * What a mission hands its player before the first turn.
+ *
+ * Until now a mission could only vary map, factions, enemy purse and deadline — so every scenario
+ * opened the same way, with the same ships and the same empty treasury. These are the levers that
+ * make missions play at different *tempos*: a raid with three hulls and no economy is a different
+ * game from a siege with one dreadnought, on the same map against the same enemy.
+ *
+ * Everything defaults to "nothing", so a mission that wants the standard opening writes nothing.
+ */
+@Serializable
+data class MissionSetup(
+    /** Replaces the standard starting treasury. Null keeps whatever a new board grants. */
+    val startingCredits: Int? = null,
+    /** Technologies already fielded on turn one. Must be `TechRegistry` ids. */
+    val startingTechs: List<String> = emptyList(),
+    /** Ships in service on turn one, placed at the player's capital. */
+    val startingFleet: List<UnitType> = emptyList(),
+    /**
+     * Worlds already held, written as `"q,r"` like a capture objective.
+     *
+     * Only hexes that already carry a planet can be granted — see `applyLoadout`. Use coordinates
+     * from `MapFactory.spawnPointsFor`, which are guaranteed to be planets on every seed.
+     */
+    val startingPlanets: List<String> = emptyList()
+)
+
 @Serializable
 data class CampaignMission(
     val id: String,
@@ -72,7 +99,9 @@ data class CampaignMission(
     val objectives: List<CampaignObjective>,
     val objectiveMode: ObjectiveMode = ObjectiveMode.ALL,
     /** Optional side goals, each paying its own glory. Never required to win. */
-    val bonusObjectives: List<BonusObjective> = emptyList()
+    val bonusObjectives: List<BonusObjective> = emptyList(),
+    /** Scripted opening — see [MissionSetup]. Empty means the standard start. */
+    val setup: MissionSetup = MissionSetup()
 )
 
 object CampaignRegistry {
@@ -126,6 +155,13 @@ object CampaignRegistry {
             enemyBonusCredits = 60,
             turnLimit = 40,
             gloryReward = 4,
+            // Tempo : un corps expéditionnaire, pas une économie. Le joueur arrive avec de quoi
+            // frapper et presque rien pour reconstruire — la mission se joue sur ce qu'il amène.
+            setup = MissionSetup(
+                startingCredits = 40,
+                startingTechs = listOf("tech_hull_plating"),
+                startingFleet = listOf(UnitType.CRUISER, UnitType.CRUISER, UnitType.BATTLESHIP)
+            ),
             objectives = listOf(
                 CampaignObjective(CampaignObjectiveType.CAPTURE_SPECIFIC_PLANET, targetString = "-5,5")
             ),
@@ -150,6 +186,13 @@ object CampaignRegistry {
             enemyBonusCredits = 80,
             turnLimit = 35,
             gloryReward = 4,
+            // Tempo opposé à celui de la mission 3 : de quoi tenir, pas de quoi frapper. Le trésor
+            // de départ est délibérément laissé au standard — augmenter les crédits ici affaiblirait
+            // l'objectif économique de la mission elle-même.
+            setup = MissionSetup(
+                startingTechs = listOf("tech_deep_scanners"),
+                startingFleet = listOf(UnitType.DEFENSE_PLATFORM, UnitType.DEFENSE_PLATFORM)
+            ),
             objectives = listOf(
                 CampaignObjective(CampaignObjectiveType.SURVIVE_TURNS, targetValue = 20),
                 CampaignObjective(CampaignObjectiveType.ACCUMULATE_CREDITS, targetValue = 300)

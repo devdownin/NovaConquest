@@ -203,43 +203,25 @@ internal fun handleStartCampaign(state: GameState, intent: GameIntent.StartCampa
         )
     )
 
-    val players = next.playerStates.toMutableMap()
-
-    // Perk effects are read off the perk's own fields, so a new entry in `GloryRegistry` works
-    // here without touching this function — no `when` to forget to extend.
-    players[mission.playerFaction]?.let { p ->
-        players[mission.playerFaction] = p.copy(
-            credits = p.credits + perks.sumOf { it.bonusCredits },
-            techUnlocked = p.techUnlocked + perks.mapNotNull { it.grantsTechId },
-            recruitedHeroes = p.recruitedHeroes + perks.mapNotNull { it.grantsHeroId },
-            // Explored, not visible: the fog still hides fleets, so this grants planning rather
-            // than intelligence. `updateVision` only ever adds to exploredHexes, so seeding it here
-            // survives every later recompute.
-            exploredHexes = if (perks.any { it.revealsMap }) p.exploredHexes + next.map.tiles.keys
-            else p.exploredHexes
+    // The mission's scripted opening first, the bought perks on top: both go through one
+    // application path, so a perk's bonus stacks on the mission's base treasury rather than one of
+    // the two quietly winning. Perk effects are read off each perk's own fields, so a new entry in
+    // `GloryRegistry` works here without touching this function — no `when` to forget to extend.
+    val scripted = mission.setup.toLoadout()
+    next = applyLoadout(next, mission.playerFaction, scripted)
+    next = applyLoadout(
+        next,
+        mission.playerFaction,
+        Loadout(
+            addCredits = perks.sumOf { it.bonusCredits },
+            techs = perks.mapNotNull { it.grantsTechId },
+            heroes = perks.mapNotNull { it.grantsHeroId },
+            units = perks.mapNotNull { it.grantsUnitType },
+            revealMap = perks.any { it.revealsMap }
         )
-    }
-    next = next.copy(playerStates = players)
+    )
 
-    // Granted ships touch the board, so they are placed after the player state settles. A capital
-    // ringed by ships or asteroids simply yields nowhere to stand: the perk is still charged, which
-    // is why `UnitPlacement` is shared with the build queue — a rule that disagreed with the
-    // shipyard's would strand a ship the player paid glory for.
-    val capital = players[mission.playerFaction]?.capitalCoord
-    val grantedUnits = perks.mapNotNull { it.grantsUnitType }
-    if (capital != null && grantedUnits.isNotEmpty()) {
-        val units = next.units.toMutableMap()
-        for (type in grantedUnits) {
-            val hex = UnitPlacement.freeHexNear(next.copy(units = units), capital) ?: continue
-            units[hex] = com.novaempire.core.domain.models.GameUnit(
-                type = type,
-                faction = mission.playerFaction,
-                position = hex,
-                currentHp = type.maxHp
-            )
-        }
-        next = next.copy(units = units)
-    }
+    val players = next.playerStates.toMutableMap()
 
     // A campaign mission is a duel: the scripted enemy must actually be at war, otherwise the
     // utility AI (which only engages WAR / NPC targets) stays passive and the mission is trivial.
@@ -260,10 +242,11 @@ internal fun handleStartCampaign(state: GameState, intent: GameIntent.StartCampa
     }
 
     next = next.copy(playerStates = players)
-    // Perks can add a ship or a vision tech, and both change what the player can see before they
-    // take their first action. Without this the granted cruiser sits in fog until something else
-    // happens to recompute vision.
-    return GameResult(if (perks.isEmpty()) next else updateVision(next, setOf(mission.playerFaction)))
+    // A scripted fleet, a granted ship, a vision tech or a pre-owned world all change what the
+    // player can see before they take their first action. Without this, a starting squadron would
+    // sit in fog until something else happened to recompute vision.
+    val changedTheBoard = perks.isNotEmpty() || !scripted.isEmpty
+    return GameResult(if (changedTheBoard) updateVision(next, setOf(mission.playerFaction)) else next)
 }
 
 internal fun handleSiegePlanet(state: GameState, intent: GameIntent.SiegePlanet, deps: GameEngineDependencies): GameResult {
