@@ -47,6 +47,39 @@ object HexLayout {
     fun screenToLocal(screenValue: Float, viewCenter: Float, pan: Float, scale: Float): Float =
         viewCenter + (screenValue - viewCenter - pan) / scale
 
+    /** Applies the camera on one axis: local-plane pixel → screen pixel. Inverse of [screenToLocal]. */
+    fun localToScreen(localValue: Float, viewCenter: Float, pan: Float, scale: Float): Float =
+        viewCenter + (localValue - viewCenter) * scale + pan
+
+    /**
+     * Whether [coord] sits inside the middle [comfortFraction] of the viewport.
+     *
+     * Used to decide whether a keyboard / D-pad cursor needs the camera to follow it. Recentring
+     * on every key press makes the board lurch under a sighted keyboard user; never recentring
+     * lets the cursor walk off screen, which strands anyone who cannot pan by touch. Following
+     * only once the cursor leaves the comfortable middle gives both a stable board.
+     */
+    fun isComfortablyVisible(
+        coord: HexCoord,
+        viewWidth: Float,
+        viewHeight: Float,
+        panX: Float,
+        panY: Float,
+        scale: Float,
+        hexRadius: Float,
+        comfortFraction: Float = 0.7f
+    ): Boolean {
+        if (viewWidth <= 0f || viewHeight <= 0f) return true
+        val cx = viewWidth / 2f
+        val cy = viewHeight / 2f
+        val screenX = localToScreen(centerXOf(coord, cx, hexRadius), cx, panX, scale)
+        val screenY = localToScreen(centerYOf(coord, cy, hexRadius), cy, panY, scale)
+        val marginX = viewWidth * (1f - comfortFraction) / 2f
+        val marginY = viewHeight * (1f - comfortFraction) / 2f
+        return screenX >= marginX && screenX <= viewWidth - marginX &&
+            screenY >= marginY && screenY <= viewHeight - marginY
+    }
+
     /** The hex under a screen-space point, camera included. */
     fun hexAtScreen(
         screenX: Float,

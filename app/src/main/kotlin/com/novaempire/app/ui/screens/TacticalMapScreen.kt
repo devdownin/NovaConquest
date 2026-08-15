@@ -36,7 +36,22 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.rememberScrollState
@@ -80,6 +95,16 @@ private const val MAP_PAN_MARGIN_PX = 96f
 
 /** Below this zoom the per-hex sector IDs are illegible, so drawing them is pure cost. */
 private const val SECTOR_LABEL_MIN_SCALE = 0.9f
+
+// Neighbour steps named for where they land on screen (x = √3·R·(q + r/2), y = 1.5·R·r).
+// A pointy-top hex has no neighbour straight above it, so the four arrows are mapped to the
+// four "flat" directions and Shift reaches the two remaining diagonals.
+private val HEX_STEP_EAST = HexCoord(1, 0, -1)
+private val HEX_STEP_WEST = HexCoord(-1, 0, 1)
+private val HEX_STEP_NORTH_WEST = HexCoord(0, -1, 1)
+private val HEX_STEP_SOUTH_EAST = HexCoord(0, 1, -1)
+private val HEX_STEP_NORTH_EAST = HexCoord(1, -1, 0)
+private val HEX_STEP_SOUTH_WEST = HexCoord(-1, 1, 0)
 
 /**
  * Camera (zoom + pan) for the tactical map.
@@ -196,6 +221,15 @@ fun TacticalMapScreen(
         )
     )
     var selectedHex by remember { mutableStateOf(initialSelectedHex) }
+    // Keyboard / D-pad cursor. Distinct from [selectedHex]: the cursor is where the player is
+    // *looking*, the selection is what they have *committed to*, and the two-step
+    // "select a fleet, then pick its target" flow needs both at once.
+    var cursorHex by remember { mutableStateOf(initialSelectedHex) }
+    var viewSize by remember { mutableStateOf(IntSize.Zero) }
+    // Only paint the cursor ring once the player has actually pressed a key: a touch player
+    // shouldn't have a second outline following their taps around.
+    var keyboardActive by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
     var combatPreviewData by remember { mutableStateOf<Pair<HexCoord, HexCoord>?>(null) }
     var siegePreviewData by remember { mutableStateOf<Triple<HexCoord, HexCoord, Boolean>?>(null) }
     var terrainTooltipCoord by remember { mutableStateOf<HexCoord?>(null) }
@@ -216,6 +250,8 @@ fun TacticalMapScreen(
     // capture is frozen at its first-frame value. Anything they must read live goes through
     // rememberUpdatedState.
     val currentIsAiThinking by rememberUpdatedState(isAiThinking)
+    val currentOnHexClick by rememberUpdatedState(onHexClick)
+    val currentOnClearSelection by rememberUpdatedState(onClearSelection)
     // Le thème effectif est résolu une seule fois par NovaEmpireTheme. Lire ici
     // `gameState.themeConfig.currentTheme` brut court-circuitait la résolution saisonnière : la
     // carte se dessinait avec les réglages DEFAULT alors que l'interface était en HALLOWEEN.
@@ -326,6 +362,122 @@ fun TacticalMapScreen(
             .toSet()
     }
 
+    /**
+     * What a tap — or an Enter on the keyboard cursor — does to [coord].
+     *
+     * Shared by the pointer and keyboard paths on purpose: the two-step selection rules are
+     * subtle enough (deselect / attack / siege / move / reselect) that a second copy would drift.
+     * Every mutable value it touches is read through a state holder, so the single instance
+     * captured by `pointerInput(Unit)` stays correct across recompositions.
+     */
+    fun activateHex(coord: HexCoord) {
+        val gs = currentGameState
+        val explored = gs.playerStates[gs.activeFaction]?.exploredHexes ?: emptySet()
+        if (!gs.map.tiles.containsKey(coord)) return
+        // Acting on a fog-of-war hex does nothing — give a light haptic tick so the input
+        // doesn't feel dropped (A6).
+        if (!explored.contains(coord)) {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            return
+        }
+
+        val prev = selectedHex
+        val prevUnit = prev?.let { gs.units[it] }
+        val tappedUnit = gs.units[coord]
+        val tappedTile = gs.map.tiles[coord]
+
+        when {
+            // Same tile → deselect
+            prev == coord -> {
+                selectedHex = null
+                currentOnClearSelection()
+            }
+            // Friendly unit selected → interpret second activation as an action
+            prev != null && prevUnit != null && prevUnit.faction == gs.activeFaction -> when {
+                // Enemy unit in attack range → open combat preview
+                tappedUnit != null && tappedUnit.faction != gs.activeFaction &&
+                !prevUnit.hasAttacked && prev.distanceTo(coord) <= prevUnit.type.range -> {
+                    combatPreviewData = Pair(prev, coord)
+                    selectedHex = null
+                    currentOnClearSelection()
+                }
+                // Adjacent enemy planet → show siege/capture confirmation
+                tappedUnit == null && !prevUnit.hasAttacked &&
+                tappedTile?.terrain == TerrainType.PLANET &&
+                tappedTile.owner != null && tappedTile.owner != gs.activeFaction &&
+                prev.distanceTo(coord) == 1 -> {
+                    siegePreviewData = Triple(prev, coord, tappedTile.systemLevel <= 0)
+                    selectedHex = null
+                    currentOnClearSelection()
+                }
+                // Empty hex inside the unit's remaining range → move. Acting beyond it used to
+                // fire a MoveUnit the engine could only reject ("unreachable or too far"); it now
+                // just moves the selection, which is what the player meant.
+                tappedUnit == null && !prevUnit.hasMoved &&
+                    coord in currentReachableHexes -> {
+                    currentOnMoveUnit(prev, coord)
+                    selectedHex = null
+                    currentOnClearSelection()
+                }
+                // Anything else → reselect the new tile
+                else -> {
+                    selectedHex = coord
+                    currentOnHexClick(coord)
+                }
+            }
+            // No friendly unit selected → select tile
+            else -> {
+                selectedHex = coord
+                currentOnHexClick(coord)
+            }
+        }
+    }
+
+    fun centerCameraOn(coord: HexCoord) {
+        if (viewSize.width == 0 || viewSize.height == 0) return
+        camera.pan = clampPan(
+            Offset(
+                HexLayout.panToCenterX(coord, hexRadiusPx, camera.scale),
+                HexLayout.panToCenterY(coord, hexRadiusPx, camera.scale)
+            ),
+            camera.scale, viewSize.width.toFloat(), viewSize.height.toFloat(),
+            hexRadiusPx, currentGameState.map.radius
+        )
+    }
+
+    /** Moves the cursor, letting the camera follow only once it leaves the comfortable middle. */
+    fun moveCursorTo(coord: HexCoord) {
+        cursorHex = coord
+        if (!HexLayout.isComfortablyVisible(
+                coord, viewSize.width.toFloat(), viewSize.height.toFloat(),
+                camera.pan.x, camera.pan.y, camera.scale, hexRadiusPx
+            )
+        ) {
+            centerCameraOn(coord)
+        }
+    }
+
+    /** One neighbour step for the keyboard / D-pad cursor. */
+    fun stepCursor(direction: HexCoord) {
+        val gs = currentGameState
+        val current = cursorHex
+        if (current == null) {
+            // The very first key press just lands the cursor somewhere meaningful.
+            val landing = selectedHex
+                ?: gs.playerStates[gs.humanFaction]?.capitalCoord
+                ?: gs.units.values.firstOrNull { it.faction == gs.activeFaction }?.position
+            if (landing != null) moveCursorTo(landing)
+            return
+        }
+        val next = current + direction
+        if (gs.map.tiles.containsKey(next)) {
+            moveCursorTo(next)
+        } else {
+            // Edge of the galaxy — a tick so the key press doesn't feel dropped.
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
+    }
+
     LaunchedEffect(gameState.lastCombatEvent) {
         gameState.lastCombatEvent?.let { combat ->
             activeCombatEvent = combat
@@ -372,6 +524,17 @@ fun TacticalMapScreen(
         }
     }
 
+    // Spoken by TalkBack on every cursor move — see the semantics block on the map below.
+    val cursorDescription = remember(cursorHex, selectedHex, gameState, reachableHexes) {
+        describeHexForAccessibility(gameState, cursorHex, selectedHex, reachableHexes)
+    }
+
+    LaunchedEffect(Unit) {
+        // Best-effort: lets a keyboard or D-pad drive the map immediately, and takes nothing away
+        // from touch. Throws harmlessly if the node isn't attached yet, hence runCatching.
+        runCatching { focusRequester.requestFocus() }
+    }
+
     val sweepProgress = rememberInfiniteTransition(label = "Scanline").animateFloat(
         initialValue = 0f,
         targetValue = 1f,
@@ -400,6 +563,45 @@ fun TacticalMapScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .onSizeChanged { viewSize = it }
+                // Accessibility. The board is a bare Canvas, so without a keyboard/D-pad cursor
+                // and a spoken description of what it sits on, the map is unusable by anyone who
+                // can't see it or can't point precisely — the game's largest remaining gap.
+                .focusRequester(focusRequester)
+                .focusable()
+                .onKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown || currentIsAiThinking) {
+                        return@onKeyEvent false
+                    }
+                    val handled = when (event.key) {
+                        Key.DirectionLeft -> {
+                            stepCursor(if (event.isShiftPressed) HEX_STEP_SOUTH_WEST else HEX_STEP_WEST)
+                            true
+                        }
+                        Key.DirectionRight -> {
+                            stepCursor(if (event.isShiftPressed) HEX_STEP_NORTH_EAST else HEX_STEP_EAST)
+                            true
+                        }
+                        Key.DirectionUp -> { stepCursor(HEX_STEP_NORTH_WEST); true }
+                        Key.DirectionDown -> { stepCursor(HEX_STEP_SOUTH_EAST); true }
+                        Key.Enter, Key.NumPadEnter, Key.Spacebar, Key.DirectionCenter -> {
+                            cursorHex?.let { activateHex(it) }
+                            true
+                        }
+                        Key.Escape -> {
+                            selectedHex = null
+                            currentOnClearSelection()
+                            true
+                        }
+                        else -> false
+                    }
+                    if (handled) keyboardActive = true
+                    handled
+                }
+                .semantics {
+                    contentDescription = cursorDescription
+                    liveRegion = LiveRegionMode.Polite
+                }
                 .pointerInput(Unit) {
                     detectTransformGestures { centroid, panChange, zoom, _ ->
                         // A fleet drag owns the gesture — panning underneath it would slide the
@@ -457,67 +659,11 @@ fun TacticalMapScreen(
                             offset, size.width.toFloat(), size.height.toFloat(),
                             camera.pan, camera.scale, hexRadiusPx
                         )
-                        val gs = currentGameState
-                        val explored = gs.playerStates[gs.activeFaction]?.exploredHexes ?: emptySet()
-                        if (!gs.map.tiles.containsKey(coord)) return@detectTapGestures
-                        // Tapping a fog-of-war hex does nothing — give a light haptic tick so the
-                        // tap doesn't feel dropped (A6).
-                        if (!explored.contains(coord)) {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            return@detectTapGestures
-                        }
-
-                        val prev = selectedHex
-                        val prevUnit = prev?.let { gs.units[it] }
-                        val tappedUnit = gs.units[coord]
-                        val tappedTile = gs.map.tiles[coord]
-
-                        when {
-                            // Same tile → deselect
-                            prev == coord -> {
-                                selectedHex = null
-                                onClearSelection()
-                            }
-                            // Friendly unit selected → interpret second tap as action
-                            prev != null && prevUnit != null && prevUnit.faction == gs.activeFaction -> when {
-                                // Enemy unit in attack range → open combat preview
-                                tappedUnit != null && tappedUnit.faction != gs.activeFaction &&
-                                !prevUnit.hasAttacked && prev.distanceTo(coord) <= prevUnit.type.range -> {
-                                    combatPreviewData = Pair(prev, coord)
-                                    selectedHex = null
-                                    onClearSelection()
-                                }
-                                // Adjacent enemy planet → show siege/capture confirmation
-                                tappedUnit == null && !prevUnit.hasAttacked &&
-                                tappedTile?.terrain == TerrainType.PLANET &&
-                                tappedTile.owner != null && tappedTile.owner != gs.activeFaction &&
-                                prev.distanceTo(coord) == 1 -> {
-                                    siegePreviewData = Triple(prev, coord, tappedTile.systemLevel <= 0)
-                                    selectedHex = null
-                                    onClearSelection()
-                                }
-                                // Empty hex inside the unit's remaining range → move. Tapping
-                                // beyond it used to fire a MoveUnit the engine could only reject
-                                // ("unreachable or too far"); it now just moves the selection,
-                                // which is what the player meant.
-                                tappedUnit == null && !prevUnit.hasMoved &&
-                                    coord in currentReachableHexes -> {
-                                    currentOnMoveUnit(prev, coord)
-                                    selectedHex = null
-                                    onClearSelection()
-                                }
-                                // Any other second tap → reselect new tile
-                                else -> {
-                                    selectedHex = coord
-                                    onHexClick(coord)
-                                }
-                            }
-                            // No friendly unit selected → select tile
-                            else -> {
-                                selectedHex = coord
-                                onHexClick(coord)
-                            }
-                        }
+                        // Keep the keyboard cursor on the last hex touched, so switching between
+                        // finger and keyboard mid-turn doesn't teleport it.
+                        cursorHex = coord
+                        keyboardActive = false
+                        activateHex(coord)
                     }
                 }
                 .pointerInput(Unit) {
@@ -783,6 +929,23 @@ fun TacticalMapScreen(
                     capturableCoords.forEach { overlayHex(it, NeonGold.copy(alpha = 0.85f), fill = false, strokeWidth = 3.5f) }
                     siegeableCoords.forEach { if (it !in capturableCoords) overlayHex(it, NeonOrange.copy(alpha = 0.85f), fill = false, strokeWidth = 3f) }
                     selectedHex?.let { overlayHex(it, NeonCyan, fill = false, strokeWidth = 4f) }
+
+                    // Keyboard / D-pad cursor. Drawn directly rather than through overlayHex so it
+                    // stays visible inside the fog of war — losing the cursor is exactly the
+                    // failure mode a keyboard player cannot recover from.
+                    if (keyboardActive) {
+                        cursorHex?.let { cursor ->
+                            val cx = centerX + horizSpacing * (cursor.q + cursor.r / 2f)
+                            val cy = centerY + vertSpacing * cursor.r
+                            if (onScreen(cx, cy)) {
+                                drawHexagonPath(
+                                    centerX = cx, centerY = cy, radius = hexRadius * 0.9f,
+                                    color = Color.White.copy(alpha = 0.85f),
+                                    fill = false, strokeWidth = 2.5f
+                                )
+                            }
+                        }
+                    }
 
                     // Fleets. Drawn after the overlays so a sprite is never tinted by a range wash.
                     val animatedUnitId = movingUnitAnim?.id
@@ -1791,6 +1954,87 @@ fun DrawScope.drawHexagonPath(
         if (brush != null) drawPath(path = path, brush = brush, style = Stroke(width = strokeWidth))
         else drawPath(path = path, color = color, style = Stroke(width = strokeWidth))
     }
+}
+
+/** French label for a terrain, matching the wording of the long-press terrain sheet. */
+private fun terrainLabel(terrain: TerrainType): String = when (terrain) {
+    TerrainType.EMPTY -> "espace vide"
+    TerrainType.PLANET -> "planète"
+    TerrainType.ASTEROIDS -> "champ d'astéroïdes, infranchissable"
+    TerrainType.NEBULA -> "nébuleuse"
+    TerrainType.BLACK_HOLE -> "trou noir"
+    TerrainType.WORMHOLE -> "ver de l'espace"
+    TerrainType.PLASMA_CLOUD -> "nuage de plasma"
+    TerrainType.ION_STORM -> "champ ionique"
+    TerrainType.ANOMALY -> "anomalie galactique"
+}
+
+/**
+ * What TalkBack announces for the hex under the keyboard cursor.
+ *
+ * The board is drawn into a [Canvas], which carries no semantics of its own: without this a
+ * screen-reader user hears nothing at all from the map. Beyond naming the hex, it states **what
+ * Enter would do from here** — the two-step "pick a fleet, then pick its target" flow is
+ * otherwise impossible to follow by ear. The branches mirror `activateHex` deliberately; if one
+ * changes, so must the other.
+ */
+private fun describeHexForAccessibility(
+    state: GameState,
+    coord: HexCoord?,
+    selected: HexCoord?,
+    reachable: Set<HexCoord>
+): String {
+    if (coord == null) {
+        return "Carte tactique. Flèches pour déplacer le curseur, Entrée pour agir."
+    }
+    val tile = state.map.tiles[coord]
+        ?: return "Secteur ${coord.q}, ${coord.r}, hors de la galaxie."
+    val player = state.playerStates[state.activeFaction]
+    if (coord !in (player?.exploredHexes ?: emptySet())) {
+        return "Secteur ${coord.q}, ${coord.r}, inexploré."
+    }
+
+    val parts = mutableListOf("Secteur ${coord.q}, ${coord.r}", terrainLabel(tile.terrain))
+    if (tile.terrain == TerrainType.PLANET) {
+        parts += tile.owner?.let { "contrôlée par ${it.displayName}" } ?: "neutre"
+        parts += "niveau ${tile.systemLevel}"
+    }
+
+    val unit = state.units[coord]
+    val unitVisible = unit != null &&
+        (unit.faction == state.activeFaction || coord in (player?.visibleHexes ?: emptySet()))
+    if (unit != null && unitVisible) {
+        parts += "${unit.type.name}, ${unit.faction.displayName}, " +
+            "${unit.currentHp} points de vie sur ${unit.type.maxHp}"
+        if (unit.faction == state.activeFaction) {
+            parts += when {
+                unit.hasMoved && unit.hasAttacked -> "tour terminé"
+                unit.hasMoved -> "déjà déplacée"
+                unit.hasAttacked -> "a déjà tiré"
+                else -> "disponible"
+            }
+        }
+    }
+
+    val selectedUnit = selected?.let { state.units[it] }
+    parts += when {
+        selected == coord -> "Entrée pour désélectionner"
+        selected != null && selectedUnit != null && selectedUnit.faction == state.activeFaction -> when {
+            unit != null && unitVisible && unit.faction != state.activeFaction &&
+                !selectedUnit.hasAttacked && selected.distanceTo(coord) <= selectedUnit.type.range ->
+                "Entrée pour attaquer"
+            unit == null && !selectedUnit.hasAttacked && tile.terrain == TerrainType.PLANET &&
+                tile.owner != null && tile.owner != state.activeFaction &&
+                selected.distanceTo(coord) == 1 ->
+                if (tile.systemLevel <= 0) "Entrée pour capturer la planète"
+                else "Entrée pour assiéger la planète"
+            unit == null && !selectedUnit.hasMoved && coord in reachable ->
+                "Entrée pour déplacer la flotte ici"
+            else -> "Entrée pour sélectionner"
+        }
+        else -> "Entrée pour sélectionner"
+    }
+    return parts.joinToString(". ")
 }
 
 @Composable

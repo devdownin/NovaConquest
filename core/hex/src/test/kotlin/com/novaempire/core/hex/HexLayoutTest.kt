@@ -108,6 +108,44 @@ class HexLayoutTest {
     }
 
     @Test
+    fun localToScreenIsTheInverseOfScreenToLocal() {
+        val scale = 1.9f
+        val pan = -73f
+        val screen = 412f
+        val local = HexLayout.screenToLocal(screen, viewW / 2f, pan, scale)
+        assertEquals(screen, HexLayout.localToScreen(local, viewW / 2f, pan, scale), eps)
+    }
+
+    @Test
+    fun theCentredHexIsComfortablyVisible() {
+        val coord = HexCoord(3, -1, -2)
+        val panX = HexLayout.panToCenterX(coord, radius, 1f)
+        val panY = HexLayout.panToCenterY(coord, radius, 1f)
+        assertTrue(
+            HexLayout.isComfortablyVisible(coord, viewW, viewH, panX, panY, 1f, radius)
+        )
+    }
+
+    @Test
+    fun aHexPushedToTheEdgeIsNotComfortablyVisible() {
+        val coord = HexCoord(3, -1, -2)
+        // Centre it, then shove the camera almost a full half-screen sideways.
+        val panX = HexLayout.panToCenterX(coord, radius, 1f) - viewW / 2f + 20f
+        val panY = HexLayout.panToCenterY(coord, radius, 1f)
+        assertTrue(
+            !HexLayout.isComfortablyVisible(coord, viewW, viewH, panX, panY, 1f, radius)
+        )
+    }
+
+    @Test
+    fun anUnmeasuredViewportIsTreatedAsComfortable() {
+        // Guards the first frame, before onSizeChanged has reported anything.
+        assertTrue(
+            HexLayout.isComfortablyVisible(HexCoord(0, 0, 0), 0f, 0f, 0f, 0f, 1f, radius)
+        )
+    }
+
+    @Test
     fun spacingMatchesThePointyTopLayout() {
         assertEquals(103.923f, HexLayout.horizontalSpacing(60f), eps)
         assertEquals(90f, HexLayout.verticalSpacing(60f), eps)

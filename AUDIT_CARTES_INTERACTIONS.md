@@ -6,11 +6,13 @@
 > de carte, les effets de terrain et la cohérence des portées ; ce second passage se concentre
 > sur ce que le joueur *ressent* — la réponse au doigt — et sur ce que le GPU redessine.
 >
-> ✅ **Tests exécutés.** Le proxy réseau refuse toujours `dl.google.com` (403), donc l'Android
-> Gradle Plugin reste inaccessible et `:app` ne compile pas ici. Les trois modules purs ont en
-> revanche été compilés et exécutés hors Gradle (compilateur Kotlin 1.9.23 récupéré depuis Maven
-> Central) : **206 tests au vert**, dont les 12 nouveaux. Les changements dans `:app` reposent
-> sur une relecture statique — c'est la limite de cet audit, et CI reste le juge.
+> ✅ **Vérification.** Le proxy réseau refuse `dl.google.com` (403), donc l'Android Gradle Plugin
+> est inaccessible *dans cet environnement* et `:app` ne s'y compile pas. Contournement : les
+> trois modules purs ont été compilés et exécutés hors Gradle (compilateur Kotlin 1.9.23 depuis
+> Maven Central) — **210 tests au vert**, dont les 16 nouveaux. Et **CI a tranché pour `:app`** :
+> le run de la branche est vert, étape « Assemble debug APK » comprise. La *compilation* de tout
+> ce qui suit est donc vérifiée ; le *comportement* des changements Compose, lui, reste relu
+> statiquement (aucun test instrumenté ne couvre cet écran, et il n'y a pas d'émulateur ici).
 
 ## 1. Résumé exécutif
 
@@ -34,7 +36,7 @@
 | O7 | ⚪ Optim — ✅ fait | Sélection | 3 balayages de la carte entière à chaque sélection d'unité (portée d'attaque, capture, siège) |
 | D1 | ⚪ Dette — ✅ fait | Duplication | `hexRound` dupliqué entre `:core:hex` et l'écran ; maths de caméra intestables en CI |
 | D2 | ⚪ Dette — ✅ fait | Dette | Paramètre `onEndTurnClick` mort (le bouton FIN DE TOUR vit dans `MainActivity`) |
-| R1 | 💡 Reco — ❌ non fait | Accessibilité | La carte est un `Canvas` sans sémantique : **injouable au lecteur d'écran** |
+| **A1** | 🟠 Moyen — ✅ corrigé | Accessibilité | La carte est un `Canvas` sans sémantique : **injouable au lecteur d'écran**, et impossible à piloter au clavier / D-pad |
 | R2 | 💡 Reco — ❌ écarté | Ergonomie | Double‑tap pour zoomer : coûte ~300 ms de latence sur *chaque* tap (voir §5) |
 
 ---
@@ -205,14 +207,60 @@ pour n'en garder que des voisines immédiates. Remplacés par une énumération 
   où le tap est l'action principale (sélectionner, déplacer, attaquer), payer 300 ms de latence
   sur toutes les actions pour un raccourci de zoom est un mauvais échange. Le bouton « Reset
   view » et le pincement — désormais correct — couvrent le besoin.
-- **Accessibilité (R1).** La carte est un `Canvas` sans `semantics` : TalkBack n'a rien à
-  annoncer, le jeu est inutilisable au lecteur d'écran. Le corriger proprement suppose une grille
-  sémantique par hexagone (libellé secteur/terrain/occupant) et une navigation au clavier/D‑pad ;
-  c'est un chantier à part entière, hors de la portée de cet audit, mais c'est le plus gros écart
-  restant vis‑à‑vis de l'état de l'art.
+- **Une grille sémantique par hexagone.** L'approche « un nœud focalisable par case » aurait
+  donné à TalkBack un balayage case par case, mais elle impose des centaines de nœuds de
+  sémantique qui suivent le zoom et le panoramique. Le curseur clavier + région live (§4bis)
+  couvre le même besoin pour un coût de rendu nul. À revoir si des retours utilisateurs le
+  demandent.
 - **Fiche terrain en modale plein écran.** Une *bottom sheet* ancrée serait plus conforme aux
   usages Material 3, mais le composant actuel fonctionne et le conflit qui le rendait pénible
   (G3) est traité.
+
+---
+
+## 4bis. Accessibilité — curseur clavier et annonces  ✅ **fait (A1)**
+
+Le plateau est dessiné dans un `Canvas`. Un `Canvas` ne porte **aucune sémantique** : TalkBack
+n'avait donc littéralement rien à annoncer sur la carte, et sans pointage précis il n'existait
+aucun moyen de sélectionner une case. Le jeu était inutilisable au lecteur d'écran, et
+impilotable au clavier ou au D‑pad.
+
+**Curseur clavier, distinct de la sélection.** Un 4X tactique se joue en deux temps — choisir une
+flotte, *puis* choisir sa cible — donc un seul état ne suffit pas : `cursorHex` est là où le
+joueur *regarde*, `selectedHex` ce qu'il a *validé*.
+
+| Touche | Effet |
+|--------|-------|
+| ← / → | voisin ouest / est |
+| ↑ / ↓ | voisin nord‑ouest / sud‑est |
+| Maj + ← / → | voisin sud‑ouest / nord‑est |
+| Entrée, Espace, D‑pad centre | agit sur la case du curseur (mêmes règles qu'un tap) |
+| Échap | annule la sélection |
+
+Un hexagone *pointy‑top* n'a pas de voisin à la verticale : les quatre flèches sont donc mappées
+sur les quatre directions « plates », et Maj atteint les deux diagonales restantes. Les quatre
+flèches suffisent à elles seules à atteindre n'importe quelle case (les axes `q` et `r` forment
+une base du réseau) ; Maj n'est qu'un raccourci.
+
+**La caméra suit — mais pas à chaque touche.** Recentrer à chaque pression fait tressauter le
+plateau ; ne jamais recentrer laisse le curseur sortir de l'écran, ce dont un joueur au clavier
+ne peut pas se remettre. `HexLayout.isComfortablyVisible` ne déclenche le recentrage que lorsque
+le curseur quitte les 70 % centraux du viewport.
+
+**Ce que TalkBack annonce.** La carte porte une `contentDescription` en `liveRegion` *polite*,
+recalculée à chaque mouvement du curseur : secteur, terrain, propriétaire et niveau de la
+planète, occupant (type, faction, PV, disponibilité) — **et surtout ce que ferait Entrée** :
+« déplacer la flotte ici », « attaquer », « assiéger la planète », « désélectionner »… Sans cette
+dernière phrase, le flux en deux temps est impossible à suivre à l'oreille. Le brouillard de
+guerre est respecté : une case inexplorée s'annonce « inexploré », et une unité ennemie hors
+vision n'est pas révélée.
+
+**Effet de bord bénéfique** : la logique de décision d'un tap (désélectionner / attaquer /
+assiéger / déplacer / re‑sélectionner) a été extraite du gestionnaire tactile dans une fonction
+`activateHex` partagée par les deux entrées. Le clavier et le doigt ne peuvent plus diverger.
+
+Le curseur n'est dessiné (anneau blanc) qu'après une première pression de touche : un joueur au
+doigt ne voit pas un second contour suivre ses taps.
 
 ---
 
@@ -234,4 +282,10 @@ voisines qu'avec la techno, un hexagone n'est jamais son propre voisin, les appe
 renvoient la même liste (verrouille la mise en cache), et les voisins se limitent aux tuiles qui
 existent.
 
-Exécution locale hors Gradle (AGP inaccessible) : **206 tests, 0 échec**.
+Ajoutés ensuite pour le suivi de caméra du curseur clavier (4 cas) : `localToScreen` est bien
+l'inverse de `screenToLocal`, une case centrée est « confortablement visible », une case poussée
+au bord ne l'est pas, et un viewport pas encore mesuré (première frame) est traité comme
+confortable — sinon le curseur recentrerait la caméra dès la première touche.
+
+Exécution locale hors Gradle (AGP inaccessible ici) : **210 tests, 0 échec**.
+Compilation de `:app` : vérifiée par CI (« Assemble debug APK », vert).
