@@ -3,7 +3,6 @@ package com.novaempire.core.engine
 import com.novaempire.core.domain.models.BonusType
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.GameUnit
-import com.novaempire.core.domain.models.HeroRegistry
 import com.novaempire.core.domain.models.PlanetSpecialty
 import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.state.GameState
@@ -43,13 +42,18 @@ object TurnManager {
             }
         }
 
-        // Nix hero: heal all units of the faction that just ended its turn
+        // Fleet repair at end of turn (Nix's passive today). Passe par BonusRegistry comme tout
+        // autre bonus : c'était le seul passif de héros câblé en dur ici, invisible depuis
+        // `Hero.bonuses`, et donc inaccessible à une techno ou une faction qui voudrait soigner.
         val activePlayerState = state.playerStates[state.activeFaction]
-        if (activePlayerState?.recruitedHeroes?.contains(HeroRegistry.NIX) == true) {
+        val repairPerTurn = BonusRegistry.sum(
+            BonusType.FLEET_REPAIR_PER_TURN, activePlayerState, nextState.activeEvent, nextState.eventTargetFaction
+        )
+        if (repairPerTurn > 0) {
             nextState = nextState.copy(
                 units = nextState.units.mapValues { (_, unit) ->
                     if (unit.faction == state.activeFaction && unit.currentHp < unit.type.maxHp)
-                        unit.copy(currentHp = minOf(unit.type.maxHp, unit.currentHp + 1))
+                        unit.copy(currentHp = minOf(unit.type.maxHp, unit.currentHp + repairPerTurn))
                     else unit
                 }
             )
