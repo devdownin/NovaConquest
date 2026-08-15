@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
@@ -22,16 +24,23 @@ import com.novaempire.app.ui.components.InkWashOverlay
 import com.novaempire.app.ui.theme.NeonCyan
 import com.novaempire.core.domain.models.CampaignRegistry
 import com.novaempire.core.domain.models.CampaignMission
+import com.novaempire.core.domain.models.GloryPerk
+import com.novaempire.core.domain.models.GloryRegistry
 
 @Composable
 fun CampaignSelectionScreen(
-    onStartMission: (CampaignMission) -> Unit,
+    onStartMission: (CampaignMission, Set<String>) -> Unit,
     onBackClick: () -> Unit,
     /** Missions already completed, so the list can show progress instead of looking untouched. */
-    completedMissions: Set<String> = emptySet()
+    completedMissions: Set<String> = emptySet(),
+    /** Glory banked so far — the budget for the perks below. */
+    gloryPoints: Int = 0
 ) {
     var selectedMission by remember { mutableStateOf<CampaignMission?>(null) }
+    var selectedPerks by remember { mutableStateOf(emptySet<String>()) }
     val missions = CampaignRegistry.MISSIONS
+    val spent = GloryRegistry.totalCost(selectedPerks)
+    val remaining = gloryPoints - spent
 
     Box(
         modifier = Modifier
@@ -58,6 +67,12 @@ fun CampaignSelectionScreen(
                     text = "CAMPAIGN MISSIONS",
                     style = MaterialTheme.typography.headlineMedium,
                     color = NeonCyan
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = "GLOIRE $remaining / $gloryPoints",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (remaining < 0) MaterialTheme.colorScheme.error else NeonCyan
                 )
             }
 
@@ -96,7 +111,9 @@ fun CampaignSelectionScreen(
                             modifier = Modifier.fillMaxSize().padding(24.dp),
                             verticalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Column {
+                            // Scrollable: the perk list grows with the registry, and a fixed panel
+                            // would push the launch button off-screen on a short device.
+                            Column(modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
                                 Text(
                                     text = selectedMission!!.name,
                                     style = MaterialTheme.typography.headlineMedium,
@@ -121,12 +138,53 @@ fun CampaignSelectionScreen(
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                if (selectedMission!!.turnLimit > 0) {
+                                    Text(
+                                        text = "• Deadline: ${selectedMission!!.turnLimit} tours",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (selectedMission!!.gloryReward > 0) {
+                                    Text(
+                                        text = "• Gloire: +${selectedMission!!.gloryReward}" +
+                                            if (selectedMission!!.id in completedMissions) " (déjà perçue)" else "",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(24.dp))
+                                Text(
+                                    text = "Glory perks:",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                GloryRegistry.ALL_PERKS.forEach { perk ->
+                                    val isTaken = perk.id in selectedPerks
+                                    PerkItem(
+                                        perk = perk,
+                                        isTaken = isTaken,
+                                        // Affordable means "affordable on top of what is already
+                                        // chosen" — otherwise the player can build a basket the
+                                        // engine will refuse, and the refusal arrives at launch.
+                                        canAfford = isTaken || perk.cost <= remaining,
+                                        onToggle = {
+                                            selectedPerks =
+                                                if (isTaken) selectedPerks - perk.id else selectedPerks + perk.id
+                                        }
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                }
                             }
 
+                            Spacer(modifier = Modifier.height(16.dp))
                             IndustrialButton(
-                                text = "LAUNCH MISSION",
-                                onClick = { onStartMission(selectedMission!!) },
+                                text = if (spent > 0) "LAUNCH MISSION — $spent GLOIRE" else "LAUNCH MISSION",
+                                onClick = { onStartMission(selectedMission!!, selectedPerks) },
                                 isPrimary = true,
+                                enabled = remaining >= 0,
                                 icon = { Icon(Icons.Default.PlayArrow, contentDescription = null, tint = NeonCyan) },
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -143,6 +201,54 @@ fun CampaignSelectionScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * One buyable perk. Unaffordable entries stay visible but inert: hiding them would make the glory
+ * economy invisible to a player who has not banked enough yet to see what it is for.
+ */
+@Composable
+fun PerkItem(
+    perk: GloryPerk,
+    isTaken: Boolean,
+    canAfford: Boolean,
+    onToggle: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (isTaken) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                else MaterialTheme.colorScheme.surfaceVariant
+            )
+            .clickable(enabled = canAfford, onClick = onToggle)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = perk.name,
+                style = MaterialTheme.typography.titleSmall,
+                color = when {
+                    isTaken -> NeonCyan
+                    canAfford -> MaterialTheme.colorScheme.onSurface
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                }
+            )
+            Text(
+                text = perk.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+                    .copy(alpha = if (canAfford) 1f else 0.5f)
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = "${perk.cost}",
+            style = MaterialTheme.typography.titleMedium,
+            color = if (canAfford) NeonCyan else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+        )
     }
 }
 

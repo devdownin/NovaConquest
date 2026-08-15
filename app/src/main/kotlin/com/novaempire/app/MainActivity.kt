@@ -139,12 +139,13 @@ class MainActivity : ComponentActivity() {
                         }
                         AppScreen.CAMPAIGN_SELECTION -> {
                             CampaignSelectionScreen(
-                                onStartMission = { mission ->
-                                    gameViewModel.startCampaignMission(mission)
+                                onStartMission = { mission, perkIds ->
+                                    gameViewModel.startCampaignMission(mission, perkIds)
                                     currentScreen = AppScreen.GAME
                                 },
                                 onBackClick = { currentScreen = AppScreen.MAIN_MENU },
-                                completedMissions = gameState.campaignState.completedMissions
+                                completedMissions = gameState.campaignState.completedMissions,
+                                gloryPoints = gameState.campaignState.gloryPoints
                             )
                         }
                         AppScreen.FACTION_SELECTION -> {

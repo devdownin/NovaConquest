@@ -34,6 +34,11 @@ data class CampaignMission(
     val enemyBonusCredits: Int = 0,
     /** Deadline in turns; 0 means none. Past it the mission is failed. */
     val turnLimit: Int = 0,
+    /**
+     * Glory awarded the **first** time this mission is completed. Later replays award nothing, so
+     * the easiest mission cannot be farmed for perks.
+     */
+    val gloryReward: Int = 0,
     val objective: CampaignObjective
 )
 
@@ -46,6 +51,7 @@ object CampaignRegistry {
             mapArchetype = MapArchetype.STANDARD,
             playerFaction = Faction.DOMINION,
             enemyFaction = Faction.XYLAR,
+            gloryReward = 2,
             objective = CampaignObjective(CampaignObjectiveType.SURVIVE_TURNS, targetValue = 15)
         ),
         CampaignMission(
@@ -57,6 +63,7 @@ object CampaignRegistry {
             enemyFaction = Faction.KAELEN,
             enemyBonusCredits = 100,
             turnLimit = 40,
+            gloryReward = 3,
             objective = CampaignObjective(CampaignObjectiveType.ACCUMULATE_CREDITS, targetValue = 500)
         ),
         // Exercises CAPTURE_SPECIFIC_PLANET, which had no implementation until now. The target is
@@ -71,6 +78,7 @@ object CampaignRegistry {
             enemyFaction = Faction.KAELEN,
             enemyBonusCredits = 60,
             turnLimit = 40,
+            gloryReward = 4,
             objective = CampaignObjective(
                 CampaignObjectiveType.CAPTURE_SPECIFIC_PLANET,
                 targetString = "-5,5"
