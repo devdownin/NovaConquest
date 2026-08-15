@@ -88,10 +88,11 @@ internal fun handleAttackUnit(state: GameState, intent: GameIntent.AttackUnit, d
         return GameResult(state, "You cannot attack your own units.")
     if (intent.attacker.distanceTo(intent.defender) > unit.type.range)
         return GameResult(state, "Target is out of range.")
-    return GameResult(updateVision(
-        deps.combatSystem.resolveCombat(state, intent.attacker, intent.defender),
-        setOfNotNull(unit.faction, defender.faction)
-    ))
+    val outcome = deps.combatSystem.resolveCombat(state, intent.attacker, intent.defender)
+    return GameResult(
+        updateVision(outcome.state, setOfNotNull(unit.faction, defender.faction)),
+        combatEvent = outcome.event
+    )
 }
 
 internal fun handleResearchTech(state: GameState, intent: GameIntent.ResearchTech): GameResult {

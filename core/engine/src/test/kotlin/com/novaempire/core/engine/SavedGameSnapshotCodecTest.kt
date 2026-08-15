@@ -106,10 +106,4 @@ class SavedGameSnapshotCodecTest {
         assertEquals(7, SavedGameSnapshotCodec.decode(unversioned).turn)
     }
 
-    @Test
-    fun lastCombatEventIsNotPersisted() {
-        // @Transient one-shot effect: it must never come back from disk.
-        val decoded = SavedGameSnapshotCodec.decode(SavedGameSnapshotCodec.encode(richState()))
-        assertNull(decoded.lastCombatEvent)
-    }
 }

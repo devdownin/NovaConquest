@@ -10,12 +10,12 @@ import kotlin.random.Random
 
 object CombatResolver : CombatSystem {
 
-    override fun resolveCombat(state: GameState, attackerCoord: HexCoord, defenderCoord: HexCoord): GameState =
+    override fun resolveCombat(state: GameState, attackerCoord: HexCoord, defenderCoord: HexCoord): CombatOutcome =
         resolveCombatWithRng(state, attackerCoord, defenderCoord, Random.Default)
 
-    fun resolveCombatWithRng(state: GameState, attackerCoord: HexCoord, defenderCoord: HexCoord, rng: Random): GameState {
-        val attacker = state.units[attackerCoord] ?: return state
-        val defender = state.units[defenderCoord] ?: return state
+    fun resolveCombatWithRng(state: GameState, attackerCoord: HexCoord, defenderCoord: HexCoord, rng: Random): CombatOutcome {
+        val attacker = state.units[attackerCoord] ?: return CombatOutcome(state, null)
+        val defender = state.units[defenderCoord] ?: return CombatOutcome(state, null)
 
         val attackVariance = 0.8f + rng.nextFloat() * 0.4f
         val damageToDefender = max(1, (AttackCalculator.effectiveBase(state, attackerCoord, defenderCoord) * attackVariance).toInt())
@@ -58,7 +58,7 @@ object CombatResolver : CombatSystem {
             targetDestroyed = defenderRemainingHp <= 0
         )
 
-        return state.copy(units = newUnits, lastCombatEvent = combatEvent)
+        return CombatOutcome(state.copy(units = newUnits), combatEvent)
     }
 
     override fun siegePlanet(state: GameState, attackerCoord: HexCoord, planetCoord: HexCoord): GameState {

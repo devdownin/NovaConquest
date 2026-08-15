@@ -19,6 +19,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -36,6 +40,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Distingue « rien à annuler » de « l'action a levé du brouillard, elle est définitive ». */
     val undoClosedByExploration: StateFlow<Boolean> = engine.undoClosedByExploration
+
+    /** Tirs résolus, un par échange — y compris deux échanges identiques d'affilée. */
+    val combatEvents: SharedFlow<com.novaempire.core.domain.state.CombatEvent> =
+        engine.effects
+            .filterIsInstance<GameEffect.CombatResolved>()
+            .map { it.event }
+            .shareIn(viewModelScope, SharingStarted.Eagerly)
     val errors: SharedFlow<String> = engine.errors
     val effects: SharedFlow<GameEffect> = engine.effects
 

@@ -27,9 +27,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
-data class GameResult(val newState: GameState, val error: String? = null, val notification: String? = null)
+data class GameResult(
+    val newState: GameState,
+    val error: String? = null,
+    val notification: String? = null,
+    /** Effet ponctuel remonté par le réducteur — voir [CombatOutcome]. */
+    val combatEvent: com.novaempire.core.domain.state.CombatEvent? = null
+)
 
 sealed class GameEffect {
+    /** Un échange de tirs vient d'être résolu : à animer une fois, pas à conserver. */
+    data class CombatResolved(val event: com.novaempire.core.domain.state.CombatEvent) : GameEffect()
     data class PlaySound(val soundId: String) : GameEffect()
     data class ShowNotification(val message: String, val color: String = "CYAN") : GameEffect()
     object ShakeCamera : GameEffect()
@@ -269,8 +277,11 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
             }
 
             val nextState = result.newState
-            val combat = nextState.lastCombatEvent
-            if (combat != null && (currentState.lastCombatEvent == null || combat != currentState.lastCombatEvent)) {
+            val combat = result.combatEvent
+            if (combat != null) {
+                // Émis en flux : deux attaques identiques d'affilée sont deux événements, alors
+                // qu'en état elles n'en faisaient qu'un et la seconde passait inaperçue.
+                _effects.emit(GameEffect.CombatResolved(combat))
                 _effects.emit(GameEffect.ShakeCamera)
                 val attackerName = currentState.units[combat.attackerCoord]?.type?.name ?: "UNIT"
                 val defenderName = currentState.units[combat.defenderCoord]?.type?.name ?: "UNIT"

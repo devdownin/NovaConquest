@@ -451,6 +451,7 @@ fun GameContainer(
                         camera = mapCamera,
                         canUndo = canUndo,
                         undoClosedByExploration = undoClosedByExploration,
+                        combatEvents = gameViewModel.combatEvents,
                         onUndo = {
                             gameViewModel.dispatch(GameIntent.Undo)
                             selectedCoord = null

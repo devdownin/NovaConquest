@@ -77,6 +77,8 @@ import com.novaempire.core.engine.MapAction
 import com.novaempire.core.engine.MapInteraction
 import com.novaempire.core.engine.MovementCalculator
 import com.novaempire.core.hex.HexCoord
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import com.novaempire.core.hex.HexLayout
 import com.novaempire.core.hex.HexPathfinder
 import kotlin.math.PI
@@ -200,6 +202,8 @@ fun TacticalMapScreen(
     canUndo: Boolean = false,
     onUndo: () -> Unit = {},
     undoClosedByExploration: Boolean = false,
+    /** Tirs résolus, à animer. Un flux, pas un champ d'état : voir CombatOutcome. */
+    combatEvents: Flow<CombatEvent> = emptyFlow(),
     // (coord, nonce): the Int is a monotonically increasing re-trigger counter — NOT a zoom
     // level — so LaunchedEffect(centerRequest) re-fires even when re-focusing the same coord.
     centerRequest: Pair<HexCoord, Int>? = null,
@@ -471,8 +475,10 @@ fun TacticalMapScreen(
         }
     }
 
-    LaunchedEffect(gameState.lastCombatEvent) {
-        gameState.lastCombatEvent?.let { combat ->
+    // Collecté une fois pour la vie de l'écran : chaque tir émis est une animation, là où une clé
+    // d'état ne rejouait pas deux échanges identiques d'affilée.
+    LaunchedEffect(Unit) {
+        combatEvents.collect { combat ->
             activeCombatEvent = combat
             AudioManager.playSound(SoundType.COMBAT_LASER)
             laserProgress.snapTo(0f)

@@ -325,6 +325,27 @@ d'exploration, et le bouton se grisera sans explication. C'est inhérent à l'op
 défaut de réalisation — mais si cela se révèle frustrant, la piste serait d'afficher *pourquoi*
 l'historique s'est fermé plutôt que d'assouplir la règle.
 
+### T4 — L'événement de combat sort de l'état  ✅
+
+`CLAUDE.md` annonçait `SharedFlow` comme direction visée pour les effets ponctuels. Le moteur
+possédait **déjà** un flux `_effects` et écrivait *en plus* l'événement dans
+`GameState.lastCombatEvent` : la même information, deux transports.
+
+Ce n'était pas qu'une redondance. `CombatEvent` ne porte que trois champs — attaquant, cible,
+cible détruite — donc **deux attaques identiques d'affilée produisent un événement égal**. Or
+l'ancien code déclenchait l'animation sur `LaunchedEffect(gameState.lastCombatEvent)` et
+n'émettait les effets que si `combat != currentState.lastCombatEvent`. Conséquence : un vaisseau
+qui tire deux tours de suite depuis la même case sur la même cible survivante voyait le **second
+tir se dérouler sans laser, sans explosion, sans son et sans notification**.
+
+`CombatSystem.resolveCombat` renvoie désormais un `CombatOutcome` (état + événement), le réducteur
+le remonte par `GameResult` — comme il remontait déjà `notification` — et le moteur émet
+`GameEffect.CombatResolved`. L'écran collecte un `Flow<CombatEvent>` au lieu de surveiller une clé
+d'état. Le champ disparaît de `GameState`.
+
+Un test verrouille la propriété qui manquait : deux attaques depuis le même état produisent chacune
+leur événement, *et* ces événements sont égaux — c'est cette égalité qui masquait le second.
+
 ---
 
 ## 6. Tests
