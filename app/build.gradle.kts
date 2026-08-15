@@ -56,6 +56,14 @@ android {
     }
 }
 
+// The pure modules all declare `jvmToolchain(21)`; :app only set compileOptions/kotlinOptions,
+// so its classes were built for Java 21 while `testDebugUnitTest` forked on CI's JDK 17 and threw
+// UnsupportedClassVersionError before a single test ran. Declaring the toolchain makes the test
+// JVM match what the module compiles to.
+kotlin {
+    jvmToolchain(21)
+}
+
 dependencies {
     implementation(project(":core:domain"))
     implementation(project(":core:engine"))
