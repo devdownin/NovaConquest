@@ -800,17 +800,7 @@ fun TacticalMapScreen(
                         val isExplored = exploredHexes.contains(tile.coord)
 
                         if (isExplored) {
-                            val baseColor = when (tile.terrain) {
-                                TerrainType.EMPTY -> Color(0xFF181210)  // béton froid vide
-                                TerrainType.ASTEROIDS -> Color(0xFF241C14)  // roche brun-gris
-                                TerrainType.NEBULA -> Color(0xFF261530)  // violet brume épais
-                                TerrainType.PLANET -> Color(0xFF162018)  // vert-noir profond
-                                TerrainType.BLACK_HOLE -> Color(0xFF1A0A00)  // brun-noir abyssal
-                                TerrainType.WORMHOLE -> Color(0xFF12152A)  // bleu nuit
-                                TerrainType.PLASMA_CLOUD -> Color(0xFF2A1208)  // brun rouille sombre
-                                TerrainType.ION_STORM -> Color(0xFF20202E)  // gris-bleu lourd
-                                TerrainType.ANOMALY -> Color(0xFF142218)  // vert-brun étrange
-                            }
+                            val baseColor = mapPalette.terrainColor(tile.terrain)
 
                             val alpha = if (isVisible) 1f else 0.4f
 
@@ -821,8 +811,13 @@ fun TacticalMapScreen(
 
                             drawHexagonPath(
                                 centerX = x, centerY = y, radius = hexRadius,
-                                color = Color(0xFF130F0A).copy(alpha = alpha * 0.85f),
-                                strokeWidth = 2.5f  // contour encre épaisse BD
+                                // En contraste élevé le contour reste opaque et s'épaissit : c'est
+                                // lui qui porte la lisibilité de la grille, surtout sur les tuiles
+                                // estompées par le brouillard.
+                                color = mapPalette.ink.copy(
+                                    alpha = if (displaySettings.highContrast) 1f else alpha * 0.85f
+                                ),
+                                strokeWidth = if (displaySettings.highContrast) 4f else 2.5f
                             )
 
                             // Selection-dependent overlays (movement/attack range, targets, selected
@@ -841,14 +836,14 @@ fun TacticalMapScreen(
                             }
 
                             when (tile.terrain) {
-                                TerrainType.PLANET -> drawPlanet(x, y, hexRadius, tile.owner, graphicsConfig)
-                                TerrainType.ASTEROIDS -> drawAsteroids(x, y, hexRadius)
-                                TerrainType.NEBULA -> drawNebula(x, y, hexRadius)
-                                TerrainType.BLACK_HOLE -> drawBlackHole(x, y, hexRadius)
-                                TerrainType.WORMHOLE -> drawWormhole(x, y, hexRadius)
-                                TerrainType.PLASMA_CLOUD -> drawPlasmaCloud(x, y, hexRadius)
-                                TerrainType.ION_STORM -> drawIonStorm(x, y, hexRadius)
-                                TerrainType.ANOMALY -> drawAnomaly(x, y, hexRadius)
+                                TerrainType.PLANET -> drawPlanet(x, y, hexRadius, tile.owner, graphicsConfig, mapPalette)
+                                TerrainType.ASTEROIDS -> drawAsteroids(x, y, hexRadius, mapPalette)
+                                TerrainType.NEBULA -> drawNebula(x, y, hexRadius, mapPalette)
+                                TerrainType.BLACK_HOLE -> drawBlackHole(x, y, hexRadius, mapPalette)
+                                TerrainType.WORMHOLE -> drawWormhole(x, y, hexRadius, mapPalette)
+                                TerrainType.PLASMA_CLOUD -> drawPlasmaCloud(x, y, hexRadius, mapPalette)
+                                TerrainType.ION_STORM -> drawIonStorm(x, y, hexRadius, mapPalette)
+                                TerrainType.ANOMALY -> drawAnomaly(x, y, hexRadius, mapPalette)
                                 TerrainType.EMPTY -> {}
                             }
 
@@ -867,8 +862,11 @@ fun TacticalMapScreen(
                             // Fleets are drawn by the layer below: keeping them here meant every
                             // single move repainted all of the terrain.
                         } else {
-                            drawHexagonPath(x, y, hexRadius, color = Color(0xFF0D0A07), fill = true)
-                            drawHexagonPath(x, y, hexRadius, color = Color(0xFF130F0A), fill = false, strokeWidth = 2.5f)
+                            drawHexagonPath(x, y, hexRadius, color = mapPalette.unexplored, fill = true)
+                            drawHexagonPath(
+                                x, y, hexRadius, color = mapPalette.ink, fill = false,
+                                strokeWidth = if (displaySettings.highContrast) 4f else 2.5f
+                            )
                         }
                     }
                 }
@@ -945,7 +943,7 @@ fun TacticalMapScreen(
                         val ux = centerX + horizSpacing * (unit.position.q + unit.position.r / 2f)
                         val uy = centerY + vertSpacing * unit.position.r
                         if (!onScreen(ux, uy)) return@forEach
-                        drawUnit(ux, uy, unit, hexRadius)
+                        drawUnit(ux, uy, unit, hexRadius, mapPalette)
                     }
                 }
 
@@ -960,14 +958,17 @@ fun TacticalMapScreen(
                     val horizSpacing = sqrt(3f) * hexRadius
                     val vertSpacing = 1.5f * hexRadius
 
-                    // Blueprint scanline sweep (animation — lives here to avoid terrain redraw)
-                    val scanlineY = sweepProgress.value * size.height
-                    drawLine(
-                        color = NeonCyan.copy(alpha = 0.10f),
-                        start = Offset(-size.width, scanlineY - size.height / 2f),
-                        end = Offset(size.width, scanlineY - size.height / 2f),
-                        strokeWidth = 2f
-                    )
+                    // Blueprint scanline sweep (animation — lives here to avoid terrain redraw).
+                    // Purement décoratif : coupé avec les effets holographiques.
+                    if (displaySettings.holographicEffects) {
+                        val scanlineY = sweepProgress.value * size.height
+                        drawLine(
+                            color = NeonCyan.copy(alpha = 0.10f),
+                            start = Offset(-size.width, scanlineY - size.height / 2f),
+                            end = Offset(size.width, scanlineY - size.height / 2f),
+                            strokeWidth = 2f
+                        )
+                    }
 
                     // Pulsing halo on units that still have actions available this turn
                     val pulseAlpha = 0.25f + pulseProgress.value * 0.45f
@@ -1090,7 +1091,7 @@ fun TacticalMapScreen(
                             )
                         }
                         val animUnit = gameState.units[anim.to] ?: gameState.units[anim.from]
-                        if (animUnit != null) drawUnit(animX, animY, animUnit, hexRadius)
+                        if (animUnit != null) drawUnit(animX, animY, animUnit, hexRadius, mapPalette)
                     }
                 }
             }
