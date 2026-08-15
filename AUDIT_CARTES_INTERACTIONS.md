@@ -214,7 +214,8 @@ pour n'en garder que des voisines immédiates. Remplacés par une énumération 
   demandent.
 - **Fiche terrain en modale plein écran.** Une *bottom sheet* ancrée serait plus conforme aux
   usages Material 3, mais le composant actuel fonctionne et le conflit qui le rendait pénible
-  (G3) est traité.
+  (G3) est traité. À ne pas confondre avec la **fiche de secteur**, elle, désormais adaptative
+  (§5bis, T5).
 
 ---
 
@@ -345,6 +346,35 @@ d'état. Le champ disparaît de `GameState`.
 
 Un test verrouille la propriété qui manquait : deux attaques depuis le même état produisent chacune
 leur événement, *et* ces événements sont égaux — c'est cette égalité qui masquait le second.
+
+### T5 — La fiche de secteur descend en bas sur téléphone  ✅
+
+220 dp fixes en `CenterEnd` recouvraient le milieu droit du plateau — c'est-à-dire l'endroit que
+le joueur regarde, puisqu'il vient d'y taper. Sous le seuil compact de Material (600 dp), la fiche
+passe en bas, pleine largeur, hauteur plafonnée ; au-dessus, la colonne latérale est conservée, la
+largeur ne manquant pas.
+
+Conséquence traitée : le journal de combat et la graine sont dessinés **après** la fiche, donc
+au-dessus d'elle. Sur téléphone ils occupaient le même bas d'écran et l'auraient recouverte — ils
+s'effacent pendant qu'une case est sélectionnée. C'est de l'information d'ambiance ; la fiche est
+ce que le joueur vient de demander.
+
+⚠️ **Non vérifié visuellement.** Aucun test ne regarde une mise en page, et il n'y a pas
+d'appareil ici. La pile verticale de boutons d'action, en particulier, mérite un coup d'œil : elle
+était acceptable en colonne latérale, elle est peut-être à mettre en ligne en bas.
+
+### T6 — Les garde-fous de style qui n'en étaient pas  ✅
+
+`Spotless check` et `Detekt` tournaient à chaque run, enveloppés dans
+`|| echo "... not configured, skipping"`. Aucun des deux plugins n'est appliqué dans le build :
+les étapes étaient donc **toujours vertes et ne prouvaient rien**, pour 80 s par run — et depuis
+qu'une pull request est ouverte, ces deux coches vertes s'affichent au relecteur.
+
+Elles sont supprimées plutôt que laissées à suggérer un contrôle qui n'existe pas. Les activer
+pour de bon reste souhaitable, mais c'est un changement à part : le premier passage reformate ou
+signale l'essentiel du dépôt — `TacticalMapScreen.kt` fait à lui seul ~2 500 lignes et contient
+6 imports génériques que ktlint refuse. `CLAUDE.md` note la marche à suivre (`ratchetFrom` pour
+Spotless, une *baseline* pour Detekt).
 
 ---
 

@@ -33,7 +33,9 @@ The CI workflow uses the system `gradle` binary (not the wrapper). Both work loc
 ./gradlew :app:assembleRelease
 ```
 
-Lint gates in `.github/workflows/ci.yml` call `gradle spotlessCheck` and `gradle detekt` but both are wrapped with `|| echo "... not configured, skipping"` — neither is actually configured in the Gradle build. Don't add a "spotless/detekt failure" diagnosis without first checking whether the plugin is applied.
+**There is no style gate.** Neither Spotless nor Detekt is applied in the Gradle build. CI used to call both, wrapped in `|| echo "... not configured, skipping"`, so the steps were always green and proved nothing; they have been removed rather than left to imply a check that never ran.
+
+Adding one for real is worth doing, but it is its own change, not a rider on a behavioural PR: the first run reformats or flags most of the codebase. `TacticalMapScreen.kt` alone is ~2 500 lines with 6 wildcard imports that ktlint rejects. If you take it on, `spotless { kotlin { ktlint(); ratchetFrom("origin/main") } }` limits the check to files a branch actually touches, and Detekt wants a generated baseline so existing debt does not block every push.
 
 ## Module graph and dependency direction
 

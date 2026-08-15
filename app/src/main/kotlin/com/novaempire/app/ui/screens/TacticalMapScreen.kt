@@ -54,6 +54,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.rememberScrollState
@@ -283,6 +284,10 @@ fun TacticalMapScreen(
     var movingUnitAnim by remember { mutableStateOf<MovingUnitAnim?>(null) }
     val movingProgress = remember { Animatable(1f) }
     val prevUnits = remember { mutableStateOf(gameState.units) }
+
+    // Seuil « compact » de Material : en dessous, la largeur ne permet pas une colonne latérale
+    // sans manger le plateau.
+    val isCompactWidth = LocalConfiguration.current.screenWidthDp < 600
 
     val haptic = LocalHapticFeedback.current
     val playerState = gameState.playerStates[gameState.activeFaction]
@@ -1217,20 +1222,32 @@ fun TacticalMapScreen(
             Spacer(modifier = Modifier.width(16.dp))
         }
 
-        // Side Contextual Action Bar
+        // Fiche du secteur sélectionné.
+        //
+        // Sur téléphone elle passe en bas plutôt qu'à droite : 220 dp fixes en CenterEnd
+        // recouvrent le milieu droit du plateau — c'est-à-dire l'endroit que le joueur regarde,
+        // puisqu'il vient d'y taper. En bas, elle mord sur une bande déjà occupée par le journal
+        // de combat et la graine, et laisse le centre libre. Sur tablette la colonne latérale
+        // reste préférable : la largeur ne manque pas, et la fiche ne masque rien.
         selectedHex?.let { coord ->
             val tile = gameState.map.getTileAt(coord)
             val unitOnTile = gameState.units[coord]
             if (tile != null && combatPreviewData == null) {
                 Column(
                     modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 32.dp)
-                        .heightIn(max = 600.dp)
+                        .align(if (isCompactWidth) Alignment.BottomCenter else Alignment.CenterEnd)
+                        .then(
+                            if (isCompactWidth) Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+                            else Modifier.padding(end = 32.dp)
+                        )
+                        .heightIn(max = if (isCompactWidth) 300.dp else 600.dp)
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    IndustrialPanel(modifier = Modifier.width(220.dp).padding(bottom = 16.dp)) {
+                    IndustrialPanel(
+                        modifier = (if (isCompactWidth) Modifier.fillMaxWidth() else Modifier.width(220.dp))
+                            .padding(bottom = 16.dp)
+                    ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1487,8 +1504,14 @@ fun TacticalMapScreen(
             }
         }
 
-        // Combat log (bottom-left, last 6 events)
-        if (combatLog.isNotEmpty()) {
+        // Journal de combat (bas-gauche, 6 derniers événements).
+        //
+        // Il est dessiné après la fiche de secteur, donc au-dessus d'elle. Sur téléphone la fiche
+        // occupe désormais ce même bas d'écran : le journal la recouvrirait. Il s'efface donc
+        // pendant qu'une case est sélectionnée — c'est de l'information d'ambiance, la fiche est
+        // ce que le joueur vient de demander.
+        val sectorPanelOccupiesBottom = isCompactWidth && selectedHex != null && combatPreviewData == null
+        if (combatLog.isNotEmpty() && !sectorPanelOccupiesBottom) {
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
@@ -1558,7 +1581,7 @@ fun TacticalMapScreen(
         }
 
         // Seed readout (A5) — lets a galaxy be identified / replayed. Unobtrusive corner label.
-        if (gameState.map.seed != 0L) {
+        if (gameState.map.seed != 0L && !sectorPanelOccupiesBottom) {
             Text(
                 text = "SEED ${gameState.map.seed}",
                 style = MaterialTheme.typography.labelSmall,

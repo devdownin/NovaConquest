@@ -52,13 +52,11 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Spotless check
-        if: github.event.inputs.skip_tests != 'true'
-        run: gradle spotlessCheck || echo "Spotless not configured, skipping"
-
-      - name: Detekt
-        if: github.event.inputs.skip_tests != 'true'
-        run: gradle detekt || echo "Detekt not configured, skipping"
+      # Pas de contrôle de style ici : ni Spotless ni Detekt n'est appliqué dans le build. Deux
+      # étapes les appelaient, enveloppées dans `|| echo "not configured, skipping"`, donc toujours
+      # vertes — 80 s par run pour une assurance qui n'existait pas, et d'autant plus trompeuse
+      # qu'elle s'affiche maintenant sur les pull requests. Les rétablir suppose de vraiment
+      # configurer les outils : voir la note dans CLAUDE.md.
 
       - name: Unit tests — core modules
         if: github.event.inputs.skip_tests != 'true'
