@@ -297,6 +297,10 @@ fun GameContainer(
     var centerRequestCounter by remember { mutableStateOf(0) }
     var centerRequest by remember { mutableStateOf<Pair<com.novaempire.core.hex.HexCoord, Int>?>(null) }
     var endTurnSummary by remember { mutableStateOf<EndTurnSummary?>(null) }
+    // Owned here rather than inside TacticalMapScreen: the map Composable is torn down whenever
+    // the player opens the SYSTEM / TECH / INTEL tabs, which used to reset zoom and pan back to
+    // the capital several times a turn.
+    val mapCamera = remember { com.novaempire.app.ui.screens.MapCameraState() }
     val combatLog = remember { mutableStateListOf<Pair<String, String>>() }
     LaunchedEffect(Unit) {
         gameViewModel.notifications.collect { entry ->
@@ -423,7 +427,6 @@ fun GameContainer(
                     TacticalMapScreen(
                         isAiThinking = isAiThinking,
                         gameState = gameState,
-                        onEndTurnClick = onEndTurn,
                         onMoveUnit = onMoveUnit,
                         onAttackUnit = onAttackUnit,
                         onSiegePlanet = onSiegePlanet,
@@ -440,7 +443,8 @@ fun GameContainer(
                         onOpenAcademy = onOpenAcademy,
                         centerRequest = centerRequest,
                         initialSelectedHex = selectedCoord,
-                        combatLog = combatLog
+                        combatLog = combatLog,
+                        camera = mapCamera
                     )
                 }
                 GameTab.SYSTEM -> {

@@ -57,15 +57,99 @@ import com.novaempire.core.engine.GameGridMap
 import com.novaempire.core.engine.IncomeCalculator
 import com.novaempire.core.engine.MovementCalculator
 import com.novaempire.core.hex.HexCoord
+import com.novaempire.core.hex.HexLayout
 import com.novaempire.core.hex.HexPathfinder
+import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
-import kotlin.math.roundToInt
-import kotlin.math.roundToInt
 
 /** Hex radius in density-independent units — 30.dp reproduces the historical 60 px on a 2x screen. */
 private val HEX_RADIUS_DP = 30.dp
+
+/**
+ * Zoom bounds. The floor used to be 0.5, which is not far enough out to fit a GIGANTIC galaxy
+ * (radius 12 ≈ 1870 px of half-width at 3x density against a ~540 px screen half-width): the
+ * player could never see their empire as a whole. 0.25 fits every map size on a phone.
+ */
+private const val MIN_MAP_SCALE = 0.25f
+private const val MAX_MAP_SCALE = 3f
+
+/** How much of the galaxy must stay on screen — panning can no longer lose the board entirely. */
+private const val MAP_PAN_MARGIN_PX = 96f
+
+/** Below this zoom the per-hex sector IDs are illegible, so drawing them is pure cost. */
+private const val SECTOR_LABEL_MIN_SCALE = 0.9f
+
+/**
+ * Camera (zoom + pan) for the tactical map.
+ *
+ * Hoisted out of [TacticalMapScreen] because the map Composable is swapped out whenever the
+ * player visits the SYSTEM / TECH / INTEL tabs: a plain `remember` inside the screen threw the
+ * camera away on every tab switch, dumping the player back on their capital at the default zoom
+ * several times a turn. Owning it in the parent (which stays composed) keeps the view where the
+ * player left it.
+ */
+@androidx.compose.runtime.Stable
+class MapCameraState {
+    /** Plain field, not snapshot state: [initializeOnce] must not re-run on recomposition. */
+    private var initialized = false
+
+    var scale by mutableStateOf(1f)
+    var pan by mutableStateOf(Offset.Zero)
+
+    fun initializeOnce(initialScale: Float, initialPan: Offset) {
+        if (initialized) return
+        initialized = true
+        scale = initialScale
+        pan = initialPan
+    }
+}
+
+/**
+ * Screen pixel → hex, applying the map layer's transform by hand.
+ *
+ * The gesture detectors deliberately sit OUTSIDE the map's `graphicsLayer`. Inside it, Compose
+ * reports pointer positions in pre-transform local pixels, which means a pan gesture feeds its
+ * own output back into the next event's coordinates: the map then tracks the finger at
+ * `1/(scale+1)` of its speed and a pinch cannot be anchored on the fingers at all. Outside the
+ * layer the coordinates are stable, and the inverse of `screen = C + (local - C) * scale + pan`
+ * is applied here instead.
+ */
+private fun screenToHex(
+    offset: Offset,
+    viewWidth: Float,
+    viewHeight: Float,
+    pan: Offset,
+    scale: Float,
+    hexRadius: Float
+): HexCoord = HexLayout.hexAtScreen(
+    offset.x, offset.y, viewWidth, viewHeight, pan.x, pan.y, scale, hexRadius
+)
+
+/**
+ * Clamps [pan] so the galaxy's bounding box always keeps [MAP_PAN_MARGIN_PX] of overlap with the
+ * viewport. Without it a single fling left the player staring at empty space with no cue as to
+ * which way the board went.
+ */
+private fun clampPan(
+    pan: Offset,
+    scale: Float,
+    viewWidth: Float,
+    viewHeight: Float,
+    hexRadius: Float,
+    mapRadius: Int
+): Offset {
+    if (mapRadius <= 0) return pan
+    return Offset(
+        HexLayout.clampPanAxis(
+            pan.x, HexLayout.halfBoardWidth(hexRadius, mapRadius, scale), viewWidth, MAP_PAN_MARGIN_PX
+        ),
+        HexLayout.clampPanAxis(
+            pan.y, HexLayout.halfBoardHeight(hexRadius, mapRadius, scale), viewHeight, MAP_PAN_MARGIN_PX
+        )
+    )
+}
 
 @Composable
 fun TacticalMapScreen(
@@ -75,7 +159,6 @@ fun TacticalMapScreen(
     onHexClick: (HexCoord) -> Unit,
     onMoveUnit: (HexCoord, HexCoord) -> Unit,
     onAttackUnit: (HexCoord, HexCoord) -> Unit,
-    onEndTurnClick: () -> Unit,
     onOpenSystemManagement: (HexCoord) -> Unit,
     onSiegePlanet: (HexCoord, HexCoord) -> Unit,
     onCapturePlanet: (HexCoord, HexCoord) -> Unit,
@@ -88,6 +171,8 @@ fun TacticalMapScreen(
     centerRequest: Pair<HexCoord, Int>? = null,
     initialSelectedHex: HexCoord? = null,
     combatLog: List<Pair<String, String>> = emptyList(),
+    // Owned by the caller so zoom/pan survive a trip to the SYSTEM or TECH tab.
+    camera: MapCameraState = remember { MapCameraState() },
     modifier: Modifier = Modifier
 ) {
     val initScale = 0.8f
@@ -97,20 +182,19 @@ fun TacticalMapScreen(
     // DrawScope works in raw pixels, so a hard-coded radius made the whole map shrink as screen
     // density rose: 60 px is 30 dp at 2x but only 20 dp at 3x, and the sector labels became
     // unreadable. Deriving it from dp keeps the board the same physical size on every device.
-    // This single value feeds both the drawing and pixelToHex, so hit-testing cannot drift from it.
+    // This single value feeds both the drawing and the hit-testing (via HexLayout), so the two
+    // cannot drift apart.
     val hexRadiusPx = with(LocalDensity.current) { HEX_RADIUS_DP.toPx() }
     val horizSpacingInit = sqrt(3f) * hexRadiusPx
     val vertSpacingInit = 1.5f * hexRadiusPx
 
-    var scale by remember { mutableStateOf(initScale) }
-    var pan by remember {
-        mutableStateOf(
-            Offset(
-                -horizSpacingInit * (initCoord.q + initCoord.r / 2f) * initScale,
-                -vertSpacingInit * initCoord.r * initScale
-            )
+    camera.initializeOnce(
+        initScale,
+        Offset(
+            -horizSpacingInit * (initCoord.q + initCoord.r / 2f) * initScale,
+            -vertSpacingInit * initCoord.r * initScale
         )
-    }
+    )
     var selectedHex by remember { mutableStateOf(initialSelectedHex) }
     var combatPreviewData by remember { mutableStateOf<Pair<HexCoord, HexCoord>?>(null) }
     var siegePreviewData by remember { mutableStateOf<Triple<HexCoord, HexCoord, Boolean>?>(null) }
@@ -128,6 +212,10 @@ fun TacticalMapScreen(
     val currentOnCapturePlanet by rememberUpdatedState(onCapturePlanet)
     val currentOnLoadUnit by rememberUpdatedState(onLoadUnit)
     val currentOnDeployUnit by rememberUpdatedState(onDeployUnit)
+    // The gesture lambdas below are built once by `pointerInput(Unit)`, so any plain value they
+    // capture is frozen at its first-frame value. Anything they must read live goes through
+    // rememberUpdatedState.
+    val currentIsAiThinking by rememberUpdatedState(isAiThinking)
     // Le thème effectif est résolu une seule fois par NovaEmpireTheme. Lire ici
     // `gameState.themeConfig.currentTheme` brut court-circuitait la résolution saisonnière : la
     // carte se dessinait avec les réglages DEFAULT alors que l'interface était en HALLOWEEN.
@@ -168,6 +256,8 @@ fun TacticalMapScreen(
         if (unit.faction != gameState.activeFaction || unit.hasMoved) return@remember emptySet<HexCoord>()
         HexPathfinder.findReachable(sel, GameGridMap(gameState, gameState.activeFaction), MovementCalculator.effectiveMovement(gameState, unit))
     }
+    // Same set, readable from the tap handler (see the note on rememberUpdatedState above).
+    val currentReachableHexes by rememberUpdatedState(reachableHexes)
 
     // Enemy units the selected unit can attack this turn
     val attackableCoords = remember(selectedHex, gameState.units, gameState.activeFaction) {
@@ -185,7 +275,17 @@ fun TacticalMapScreen(
         val sel = selectedHex ?: return@remember emptySet<HexCoord>()
         val unit = gameState.units[sel] ?: return@remember emptySet<HexCoord>()
         if (unit.faction != gameState.activeFaction || unit.hasAttacked) return@remember emptySet<HexCoord>()
-        gameState.map.tiles.keys.filter { it != sel && sel.distanceTo(it) <= unit.type.range }.toSet()
+        // Enumerate the disc of radius `range` (at most 36 hexes) rather than filtering every
+        // tile of the galaxy by distance — same result, independent of map size.
+        val range = unit.type.range
+        val hexes = HashSet<HexCoord>()
+        for (dq in -range..range) {
+            for (dr in maxOf(-range, -dq - range)..minOf(range, -dq + range)) {
+                val coord = sel + HexCoord(dq, dr, -dq - dr)
+                if (coord != sel && gameState.map.tiles.containsKey(coord)) hexes.add(coord)
+            }
+        }
+        hexes
     }
 
     // Targets that cannot retaliate (attacker sits beyond their weapon range) — a free hit (see B3).
@@ -206,9 +306,11 @@ fun TacticalMapScreen(
         val sel = selectedHex ?: return@remember emptySet<HexCoord>()
         val unit = gameState.units[sel] ?: return@remember emptySet<HexCoord>()
         if (unit.faction != gameState.activeFaction || unit.hasAttacked) return@remember emptySet<HexCoord>()
-        gameState.map.tiles.values
+        // Only the six neighbours are ever within capture reach — no need to walk every tile.
+        HexCoord.directions
+            .mapNotNull { gameState.map.tiles[sel + it] }
             .filter { it.terrain == TerrainType.PLANET && it.owner != gameState.activeFaction &&
-                it.systemLevel == 0 && sel.distanceTo(it.coord) <= 1 }
+                it.systemLevel == 0 }
             .map { it.coord }
             .toSet()
     }
@@ -216,9 +318,10 @@ fun TacticalMapScreen(
         val sel = selectedHex ?: return@remember emptySet<HexCoord>()
         val unit = gameState.units[sel] ?: return@remember emptySet<HexCoord>()
         if (unit.faction != gameState.activeFaction || unit.hasAttacked) return@remember emptySet<HexCoord>()
-        gameState.map.tiles.values
+        HexCoord.directions
+            .mapNotNull { gameState.map.tiles[sel + it] }
             .filter { it.terrain == TerrainType.PLANET && it.owner != gameState.activeFaction &&
-                it.systemLevel > 0 && sel.distanceTo(it.coord) <= 1 }
+                it.systemLevel > 0 }
             .map { it.coord }
             .toSet()
     }
@@ -262,9 +365,9 @@ fun TacticalMapScreen(
         centerRequest?.let { (coord, _) ->  // second component is the re-trigger nonce, intentionally unused here
             val hSpacing = sqrt(3f) * hexRadiusPx
             val vSpacing = 1.5f * hexRadiusPx
-            pan = Offset(
-                -hSpacing * (coord.q + coord.r / 2f) * scale,
-                -vSpacing * coord.r * scale
+            camera.pan = Offset(
+                -hSpacing * (coord.q + coord.r / 2f) * camera.scale,
+                -vSpacing * coord.r * camera.scale
             )
         }
     }
@@ -290,38 +393,70 @@ fun TacticalMapScreen(
 
     Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
 
-        // Map layer (gestures + canvas). Pointer inputs sit INSIDE graphicsLayer so
-        // Compose applies the inverse transform automatically — taps/drags are
-        // expressed in pre-transform local coords, which match pixelToHex.
+        // Gesture layer. The detectors sit OUTSIDE the map's graphicsLayer (see [screenToHex]):
+        // inside it, every pan changed the coordinate system the next pointer event is reported
+        // in, so the map lagged the finger by a factor of 1/(scale+1) and pinch-zoom could not be
+        // anchored on the fingers. Screen coordinates are converted to hexes by hand instead.
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    translationX = pan.x
-                    translationY = pan.y
-                }
                 .pointerInput(Unit) {
-                    detectTransformGestures { _, panChange, zoom, _ ->
-                        scale = (scale * zoom).coerceIn(0.5f, 3f)
-                        pan += panChange
+                    detectTransformGestures { centroid, panChange, zoom, _ ->
+                        // A fleet drag owns the gesture — panning underneath it would slide the
+                        // board out from under the ghost path.
+                        if (dragStartHex != null) return@detectTransformGestures
+                        val viewW = size.width.toFloat()
+                        val viewH = size.height.toFloat()
+                        val oldScale = camera.scale
+                        val newScale = (oldScale * zoom).coerceIn(MIN_MAP_SCALE, MAX_MAP_SCALE)
+                        // Hold the hex under the pinch centroid still: solving
+                        // `screen = C + (local - C) * scale + pan` for a fixed `local` gives
+                        // `pan' = pan + (centroid - C - pan) * (1 - newScale / oldScale)`.
+                        val zoomedPan = Offset(
+                            HexLayout.focalPan(camera.pan.x, centroid.x, viewW / 2f, oldScale, newScale),
+                            HexLayout.focalPan(camera.pan.y, centroid.y, viewH / 2f, oldScale, newScale)
+                        )
+                        camera.scale = newScale
+                        camera.pan = clampPan(
+                            zoomedPan + panChange, newScale, viewW, viewH,
+                            hexRadiusPx, currentGameState.map.radius
+                        )
                     }
                 }
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onLongPress = { offset ->
-                            val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f, hexRadiusPx)
+                            val coord = screenToHex(
+                                offset, size.width.toFloat(), size.height.toFloat(),
+                                camera.pan, camera.scale, hexRadiusPx
+                            )
                             val gs = currentGameState
                             val explored = gs.playerStates[gs.activeFaction]?.exploredHexes ?: emptySet()
-                            if (gs.map.tiles.containsKey(coord) && explored.contains(coord)) {
+                            // A long press on one of your own mobile fleets is the start of a
+                            // drag-to-move. Both detectors fire off independent timers, so without
+                            // this guard the full-screen terrain sheet also opened and then sat on
+                            // top of the map for the whole drag, swallowing the drop.
+                            val unitHere = gs.units[coord]
+                            val startsFleetDrag = !currentIsAiThinking && unitHere != null &&
+                                unitHere.faction == gs.activeFaction && !unitHere.hasMoved
+                            if (!startsFleetDrag && gs.map.tiles.containsKey(coord) && explored.contains(coord)) {
                                 terrainTooltipCoord = coord
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             }
                         }
                     ) { offset ->
                         terrainTooltipCoord = null
-                        val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f, hexRadiusPx)
+                        // The reducer rejects every intent while the AI plays, so letting taps
+                        // through only queued up "AI is thinking, please wait." snackbars. Pan and
+                        // zoom stay live so the player can follow the AI's turn.
+                        if (currentIsAiThinking) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            return@detectTapGestures
+                        }
+                        val coord = screenToHex(
+                            offset, size.width.toFloat(), size.height.toFloat(),
+                            camera.pan, camera.scale, hexRadiusPx
+                        )
                         val gs = currentGameState
                         val explored = gs.playerStates[gs.activeFaction]?.exploredHexes ?: emptySet()
                         if (!gs.map.tiles.containsKey(coord)) return@detectTapGestures
@@ -361,8 +496,12 @@ fun TacticalMapScreen(
                                     selectedHex = null
                                     onClearSelection()
                                 }
-                                // Empty hex and unit hasn't moved → move
-                                tappedUnit == null && !prevUnit.hasMoved -> {
+                                // Empty hex inside the unit's remaining range → move. Tapping
+                                // beyond it used to fire a MoveUnit the engine could only reject
+                                // ("unreachable or too far"); it now just moves the selection,
+                                // which is what the player meant.
+                                tappedUnit == null && !prevUnit.hasMoved &&
+                                    coord in currentReachableHexes -> {
                                     currentOnMoveUnit(prev, coord)
                                     selectedHex = null
                                     onClearSelection()
@@ -384,10 +523,14 @@ fun TacticalMapScreen(
                 .pointerInput(Unit) {
                     detectDragGesturesAfterLongPress(
                         onDragStart = { offset ->
-                            val coord = pixelToHex(offset.x, offset.y, size.width / 2f, size.height / 2f, hexRadiusPx)
+                            val coord = screenToHex(
+                                offset, size.width.toFloat(), size.height.toFloat(),
+                                camera.pan, camera.scale, hexRadiusPx
+                            )
                             val gs = currentGameState
                             val unit = gs.units[coord]
-                            if (unit != null && unit.faction == gs.activeFaction && !unit.hasMoved) {
+                            if (!currentIsAiThinking && unit != null &&
+                                unit.faction == gs.activeFaction && !unit.hasMoved) {
                                 dragStartHex = coord
                                 selectedHex = coord
                                 onHexClick(coord)
@@ -433,7 +576,10 @@ fun TacticalMapScreen(
                             val start = dragStartHex ?: return@detectDragGesturesAfterLongPress
                             val gs = currentGameState
                             val unit = gs.units[start] ?: return@detectDragGesturesAfterLongPress
-                            val coord = pixelToHex(change.position.x, change.position.y, size.width / 2f, size.height / 2f, hexRadiusPx)
+                            val coord = screenToHex(
+                                change.position, size.width.toFloat(), size.height.toFloat(),
+                                camera.pan, camera.scale, hexRadiusPx
+                            )
                             if (coord == currentHoveredHex) return@detectDragGesturesAfterLongPress
                             currentHoveredHex = coord
 
@@ -458,272 +604,337 @@ fun TacticalMapScreen(
                     )
                 }
         ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val width = size.width
-                val height = size.height
-                val centerX = width / 2f
-                val centerY = height / 2f
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = camera.scale
+                        scaleY = camera.scale
+                        translationX = camera.pan.x
+                        translationY = camera.pan.y
+                    }
+            ) {
+                // Terrain layer. It carries its own graphicsLayer: sibling draw modifiers that have
+                // no layer of their own all record into the nearest enclosing one, so the 60 fps
+                // scanline in the animation layer below was forcing this whole tile loop to be
+                // re-recorded every single frame.
+                Canvas(modifier = Modifier.fillMaxSize().graphicsLayer { }) {
+                    val width = size.width
+                    val height = size.height
+                    val centerX = width / 2f
+                    val centerY = height / 2f
 
-                val hexRadius = hexRadiusPx
-                val hexWidth = sqrt(3f) * hexRadius
-                val hexHeight = 2f * hexRadius
-                val horizSpacing = hexWidth
-                val vertSpacing = 3f / 4f * hexHeight
+                    val hexRadius = hexRadiusPx
+                    val hexWidth = sqrt(3f) * hexRadius
+                    val hexHeight = 2f * hexRadius
+                    val horizSpacing = hexWidth
+                    val vertSpacing = 3f / 4f * hexHeight
 
-                // Pre-allocate paints for performance
-                val textPaintVisible = android.graphics.Paint().apply {
-                    color = android.graphics.Color.argb((0.12f * 255f).toInt(), 74, 123, 157) // acier froid
-                    textSize = hexRadius * 0.18f
-                    textAlign = android.graphics.Paint.Align.CENTER
-                    typeface = android.graphics.Typeface.MONOSPACE
-                }
-                val textPaintFog = android.graphics.Paint().apply {
-                    color = android.graphics.Color.argb((0.06f * 255f).toInt(), 74, 123, 157)
-                    textSize = hexRadius * 0.18f
-                    textAlign = android.graphics.Paint.Align.CENTER
-                    typeface = android.graphics.Typeface.MONOSPACE
-                }
+                    // Viewport culling. The tile loop used to walk the whole galaxy on every draw
+                    // (469 tiles on GIGANTIC) even though a phone shows ~80 of them at normal zoom.
+                    // Inverting the layer transform gives the slice of the pre-transform plane that
+                    // is actually on screen; everything outside it is skipped.
+                    val cullPad = hexRadius * 1.2f
+                    val minLocalX = centerX + (0f - centerX - camera.pan.x) / camera.scale - cullPad
+                    val maxLocalX = centerX + (width - centerX - camera.pan.x) / camera.scale + cullPad
+                    val minLocalY = centerY + (0f - centerY - camera.pan.y) / camera.scale - cullPad
+                    val maxLocalY = centerY + (height - centerY - camera.pan.y) / camera.scale + cullPad
 
-                gameState.map.tiles.values.forEach { tile ->
-                    val q = tile.coord.q
-                    val r = tile.coord.r
-                    val x = centerX + horizSpacing * (q + r / 2f)
-                    val y = centerY + vertSpacing * r
+                    val drawSectorLabels = camera.scale >= SECTOR_LABEL_MIN_SCALE
 
-                    val isVisible = visibleHexes.contains(tile.coord)
-                    val isExplored = exploredHexes.contains(tile.coord)
+                    // Pre-allocate paints for performance
+                    val textPaintVisible = android.graphics.Paint().apply {
+                        color = android.graphics.Color.argb((0.12f * 255f).toInt(), 74, 123, 157) // acier froid
+                        textSize = hexRadius * 0.18f
+                        textAlign = android.graphics.Paint.Align.CENTER
+                        typeface = android.graphics.Typeface.MONOSPACE
+                    }
+                    val textPaintFog = android.graphics.Paint().apply {
+                        color = android.graphics.Color.argb((0.06f * 255f).toInt(), 74, 123, 157)
+                        textSize = hexRadius * 0.18f
+                        textAlign = android.graphics.Paint.Align.CENTER
+                        typeface = android.graphics.Typeface.MONOSPACE
+                    }
 
-                    if (isExplored) {
-                        val baseColor = when (tile.terrain) {
-                            TerrainType.EMPTY -> Color(0xFF181210)  // béton froid vide
-                            TerrainType.ASTEROIDS -> Color(0xFF241C14)  // roche brun-gris
-                            TerrainType.NEBULA -> Color(0xFF261530)  // violet brume épais
-                            TerrainType.PLANET -> Color(0xFF162018)  // vert-noir profond
-                            TerrainType.BLACK_HOLE -> Color(0xFF1A0A00)  // brun-noir abyssal
-                            TerrainType.WORMHOLE -> Color(0xFF12152A)  // bleu nuit
-                            TerrainType.PLASMA_CLOUD -> Color(0xFF2A1208)  // brun rouille sombre
-                            TerrainType.ION_STORM -> Color(0xFF20202E)  // gris-bleu lourd
-                            TerrainType.ANOMALY -> Color(0xFF142218)  // vert-brun étrange
-                        }
+                    gameState.map.tiles.values.forEach { tile ->
+                        val q = tile.coord.q
+                        val r = tile.coord.r
+                        val x = centerX + horizSpacing * (q + r / 2f)
+                        val y = centerY + vertSpacing * r
+                        if (x < minLocalX || x > maxLocalX || y < minLocalY || y > maxLocalY) return@forEach
 
-                        val alpha = if (isVisible) 1f else 0.4f
+                        val isVisible = visibleHexes.contains(tile.coord)
+                        val isExplored = exploredHexes.contains(tile.coord)
 
-                        drawHexagonPath(
-                            centerX = x, centerY = y, radius = hexRadius,
-                            color = baseColor.copy(alpha = alpha), fill = true
-                        )
+                        if (isExplored) {
+                            val baseColor = when (tile.terrain) {
+                                TerrainType.EMPTY -> Color(0xFF181210)  // béton froid vide
+                                TerrainType.ASTEROIDS -> Color(0xFF241C14)  // roche brun-gris
+                                TerrainType.NEBULA -> Color(0xFF261530)  // violet brume épais
+                                TerrainType.PLANET -> Color(0xFF162018)  // vert-noir profond
+                                TerrainType.BLACK_HOLE -> Color(0xFF1A0A00)  // brun-noir abyssal
+                                TerrainType.WORMHOLE -> Color(0xFF12152A)  // bleu nuit
+                                TerrainType.PLASMA_CLOUD -> Color(0xFF2A1208)  // brun rouille sombre
+                                TerrainType.ION_STORM -> Color(0xFF20202E)  // gris-bleu lourd
+                                TerrainType.ANOMALY -> Color(0xFF142218)  // vert-brun étrange
+                            }
 
-                        drawHexagonPath(
-                            centerX = x, centerY = y, radius = hexRadius,
-                            color = Color(0xFF130F0A).copy(alpha = alpha * 0.85f),
-                            strokeWidth = 2.5f  // contour encre épaisse BD
-                        )
+                            val alpha = if (isVisible) 1f else 0.4f
 
-                        // Selection-dependent overlays (movement/attack range, targets, selected
-                        // outline) are drawn in the separate overlay Canvas below, so selecting a
-                        // unit no longer invalidates this whole terrain layer — see O2 in AUDIT_CARTES.
-
-                        // Sector ID (Blueprint style)
-                        drawContext.canvas.nativeCanvas.drawText(
-                            "${tile.coord.q},${tile.coord.r}",
-                            x, y + hexRadius * 0.7f,
-                            if (isVisible) textPaintVisible else textPaintFog
-                        )
-
-                        when (tile.terrain) {
-                            TerrainType.PLANET -> drawPlanet(x, y, hexRadius, tile.owner, graphicsConfig)
-                            TerrainType.ASTEROIDS -> drawAsteroids(x, y, hexRadius)
-                            TerrainType.NEBULA -> drawNebula(x, y, hexRadius)
-                            TerrainType.BLACK_HOLE -> drawBlackHole(x, y, hexRadius)
-                            TerrainType.WORMHOLE -> drawWormhole(x, y, hexRadius)
-                            TerrainType.PLASMA_CLOUD -> drawPlasmaCloud(x, y, hexRadius)
-                            TerrainType.ION_STORM -> drawIonStorm(x, y, hexRadius)
-                            TerrainType.ANOMALY -> drawAnomaly(x, y, hexRadius)
-                            TerrainType.EMPTY -> {}
-                        }
-
-                        // Production indicator: small orange square on planet with active build order
-                        if (tile.terrain == TerrainType.PLANET && buildingPlanets.contains(tile.coord)) {
-                            val iconSize = hexRadius * 0.22f
-                            val iconX = x + hexRadius * 0.45f
-                            val iconY = y - hexRadius * 0.55f
-                            drawRect(
-                                color = NeonOrange.copy(alpha = 0.9f),
-                                topLeft = Offset(iconX - iconSize / 2f, iconY - iconSize / 2f),
-                                size = Size(iconSize, iconSize)
+                            drawHexagonPath(
+                                centerX = x, centerY = y, radius = hexRadius,
+                                color = baseColor.copy(alpha = alpha), fill = true
                             )
-                        }
 
-                        val unit = gameState.units[tile.coord]
-                        if (unit != null && (isVisible || unit.faction == gameState.activeFaction)) {
-                            drawUnit(x, y, unit, hexRadius)
+                            drawHexagonPath(
+                                centerX = x, centerY = y, radius = hexRadius,
+                                color = Color(0xFF130F0A).copy(alpha = alpha * 0.85f),
+                                strokeWidth = 2.5f  // contour encre épaisse BD
+                            )
+
+                            // Selection-dependent overlays (movement/attack range, targets, selected
+                            // outline) and the fleets themselves live in the layers below, so
+                            // neither selecting a unit nor moving one invalidates the terrain.
+
+                            // Sector ID (Blueprint style) — one native text draw per tile is the most
+                            // expensive thing in this loop, and below ~0.9x the glyphs are sub-pixel
+                            // noise, so it is skipped when zoomed out.
+                            if (drawSectorLabels) {
+                                drawContext.canvas.nativeCanvas.drawText(
+                                    "${tile.coord.q},${tile.coord.r}",
+                                    x, y + hexRadius * 0.7f,
+                                    if (isVisible) textPaintVisible else textPaintFog
+                                )
+                            }
+
+                            when (tile.terrain) {
+                                TerrainType.PLANET -> drawPlanet(x, y, hexRadius, tile.owner, graphicsConfig)
+                                TerrainType.ASTEROIDS -> drawAsteroids(x, y, hexRadius)
+                                TerrainType.NEBULA -> drawNebula(x, y, hexRadius)
+                                TerrainType.BLACK_HOLE -> drawBlackHole(x, y, hexRadius)
+                                TerrainType.WORMHOLE -> drawWormhole(x, y, hexRadius)
+                                TerrainType.PLASMA_CLOUD -> drawPlasmaCloud(x, y, hexRadius)
+                                TerrainType.ION_STORM -> drawIonStorm(x, y, hexRadius)
+                                TerrainType.ANOMALY -> drawAnomaly(x, y, hexRadius)
+                                TerrainType.EMPTY -> {}
+                            }
+
+                            // Production indicator: small orange square on planet with active build order
+                            if (tile.terrain == TerrainType.PLANET && buildingPlanets.contains(tile.coord)) {
+                                val iconSize = hexRadius * 0.22f
+                                val iconX = x + hexRadius * 0.45f
+                                val iconY = y - hexRadius * 0.55f
+                                drawRect(
+                                    color = NeonOrange.copy(alpha = 0.9f),
+                                    topLeft = Offset(iconX - iconSize / 2f, iconY - iconSize / 2f),
+                                    size = Size(iconSize, iconSize)
+                                )
+                            }
+
+                            // Fleets are drawn by the layer below: keeping them here meant every
+                            // single move repainted all of the terrain.
+                        } else {
+                            drawHexagonPath(x, y, hexRadius, color = Color(0xFF0D0A07), fill = true)
+                            drawHexagonPath(x, y, hexRadius, color = Color(0xFF130F0A), fill = false, strokeWidth = 2.5f)
                         }
-                    } else {
-                        drawHexagonPath(x, y, hexRadius, color = Color(0xFF0D0A07), fill = true)
-                        drawHexagonPath(x, y, hexRadius, color = Color(0xFF130F0A), fill = false, strokeWidth = 2.5f)
                     }
                 }
-            }
 
-            // Dynamic overlay layer — scanline, ghost path, combat FX, and movement
-            // animation. Keeping them separate from the terrain canvas means the
-            // expensive tile loop above only redraws on actual state changes, not
-            // every animation frame.
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val width = size.width
-                val height = size.height
-                val centerX = width / 2f
-                val centerY = height / 2f
+                // Fleet + selection layer, with its own graphicsLayer like the terrain above.
+                // Splitting it out of the animation layer below matters: the scanline and the idle
+                // pulse invalidate on every frame, and every unit sprite is a dozen path fills, so
+                // co-locating them meant redrawing the whole fleet at 60 fps for nothing.
+                Canvas(modifier = Modifier.fillMaxSize().graphicsLayer { }) {
+                    val width = size.width
+                    val height = size.height
+                    val centerX = width / 2f
+                    val centerY = height / 2f
 
-                val hexRadius = hexRadiusPx
-                val hexWidth = sqrt(3f) * hexRadius
-                val hexHeight = 2f * hexRadius
-                val horizSpacing = hexWidth
-                val vertSpacing = 3f / 4f * hexHeight
+                    val hexRadius = hexRadiusPx
+                    val hexWidth = sqrt(3f) * hexRadius
+                    val hexHeight = 2f * hexRadius
+                    val horizSpacing = hexWidth
+                    val vertSpacing = 3f / 4f * hexHeight
 
-                // Selection-dependent overlays (moved off the terrain layer — O2). Iterating the
-                // precomputed coord sets is cheaper than scanning every tile, and it keeps the
-                // terrain Canvas from invalidating when the player just selects a unit.
-                fun overlayHex(coord: HexCoord, color: Color, fill: Boolean, strokeWidth: Float = 2f) {
-                    // Keep overlays out of the fog of war (matches the pre-O2 in-loop behaviour).
-                    if (coord !in exploredHexes) return
-                    val hx = centerX + horizSpacing * (coord.q + coord.r / 2f)
-                    val hy = centerY + vertSpacing * coord.r
-                    drawHexagonPath(centerX = hx, centerY = hy, radius = hexRadius, color = color, fill = fill, strokeWidth = strokeWidth)
-                }
-                reachableHexes.forEach { overlayHex(it, NeonCyan.copy(alpha = 0.25f), fill = true) }
-                reachableHexes.forEach { overlayHex(it, NeonCyan.copy(alpha = 0.55f), fill = false, strokeWidth = 2f) }
-                attackRangeHexes.forEach { overlayHex(it, NeonRed.copy(alpha = 0.10f), fill = true) }
-                safeTargetCoords.forEach { overlayHex(it, NeonGreen.copy(alpha = 0.85f), fill = false, strokeWidth = 3.5f) }
-                attackableCoords.forEach { if (it !in safeTargetCoords) overlayHex(it, NeonRed.copy(alpha = 0.55f), fill = false, strokeWidth = 3f) }
-                capturableCoords.forEach { overlayHex(it, NeonGold.copy(alpha = 0.85f), fill = false, strokeWidth = 3.5f) }
-                siegeableCoords.forEach { if (it !in capturableCoords) overlayHex(it, NeonOrange.copy(alpha = 0.85f), fill = false, strokeWidth = 3f) }
-                selectedHex?.let { overlayHex(it, NeonCyan, fill = false, strokeWidth = 4f) }
+                    val cullPad = hexRadius * 1.5f
+                    val minLocalX = centerX + (0f - centerX - camera.pan.x) / camera.scale - cullPad
+                    val maxLocalX = centerX + (width - centerX - camera.pan.x) / camera.scale + cullPad
+                    val minLocalY = centerY + (0f - centerY - camera.pan.y) / camera.scale - cullPad
+                    val maxLocalY = centerY + (height - centerY - camera.pan.y) / camera.scale + cullPad
+                    fun onScreen(hx: Float, hy: Float) =
+                        hx >= minLocalX && hx <= maxLocalX && hy >= minLocalY && hy <= maxLocalY
 
-                // Blueprint scanline sweep (animation — lives here to avoid terrain redraw)
-                val scanlineY = sweepProgress.value * size.height
-                drawLine(
-                    color = NeonCyan.copy(alpha = 0.10f),
-                    start = Offset(-size.width, scanlineY - size.height / 2f),
-                    end = Offset(size.width, scanlineY - size.height / 2f),
-                    strokeWidth = 2f
-                )
+                    // Selection-dependent overlays (moved off the terrain layer — O2). Iterating the
+                    // precomputed coord sets is cheaper than scanning every tile, and it keeps the
+                    // terrain Canvas from invalidating when the player just selects a unit.
+                    fun overlayHex(coord: HexCoord, color: Color, fill: Boolean, strokeWidth: Float = 2f) {
+                        // Keep overlays out of the fog of war (matches the pre-O2 in-loop behaviour).
+                        if (coord !in exploredHexes) return
+                        val hx = centerX + horizSpacing * (coord.q + coord.r / 2f)
+                        val hy = centerY + vertSpacing * coord.r
+                        if (!onScreen(hx, hy)) return
+                        drawHexagonPath(centerX = hx, centerY = hy, radius = hexRadius, color = color, fill = fill, strokeWidth = strokeWidth)
+                    }
+                    reachableHexes.forEach { overlayHex(it, NeonCyan.copy(alpha = 0.25f), fill = true) }
+                    reachableHexes.forEach { overlayHex(it, NeonCyan.copy(alpha = 0.55f), fill = false, strokeWidth = 2f) }
+                    attackRangeHexes.forEach { overlayHex(it, NeonRed.copy(alpha = 0.10f), fill = true) }
+                    safeTargetCoords.forEach { overlayHex(it, NeonGreen.copy(alpha = 0.85f), fill = false, strokeWidth = 3.5f) }
+                    attackableCoords.forEach { if (it !in safeTargetCoords) overlayHex(it, NeonRed.copy(alpha = 0.55f), fill = false, strokeWidth = 3f) }
+                    capturableCoords.forEach { overlayHex(it, NeonGold.copy(alpha = 0.85f), fill = false, strokeWidth = 3.5f) }
+                    siegeableCoords.forEach { if (it !in capturableCoords) overlayHex(it, NeonOrange.copy(alpha = 0.85f), fill = false, strokeWidth = 3f) }
+                    selectedHex?.let { overlayHex(it, NeonCyan, fill = false, strokeWidth = 4f) }
 
-                // Pulsing halo on units that still have actions available this turn
-                val pulseAlpha = 0.25f + pulseProgress.value * 0.45f
-                val pulseStroke = 2f + pulseProgress.value * 2.5f
-                gameState.units.values.forEach { unit ->
-                    if (unit.faction == gameState.activeFaction && !unit.hasMoved && !unit.hasAttacked) {
+                    // Fleets. Drawn after the overlays so a sprite is never tinted by a range wash.
+                    val animatedUnitId = movingUnitAnim?.id
+                    gameState.units.values.forEach { unit ->
+                        if (unit.faction != gameState.activeFaction && !visibleHexes.contains(unit.position)) return@forEach
+                        // The unit in flight is drawn at its interpolated position by the animation
+                        // layer; drawing it here too showed the ship in two places at once for the
+                        // 350 ms of the move.
+                        if (unit.id == animatedUnitId) return@forEach
                         val ux = centerX + horizSpacing * (unit.position.q + unit.position.r / 2f)
                         val uy = centerY + vertSpacing * unit.position.r
-                        drawCircle(
-                            color = NeonGreen.copy(alpha = pulseAlpha),
-                            radius = hexRadius * 0.44f,
-                            center = Offset(ux, uy),
-                            style = Stroke(width = pulseStroke)
-                        )
+                        if (!onScreen(ux, uy)) return@forEach
+                        drawUnit(ux, uy, unit, hexRadius)
                     }
                 }
 
-                ghostPath?.let { path ->
-                    val start = dragStartHex
-                    if (path.isNotEmpty() && start != null) {
-                        var prevPoint = Offset(
-                            centerX + horizSpacing * (start.q + start.r / 2f),
-                            centerY + vertSpacing * start.r
-                        )
-                        path.forEach { coord ->
-                            val px = centerX + horizSpacing * (coord.q + coord.r / 2f)
-                            val py = centerY + vertSpacing * coord.r
-                            val currentPoint = Offset(px, py)
+                // Animation layer — scanline, idle pulse, ghost path, combat FX and the unit in
+                // flight. Everything here invalidates every frame by design, so nothing static lives
+                // in it. No graphicsLayer: this is the layer doing the invalidating.
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val centerX = size.width / 2f
+                    val centerY = size.height / 2f
 
+                    val hexRadius = hexRadiusPx
+                    val horizSpacing = sqrt(3f) * hexRadius
+                    val vertSpacing = 1.5f * hexRadius
+
+                    // Blueprint scanline sweep (animation — lives here to avoid terrain redraw)
+                    val scanlineY = sweepProgress.value * size.height
+                    drawLine(
+                        color = NeonCyan.copy(alpha = 0.10f),
+                        start = Offset(-size.width, scanlineY - size.height / 2f),
+                        end = Offset(size.width, scanlineY - size.height / 2f),
+                        strokeWidth = 2f
+                    )
+
+                    // Pulsing halo on units that still have actions available this turn
+                    val pulseAlpha = 0.25f + pulseProgress.value * 0.45f
+                    val pulseStroke = 2f + pulseProgress.value * 2.5f
+                    gameState.units.values.forEach { unit ->
+                        if (unit.faction == gameState.activeFaction && !unit.hasMoved && !unit.hasAttacked) {
+                            val ux = centerX + horizSpacing * (unit.position.q + unit.position.r / 2f)
+                            val uy = centerY + vertSpacing * unit.position.r
+                            drawCircle(
+                                color = NeonGreen.copy(alpha = pulseAlpha),
+                                radius = hexRadius * 0.44f,
+                                center = Offset(ux, uy),
+                                style = Stroke(width = pulseStroke)
+                            )
+                        }
+                    }
+
+                    ghostPath?.let { path ->
+                        val start = dragStartHex
+                        if (path.isNotEmpty() && start != null) {
+                            var prevPoint = Offset(
+                                centerX + horizSpacing * (start.q + start.r / 2f),
+                                centerY + vertSpacing * start.r
+                            )
+                            path.forEach { coord ->
+                                val px = centerX + horizSpacing * (coord.q + coord.r / 2f)
+                                val py = centerY + vertSpacing * coord.r
+                                val currentPoint = Offset(px, py)
+
+                                drawLine(
+                                    color = NeonCyan.copy(alpha = 0.6f),
+                                    start = prevPoint,
+                                    end = currentPoint,
+                                    strokeWidth = 8f
+                                )
+                                prevPoint = currentPoint
+                            }
+                            val target = path.last()
+                            val targetUnit = gameState.units[target]
+                            val targetTile = gameState.map.tiles[target]
+                            val highlightColor = when {
+                                targetUnit != null && targetUnit.faction != gameState.activeFaction -> NeonRed
+                                targetTile?.terrain == TerrainType.PLANET &&
+                                    targetTile.owner != null && targetTile.owner != gameState.activeFaction -> NeonOrange
+                                else -> NeonCyan
+                            }
+
+                            val tx = centerX + horizSpacing * (target.q + target.r / 2f)
+                            val ty = centerY + vertSpacing * target.r
+                            drawHexagonPath(
+                                centerX = tx, centerY = ty, radius = hexRadius,
+                                color = highlightColor.copy(alpha = 0.5f), fill = true
+                            )
+                        }
+                    }
+
+                    activeCombatEvent?.let { combat ->
+                        val ax = centerX + horizSpacing * (combat.attackerCoord.q + combat.attackerCoord.r / 2f)
+                        val ay = centerY + vertSpacing * combat.attackerCoord.r
+
+                        val dx = centerX + horizSpacing * (combat.defenderCoord.q + combat.defenderCoord.r / 2f)
+                        val dy = centerY + vertSpacing * combat.defenderCoord.r
+
+                        if (laserProgress.value > 0f && laserProgress.value < 1f) {
+                            val currentEx = ax + (dx - ax) * laserProgress.value
+                            val currentEy = ay + (dy - ay) * laserProgress.value
                             drawLine(
-                                color = NeonCyan.copy(alpha = 0.6f),
-                                start = prevPoint,
-                                end = currentPoint,
+                                color = NeonRed,
+                                start = Offset(ax, ay),
+                                end = Offset(currentEx, currentEy),
                                 strokeWidth = 8f
                             )
-                            prevPoint = currentPoint
-                        }
-                        val target = path.last()
-                        val targetUnit = gameState.units[target]
-                        val targetTile = gameState.map.tiles[target]
-                        val highlightColor = when {
-                            targetUnit != null && targetUnit.faction != gameState.activeFaction -> NeonRed
-                            targetTile?.terrain == TerrainType.PLANET &&
-                                targetTile.owner != null && targetTile.owner != gameState.activeFaction -> NeonOrange
-                            else -> NeonCyan
                         }
 
-                        val tx = centerX + horizSpacing * (target.q + target.r / 2f)
-                        val ty = centerY + vertSpacing * target.r
-                        drawHexagonPath(
-                            centerX = tx, centerY = ty, radius = hexRadius,
-                            color = highlightColor.copy(alpha = 0.5f), fill = true
-                        )
-                    }
-                }
-
-                activeCombatEvent?.let { combat ->
-                    val ax = centerX + horizSpacing * (combat.attackerCoord.q + combat.attackerCoord.r / 2f)
-                    val ay = centerY + vertSpacing * combat.attackerCoord.r
-
-                    val dx = centerX + horizSpacing * (combat.defenderCoord.q + combat.defenderCoord.r / 2f)
-                    val dy = centerY + vertSpacing * combat.defenderCoord.r
-
-                    if (laserProgress.value > 0f && laserProgress.value < 1f) {
-                        val currentEx = ax + (dx - ax) * laserProgress.value
-                        val currentEy = ay + (dy - ay) * laserProgress.value
-                        drawLine(
-                            color = NeonRed,
-                            start = Offset(ax, ay),
-                            end = Offset(currentEx, currentEy),
-                            strokeWidth = 8f
-                        )
-                    }
-
-                    if (explosionScale.value > 0f) {
-                        val explosionRadius = hexRadius * explosionScale.value
-                        if (explosionRadius > 0f) {
-                            // Éclaboussure encre Bilal — fumée brune, pas néon
-                            drawCircle(
-                                brush = Brush.radialGradient(
-                                    colorStops = arrayOf(
-                                        0.0f to Color(0xFF8B3A0A).copy(alpha = (1f - explosionScale.value) * 0.95f),
-                                        0.4f to Color(0xFF3D1A06).copy(alpha = (0.7f - explosionScale.value).coerceAtLeast(0f)),
-                                        0.8f to Color(0xFF1A0D04).copy(alpha = (0.3f - explosionScale.value).coerceAtLeast(0f)),
-                                        1.0f to Color.Transparent
+                        if (explosionScale.value > 0f) {
+                            val explosionRadius = hexRadius * explosionScale.value
+                            if (explosionRadius > 0f) {
+                                // Éclaboussure encre Bilal — fumée brune, pas néon
+                                drawCircle(
+                                    brush = Brush.radialGradient(
+                                        colorStops = arrayOf(
+                                            0.0f to Color(0xFF8B3A0A).copy(alpha = (1f - explosionScale.value) * 0.95f),
+                                            0.4f to Color(0xFF3D1A06).copy(alpha = (0.7f - explosionScale.value).coerceAtLeast(0f)),
+                                            0.8f to Color(0xFF1A0D04).copy(alpha = (0.3f - explosionScale.value).coerceAtLeast(0f)),
+                                            1.0f to Color.Transparent
+                                        ),
+                                        center = Offset(dx, dy),
+                                        radius = explosionRadius
                                     ),
-                                    center = Offset(dx, dy),
-                                    radius = explosionRadius
-                                ),
-                                radius = explosionRadius,
-                                center = Offset(dx, dy)
+                                    radius = explosionRadius,
+                                    center = Offset(dx, dy)
+                                )
+                            }
+                        }
+                    }
+
+                    // Moving unit — drawn on top at its interpolated position
+                    val anim = movingUnitAnim
+                    if (anim != null) {
+                        val fromX = centerX + horizSpacing * (anim.from.q + anim.from.r / 2f)
+                        val fromY = centerY + vertSpacing * anim.from.r
+                        val toX = centerX + horizSpacing * (anim.to.q + anim.to.r / 2f)
+                        val toY = centerY + vertSpacing * anim.to.r
+                        val t = movingProgress.value
+                        val animX = fromX + (toX - fromX) * t
+                        val animY = fromY + (toY - fromY) * t
+                        if (t < 0.95f) {
+                            drawLine(
+                                color = NeonCyan.copy(alpha = 0.5f * (1f - t)),
+                                start = Offset(fromX, fromY),
+                                end = Offset(animX, animY),
+                                strokeWidth = 3f
                             )
                         }
+                        val animUnit = gameState.units[anim.to] ?: gameState.units[anim.from]
+                        if (animUnit != null) drawUnit(animX, animY, animUnit, hexRadius)
                     }
-                }
-
-                // Moving unit — drawn on top at its interpolated position
-                val anim = movingUnitAnim
-                if (anim != null) {
-                    val fromX = centerX + horizSpacing * (anim.from.q + anim.from.r / 2f)
-                    val fromY = centerY + vertSpacing * anim.from.r
-                    val toX = centerX + horizSpacing * (anim.to.q + anim.to.r / 2f)
-                    val toY = centerY + vertSpacing * anim.to.r
-                    val t = movingProgress.value
-                    val animX = fromX + (toX - fromX) * t
-                    val animY = fromY + (toY - fromY) * t
-                    if (t < 0.95f) {
-                        drawLine(
-                            color = NeonCyan.copy(alpha = 0.5f * (1f - t)),
-                            start = Offset(fromX, fromY),
-                            end = Offset(animX, animY),
-                            strokeWidth = 3f
-                        )
-                    }
-                    val animUnit = gameState.units[anim.to] ?: gameState.units[anim.from]
-                    if (animUnit != null) drawUnit(animX, animY, animUnit, hexRadius)
                 }
             }
         }
@@ -744,8 +955,8 @@ fun TacticalMapScreen(
                     Icon(imageVector = Icons.Default.Star, contentDescription = "Hero Academy", tint = NeonCyan)
                 }
                 IconButton(onClick = {
-                    scale = initScale
-                    pan = Offset(
+                    camera.scale = initScale
+                    camera.pan = Offset(
                         -horizSpacingInit * (initCoord.q + initCoord.r / 2f) * initScale,
                         -vertSpacingInit * initCoord.r * initScale
                     )
@@ -1256,12 +1467,6 @@ fun SiegePreviewOverlay(
     }
 }
 
-fun pixelToHex(x: Float, y: Float, centerX: Float, centerY: Float, hexRadius: Float): HexCoord {
-    val q = (sqrt(3f) / 3 * (x - centerX) - 1f / 3 * (y - centerY)) / hexRadius
-    val r = (2f / 3 * (y - centerY)) / hexRadius
-    return hexRound(q.toDouble(), r.toDouble(), -q.toDouble() - r.toDouble())
-}
-
 fun DrawScope.drawPlanet(x: Float, y: Float, hexRadius: Float, owner: Faction?, graphicsConfig: com.novaempire.app.ui.theme.GraphicsConfig) {
     val planetColor = owner?.let { getFactionColor(it) } ?: NeonGreen
     val inkBlack = Color(0xFF130F0A)
@@ -1548,6 +1753,16 @@ fun DrawScope.drawNebula(x: Float, y: Float, hexRadius: Float) {
     )
 }
 
+/**
+ * Unit-circle vertices of a pointy-top hexagon, resolved once at class-init.
+ *
+ * Every hexagon on the board is the same shape, yet [drawHexagonPath] was recomputing twelve
+ * trigonometric functions per call — and it is called at least twice per tile per draw, which on
+ * a GIGANTIC galaxy came to ~11 000 cos/sin per frame just to rebuild an identical outline.
+ */
+private val HEX_VERTEX_COS = FloatArray(6) { cos(PI / 180.0 * (60.0 * it - 30.0)).toFloat() }
+private val HEX_VERTEX_SIN = FloatArray(6) { sin(PI / 180.0 * (60.0 * it - 30.0)).toFloat() }
+
 fun DrawScope.drawHexagonPath(
     centerX: Float,
     centerY: Float,
@@ -1559,10 +1774,8 @@ fun DrawScope.drawHexagonPath(
 ) {
     val path = Path()
     for (i in 0..5) {
-        val angleDeg = 60f * i - 30f
-        val angleRad = kotlin.math.PI / 180f * angleDeg
-        val px = centerX + radius * cos(angleRad).toFloat()
-        val py = centerY + radius * sin(angleRad).toFloat()
+        val px = centerX + radius * HEX_VERTEX_COS[i]
+        val py = centerY + radius * HEX_VERTEX_SIN[i]
         if (i == 0) {
             path.moveTo(px, py)
         } else {
@@ -1656,25 +1869,6 @@ fun TerrainTooltipOverlay(
             }
         }
     }
-}
-
-fun hexRound(fracQ: Double, fracR: Double, fracS: Double): HexCoord {
-    var q = fracQ.roundToInt()
-    var r = fracR.roundToInt()
-    var s = fracS.roundToInt()
-
-    val qDiff = kotlin.math.abs(q - fracQ)
-    val rDiff = kotlin.math.abs(r - fracR)
-    val sDiff = kotlin.math.abs(s - fracS)
-
-    if (qDiff > rDiff && qDiff > sDiff) {
-        q = -r - s
-    } else if (rDiff > sDiff) {
-        r = -q - s
-    } else {
-        s = -q - r
-    }
-    return HexCoord(q, r, s)
 }
 
 fun DrawScope.drawBlackHole(x: Float, y: Float, hexRadius: Float) {
