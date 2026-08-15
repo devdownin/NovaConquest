@@ -210,8 +210,35 @@ internal fun handleStartCampaign(state: GameState, intent: GameIntent.StartCampa
     players[mission.playerFaction]?.let { p ->
         players[mission.playerFaction] = p.copy(
             credits = p.credits + perks.sumOf { it.bonusCredits },
-            techUnlocked = p.techUnlocked + perks.mapNotNull { it.grantsTechId }
+            techUnlocked = p.techUnlocked + perks.mapNotNull { it.grantsTechId },
+            recruitedHeroes = p.recruitedHeroes + perks.mapNotNull { it.grantsHeroId },
+            // Explored, not visible: the fog still hides fleets, so this grants planning rather
+            // than intelligence. `updateVision` only ever adds to exploredHexes, so seeding it here
+            // survives every later recompute.
+            exploredHexes = if (perks.any { it.revealsMap }) p.exploredHexes + next.map.tiles.keys
+            else p.exploredHexes
         )
+    }
+    next = next.copy(playerStates = players)
+
+    // Granted ships touch the board, so they are placed after the player state settles. A capital
+    // ringed by ships or asteroids simply yields nowhere to stand: the perk is still charged, which
+    // is why `UnitPlacement` is shared with the build queue — a rule that disagreed with the
+    // shipyard's would strand a ship the player paid glory for.
+    val capital = players[mission.playerFaction]?.capitalCoord
+    val grantedUnits = perks.mapNotNull { it.grantsUnitType }
+    if (capital != null && grantedUnits.isNotEmpty()) {
+        val units = next.units.toMutableMap()
+        for (type in grantedUnits) {
+            val hex = UnitPlacement.freeHexNear(next.copy(units = units), capital) ?: continue
+            units[hex] = com.novaempire.core.domain.models.GameUnit(
+                type = type,
+                faction = mission.playerFaction,
+                position = hex,
+                currentHp = type.maxHp
+            )
+        }
+        next = next.copy(units = units)
     }
 
     // A campaign mission is a duel: the scripted enemy must actually be at war, otherwise the
@@ -233,7 +260,10 @@ internal fun handleStartCampaign(state: GameState, intent: GameIntent.StartCampa
     }
 
     next = next.copy(playerStates = players)
-    return GameResult(next)
+    // Perks can add a ship or a vision tech, and both change what the player can see before they
+    // take their first action. Without this the granted cruiser sits in fog until something else
+    // happens to recompute vision.
+    return GameResult(if (perks.isEmpty()) next else updateVision(next, setOf(mission.playerFaction)))
 }
 
 internal fun handleSiegePlanet(state: GameState, intent: GameIntent.SiegePlanet, deps: GameEngineDependencies): GameResult {

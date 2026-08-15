@@ -10,6 +10,7 @@ import com.novaempire.core.domain.models.GloryRegistry
 import com.novaempire.core.domain.models.HexTile
 import com.novaempire.core.domain.models.ObjectiveMode
 import com.novaempire.core.domain.models.TerrainType
+import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.state.CampaignProgress
 import com.novaempire.core.domain.state.CampaignState
 import com.novaempire.core.domain.state.GameState
@@ -267,21 +268,140 @@ class CampaignTest {
     }
 
     @Test
-    fun everyPerkGrantsARealTechAndCostsSomething() {
-        // A perk pointing at a renamed tech id would be bought, charged, and grant nothing.
+    fun everyPerkCostsSomethingAndGrantsSomethingReal() {
+        // A perk pointing at a renamed tech or hero id would be bought, charged, and grant nothing.
         val techIds = com.novaempire.core.domain.models.TechRegistry.ALL_TECHS.map { it.id }.toSet()
         GloryRegistry.ALL_PERKS.forEach { perk ->
             assertTrue("${perk.id} is free", perk.cost > 0)
             assertTrue(
                 "${perk.id} grants an effect nobody can feel",
-                perk.bonusCredits > 0 || perk.grantsTechId != null
+                perk.bonusCredits > 0 || perk.grantsTechId != null || perk.grantsUnitType != null ||
+                    perk.grantsHeroId != null || perk.revealsMap
             )
             perk.grantsTechId?.let {
                 assertTrue("${perk.id} grants unknown tech \"$it\"", it in techIds)
             }
+            perk.grantsHeroId?.let { id ->
+                val hero = com.novaempire.core.domain.models.HeroRegistry.getHero(id)
+                assertNotNull("${perk.id} grants unknown hero \"$id\"", hero)
+                // A faction's own champion serving a rival's mission would contradict the affinity
+                // pricing the hero system is built on; only mercenaries read the same for everyone.
+                assertTrue(
+                    "${perk.id} grants ${hero!!.name}, who is loyal to ${hero.targetFaction} rather than for hire",
+                    HeroCostCalculator.isMercenary(hero)
+                )
+            }
         }
         val ids = GloryRegistry.ALL_PERKS.map { it.id }
         assertEquals("duplicate perk ids", ids.size, ids.toSet().size)
+    }
+
+    // ── Glory: perks that change how a mission is played ──────────────────────
+
+    private val capital = HexCoord(0, 0, 0)
+
+    /** A launch-ready board for [missionId]: a small blob of hexes with the player's capital at 0,0. */
+    private fun launchState(missionId: String, glory: Int): GameState {
+        val mission = CampaignRegistry.MISSIONS.first { it.id == missionId }
+        val tiles = mutableMapOf<HexCoord, HexTile>()
+        for (q in -2..2) for (r in -2..2) {
+            val s = -q - r
+            if (kotlin.math.abs(s) <= 2) {
+                val c = HexCoord(q, r, s)
+                tiles[c] = HexTile(c, TerrainType.EMPTY)
+            }
+        }
+        tiles[capital] = HexTile(capital, TerrainType.PLANET, systemLevel = 1, owner = mission.playerFaction)
+        return GameState(
+            activeFaction = mission.playerFaction,
+            humanFaction = mission.playerFaction,
+            campaignState = CampaignState(gloryPoints = glory),
+            playerStates = mapOf(
+                mission.playerFaction to PlayerState(mission.playerFaction, credits = 100, capitalCoord = capital),
+                mission.enemyFaction to PlayerState(mission.enemyFaction, credits = 100)
+            ),
+            map = GameMap(tiles = tiles, radius = 2)
+        )
+    }
+
+    private fun launch(missionId: String, perkIds: Set<String>, state: GameState = launchState(missionId, 10)) =
+        GameEngine(NoOpAI()).reduce(state, GameIntent.StartCampaign(missionId, perkIds))
+
+    @Test
+    fun theVanguardPerkPutsAShipOnTheBoardOnTurnOne() {
+        // The point of this perk is what credits cannot buy: production takes turns, this does not.
+        val mission = CampaignRegistry.MISSIONS.first { it.id == "mission_1" }
+        val after = launch("mission_1", setOf("perk_vanguard")).newState
+
+        val granted = after.units.values.filter { it.faction == mission.playerFaction }
+        assertEquals(1, granted.size)
+        val ship = granted.single()
+        assertEquals(UnitType.CRUISER, ship.type)
+        assertEquals("a granted ship arrives intact", UnitType.CRUISER.maxHp, ship.currentHp)
+        assertTrue(
+            "the ship must stand at the capital or beside it, not anywhere on the map",
+            ship.position.distanceTo(capital) <= 1
+        )
+    }
+
+    @Test
+    fun aGrantedShipWithNowhereToStandDoesNotCrashTheLaunch() {
+        // Documented edge: the glory is still spent. Better a missing ship than a refused launch
+        // after the board has already been built — and `UnitPlacement` is shared with the shipyard
+        // precisely so the two never disagree about what "nowhere" means.
+        val crowded = launchState("mission_1", 10).let { s ->
+            val blockers = (listOf(capital) + GameGridMap(s).getNeighbors(capital)).associateWith { hex ->
+                com.novaempire.core.domain.models.GameUnit(
+                    type = UnitType.FIGHTER, faction = Faction.XYLAR, position = hex, currentHp = 12
+                )
+            }
+            s.copy(units = blockers)
+        }
+
+        val result = launch("mission_1", setOf("perk_vanguard"), crowded)
+
+        assertNull("the launch itself must succeed", result.error)
+        assertTrue(
+            "no room means no ship",
+            result.newState.units.values.none { it.faction == Faction.DOMINION }
+        )
+        assertEquals("the perk is still charged", 10 - 3, result.newState.campaignState.gloryPoints)
+    }
+
+    @Test
+    fun theSeerContractPutsNixUnderContractFromTurnOne() {
+        val after = launch("mission_1", setOf("perk_seer_contract")).newState
+        assertTrue("hero_nix" in after.playerStates[Faction.DOMINION]!!.recruitedHeroes)
+    }
+
+    @Test
+    fun starChartsRevealTheTerrainButNotTheEnemy() {
+        // The whole distinction this perk rests on: explored ≠ visible. Vision comes from units
+        // alone, so a board with no fleet has nothing visible however much of it is mapped.
+        val state = launchState("mission_1", 10)
+        val after = launch("mission_1", setOf("perk_star_charts"), state).newState
+        val player = after.playerStates[Faction.DOMINION]!!
+
+        assertEquals("every hex is on the charts", state.map.tiles.keys, player.exploredHexes)
+        assertTrue("fog still hides fleets", player.visibleHexes.isEmpty())
+    }
+
+    @Test
+    fun withoutStarChartsTheMapStaysUnknown() {
+        val after = launch("mission_1", emptySet()).newState
+        assertTrue(after.playerStates[Faction.DOMINION]!!.exploredHexes.isEmpty())
+    }
+
+    @Test
+    fun perksOfDifferentKindsCombineInOneLaunch() {
+        // Each effect is read off its own field, so a mixed basket must apply every one of them.
+        val after = launch("mission_1", setOf("perk_war_chest", "perk_vanguard", "perk_star_charts")).newState
+        val player = after.playerStates[Faction.DOMINION]!!
+
+        assertEquals(100 + 150, player.credits)
+        assertTrue(after.units.values.any { it.faction == Faction.DOMINION && it.type == UnitType.CRUISER })
+        assertEquals(after.map.tiles.keys, player.exploredHexes)
+        assertEquals("2 + 3 + 3 spent", 10 - 8, after.campaignState.gloryPoints)
     }
 
     // ── Composite objectives ──────────────────────────────────────────────────
