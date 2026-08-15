@@ -131,9 +131,13 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         // Glory is paid on the *first* completion only. Without that guard the shortest mission
         // becomes a perk farm: replay it, bank the reward, replay it again.
         val firstCompletion = won && mission!!.id !in state.campaignState.completedMissions
+        // Optional objectives pay on top, judged against the winning state. Gated by the same
+        // first-completion rule: otherwise a replay farms the side goals instead of the mission.
+        val bonusGlory = if (firstCompletion) VictoryChecker.bonusGloryEarned(state, mission!!) else 0
         val campaign = if (won) state.campaignState.copy(
             completedMissions = state.campaignState.completedMissions + mission!!.id,
-            gloryPoints = state.campaignState.gloryPoints + if (firstCompletion) mission.gloryReward else 0
+            gloryPoints = state.campaignState.gloryPoints +
+                (if (firstCompletion) mission.gloryReward else 0) + bonusGlory
         ) else state.campaignState
         val finalState = state.copy(
             winner = result.winner,
@@ -143,8 +147,14 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         val banner = result.winner?.let { "VICTORY: ${it.displayName} — ${result.reason}" }
             ?: "MATCH NUL — ${result.reason}"
         _effects.emit(GameEffect.ShowNotification(banner, "GOLD"))
-        if (firstCompletion && mission!!.gloryReward > 0) {
-            _effects.emit(GameEffect.ShowNotification("+${mission.gloryReward} GLOIRE", "GOLD"))
+        if (firstCompletion) {
+            val earned = mission!!.gloryReward + bonusGlory
+            if (earned > 0) {
+                // Name the bonus separately: a side objective the player never noticed they met is
+                // a reward that teaches nothing.
+                val detail = if (bonusGlory > 0) " (dont $bonusGlory en objectifs secondaires)" else ""
+                _effects.emit(GameEffect.ShowNotification("+$earned GLOIRE$detail", "GOLD"))
+            }
         }
         return finalState
     }

@@ -9,7 +9,7 @@
 > est inaccessible et Gradle ne démarre pas. Les correctifs sont en `:core:*` et couverts par des
 > tests JVM exercés en CI ; les retouches d'affichage sont revues statiquement et vérifiées à la
 > compilation seulement (`:app:assembleDebug` en CI). **Aucun des nombres d'équilibrage n'a été
-> joué** — voir §4.
+> joué** — voir §5.
 
 ## 1. Le constat de départ : un échafaudage, pas une campagne
 
@@ -113,8 +113,7 @@ première émission aurait écrasé le fichier tout juste lu.
 C'était la suggestion la plus structurante de la version précédente de cet audit : le champ existait,
 était reporté d'une mission à l'autre, et ne servait à rien.
 
-- **Gagner** : `CampaignMission.gloryReward` (2 / 3 / 4 pour les trois missions), versé **à la
-  première réussite seulement**. Sans ce garde-fou, la mission la plus courte devient une ferme à
+- **Gagner** : `CampaignMission.gloryReward`, versé **à la première réussite seulement**. Sans ce garde-fou, la mission la plus courte devient une ferme à
   perks : rejouer, encaisser, rejouer.
 - **Dépenser** : `GloryRegistry` propose trois perks achetés avant le lancement — coffre de guerre
   (+150 crédits), coques prototypes (`tech_hull_plating` acquise) et éclaireurs avancés
@@ -133,7 +132,58 @@ Deux règles assumées :
 - **Dépensé est dépensé, victoire ou défaite.** Rembourser sur échec rendrait chaque perk gratuit à
   essayer, et choisir quoi emporter est l'essentiel de ce qui fait de la gloire une décision.
 
-## 4. Ce qui n'a pas pu être vérifié
+## 4. Corrigé — objectifs composites (P2)
+
+C'était la première suggestion de la version précédente : une mission = un objectif plafonne vite la
+variété, et rien ne permettait « survivre **et** tenir un trésor », ni « bloquer l'ennemi **ou**
+l'éliminer ».
+
+`CampaignMission.objective` devient `objectives: List<CampaignObjective>` combinée par
+`objectiveMode` :
+
+| Mode | Sens | Ce que ça permet |
+|------|------|------------------|
+| `ALL` | tous requis | une **check-list** — la mission a plusieurs fronts à tenir en même temps |
+| `ANY` | un seul suffit | des **routes parallèles** — le joueur choisit sa stratégie |
+
+S'y ajoute `bonusObjectives`, des objectifs **facultatifs** qui ne conditionnent jamais la victoire
+et paient leur propre gloire. Ils donnent enfin une seconde source de gloire, dosable finement,
+là où le seul levier était la récompense de mission.
+
+### Deux pièges traités
+
+**`all` sur une liste vide vaut `true`.** Une mission sans objectif déclaré aurait été gagnée au
+premier tour, en silence — exactement le genre de défaut que cet audit a passé son temps à corriger.
+Le garde-fou est doublé : `VictoryChecker` exige explicitement une liste non vide, et un test vérifie
+la donnée. Le premier attrape la règle, le second attrape le contenu du registre.
+
+**Une seule fonction juge un objectif.** `VictoryChecker.isObjectiveMet` est le seul endroit où un
+`CampaignObjectiveType` devient une règle : objectifs requis et facultatifs y passent tous. Sans
+cela, un nouveau type pouvait signifier une chose pour la victoire et une autre pour la prime — la
+divergence UI/moteur qui revient dans presque tous les audits de ce dépôt, transposée à l'intérieur
+du moteur.
+
+### Quand les objectifs facultatifs sont évalués
+
+**Au moment de la victoire, pas suivis pendant la partie.** « Détenir 250 crédits » veut dire les
+détenir à la fin, pas être passé par 250 à un moment. C'est cohérent avec la façon dont les objectifs
+principaux lisent déjà l'état courant, et cela évite d'ajouter au `GameState` un suivi qu'il faudrait
+sérialiser, défaulter et migrer pour une récompense vue une fois. C'est une limite assumée : un
+objectif du type « ne jamais perdre d'unité » demanderait ce suivi.
+
+### Les missions
+
+- **mission_1** gagne un objectif facultatif (tenir 120 crédits, +1 gloire) — enseigne l'idée sans
+  punir qui l'ignore.
+- **mission_2** passe en `ANY` : amasser 500 crédits **ou** éliminer le rival qui allait les prendre.
+- **mission_3** gagne un objectif facultatif (250 crédits, +2 gloire) : prendre la porte vite vaut
+  mieux que la prendre à tout prix.
+- **mission_4 « Twin Anvils »** (nouvelle) exerce `ALL` : survivre 20 tours **et** ne pas laisser le
+  trésor sous 300. Elle ne porte volontairement **aucune coordonnée** — une mauvaise case est la
+  seule erreur de donnée que les tests d'intégrité ne peuvent pas attraper, et cette mission existe
+  pour prouver la logique de combinaison, pas la carte.
+
+## 5. Ce qui n'a pas pu être vérifié
 
 **L'équilibrage n'a toujours pas été joué**, et la surface non jouée vient de s'élargir :
 
@@ -141,49 +191,55 @@ Deux règles assumées :
 |--------|--------|--------|
 | Échéances missions 2 et 3 | 40 tours | estimation |
 | Bonus ennemi mission 3 | 60 crédits | estimation |
-| Récompenses de gloire | 2 / 3 / 4 | **estimation, non jouée** |
+| Récompenses de mission | 2 / 3 / 4 / 4 | **estimation, non jouée** |
 | Coûts des perks | 2 / 3 / 3 | **estimation, non jouée** |
+| Primes d'objectifs facultatifs | +1 / +2 | **estimation, non jouée** |
+| mission_4 : 20 tours, 300 crédits, échéance 35 | — | **estimation, non jouée** |
 
 « The Kaelen Gate » demande de traverser un diamètre de carte (distance 10 entre les deux capitales),
 de réduire une planète de niveau 2 à 0 par le siège, puis de la capturer. C'est plausible en 40 tours,
 mais je ne peux ni le mesurer ni le ressentir : ni build, ni émulateur ici.
 
-Le rapport gains/coûts de la gloire est le plus fragile des quatre : avec 9 points gagnables au total
-et 8 de perks disponibles, un joueur qui termine tout peut presque tout acheter. C'est délibérément
-généreux — une monnaie qu'on n'atteint jamais ne se ressent pas — mais **c'est un premier jet, pas un
-réglage.** La façon la plus simple de le resserrer, si le jeu le demande, est d'augmenter les coûts,
-pas de baisser les gains : un gain visible motive, un coût élevé se négocie.
+Le rapport gains/coûts de la gloire reste le point le plus fragile, et **les objectifs facultatifs
+viennent de l'aggraver** : le total gagnable passe de 9 à 16 points pour 8 points de perks
+disponibles. Un joueur qui termine tout peut désormais tout acheter, et il reste de la marge. C'est
+tolérable tant que le catalogue de perks est petit, mais **cela demande soit d'autres perks, soit des
+coûts plus élevés** — la première option est de loin la plus intéressante, et c'est la suggestion 2
+ci-dessous.
 
-L'écran de sélection lui-même n'a été relu que statiquement. La liste de perks est scrollable et le
-bouton de lancement est hors de la zone défilante, mais **je n'ai pas pu regarder cet écran**.
+Le fait que les primes soient jugées **à l'instant de la victoire** a une conséquence de jeu que je
+ne peux pas évaluer sans jouer : sur mission_3, il peut devenir rationnel de retarder la capture
+d'un tour pour finir de remplir le trésor. Est-ce une tension intéressante ou une manipulation
+pénible ? Je n'en sais rien — c'est à ressentir, pas à raisonner.
 
-## 5. Suggestions pour la suite (non implémentées)
+L'écran de sélection n'a été relu que statiquement. La liste d'objectifs et celle des perks sont dans
+la même zone défilante et le bouton de lancement est en dehors, mais **je n'ai pas pu regarder cet
+écran** — et il vient de gagner deux blocs de texte.
+
+## 6. Suggestions pour la suite (non implémentées)
 
 Par ordre de rapport valeur/effort :
 
-1. **Objectifs composites.** Une mission = un objectif plafonne vite la variété. Passer `objective`
-   à une **liste** avec un mode ET/OU permettrait « survivre 20 tours **et** tenir 3 mondes », et des
-   objectifs secondaires optionnels — qui donneraient une seconde source de gloire, dosable.
-2. **Conditions de départ scriptées.** Aujourd'hui une mission ne fait varier que carte, faction,
+1. **Conditions de départ scriptées.** Aujourd'hui une mission ne fait varier que carte, faction,
    ennemi, bonus et échéance. Les leviers les plus rentables, dans l'ordre : flotte de départ
    imposée, technologies déjà débloquées, crédits initiaux, planètes pré-possédées. C'est ce qui
    permet des *tempos* différents — un raid à trois vaisseaux sans économie, un siège avec un unique
    dreadnought. Les perks de gloire ouvrent déjà deux de ces leviers (crédits, technos) : la
    structure de données est là, il reste à la mettre entre les mains du concepteur de mission.
-3. **Des perks qui ne soient pas que des bonus chiffrés.** Les trois premiers sont volontairement
+2. **Des perks qui ne soient pas que des bonus chiffrés.** Les trois premiers sont volontairement
    ternes — ils valident l'économie sans rien inventer. Un héros de départ, une unité offerte ou une
    carte partiellement révélée changeraient une manière de jouer plutôt qu'un total.
-4. **Événements scriptés.** `GalacticEvent` est purement aléatoire. Déclencher un événement à un tour
+3. **Événements scriptés.** `GalacticEvent` est purement aléatoire. Déclencher un événement à un tour
    donné (« au tour 8, tempête ionique ») créerait des pics dramatiques reproductibles sans nouveau
    moteur — le système d'effets existe déjà.
-5. **Narration.** Il n'y a qu'un champ `description`. Un texte d'introduction et un texte de
+4. **Narration.** Il n'y a qu'un champ `description`. Un texte d'introduction et un texte de
    conclusion (victoire / défaite) par mission coûtent presque rien et changent radicalement la
    perception d'une campagne.
-6. **Déverrouillage séquentiel.** Maintenant que `completedMissions` est peuplé *et durable*, un
+5. **Déverrouillage séquentiel.** Maintenant que `completedMissions` est peuplé *et durable*, un
    champ `requiresMissionId` permettrait un ordre de progression — l'écran de sélection sait déjà
    quelles missions sont terminées.
 
-## 6. Ce qui fonctionnait déjà bien
+## 7. Ce qui fonctionnait déjà bien
 
 - **La guerre scriptée est forcée** : `handleStartCampaign` met le joueur et l'ennemi en `WAR`, sans
   quoi l'IA — qui n'engage que les factions en guerre — resterait passive et la mission serait vide.
