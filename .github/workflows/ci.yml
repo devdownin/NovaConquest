@@ -64,6 +64,12 @@ jobs:
         if: github.event.inputs.skip_tests != 'true'
         run: gradle :core:hex:test :core:domain:test :core:engine:test
 
+      # Kept as its own step so a Compose/Robolectric failure is never mistaken for a core
+      # regression. These are the only tests that exercise :app at all.
+      - name: Unit tests — app (Compose / Robolectric)
+        if: github.event.inputs.skip_tests != 'true'
+        run: gradle :app:testDebugUnitTest
+
       - name: Assemble debug APK
         run: gradle :app:assembleDebug
 
@@ -79,7 +85,7 @@ jobs:
         uses: dorny/test-reporter@v1
         with:
           name: Unit Test Results
-          path: '**/build/test-results/test/TEST-*.xml'
+          path: '**/build/test-results/*/TEST-*.xml'
           reporter: java-junit
           fail-on-error: false
           fail-on-empty: 'false'

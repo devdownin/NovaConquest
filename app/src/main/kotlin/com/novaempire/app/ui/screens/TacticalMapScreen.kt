@@ -70,6 +70,8 @@ import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.engine.AttackCalculator
 import com.novaempire.core.engine.GameGridMap
 import com.novaempire.core.engine.IncomeCalculator
+import com.novaempire.core.engine.MapAction
+import com.novaempire.core.engine.MapInteraction
 import com.novaempire.core.engine.MovementCalculator
 import com.novaempire.core.hex.HexCoord
 import com.novaempire.core.hex.HexLayout
@@ -363,72 +365,49 @@ fun TacticalMapScreen(
     }
 
     /**
-     * What a tap — or an Enter on the keyboard cursor — does to [coord].
+     * Applies what a tap — or an Enter on the keyboard cursor — means for [coord].
      *
-     * Shared by the pointer and keyboard paths on purpose: the two-step selection rules are
-     * subtle enough (deselect / attack / siege / move / reselect) that a second copy would drift.
-     * Every mutable value it touches is read through a state holder, so the single instance
-     * captured by `pointerInput(Unit)` stays correct across recompositions.
+     * The *rules* (deselect / attack / siege / move / reselect) live in
+     * [com.novaempire.core.engine.MapInteraction], a pure object covered by the JVM suite CI
+     * runs; `:app` has no test source set, so leaving five interlocking branches in here meant
+     * nothing could pin them down. What stays here is only the effects: UI state and callbacks.
+     *
+     * Shared by the pointer and keyboard paths on purpose. Every mutable value it touches is read
+     * through a state holder, so the single instance captured by `pointerInput(Unit)` stays
+     * correct across recompositions.
      */
     fun activateHex(coord: HexCoord) {
-        val gs = currentGameState
-        val explored = gs.playerStates[gs.activeFaction]?.exploredHexes ?: emptySet()
-        if (!gs.map.tiles.containsKey(coord)) return
-        // Acting on a fog-of-war hex does nothing — give a light haptic tick so the input
-        // doesn't feel dropped (A6).
-        if (!explored.contains(coord)) {
-            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            return
-        }
-
-        val prev = selectedHex
-        val prevUnit = prev?.let { gs.units[it] }
-        val tappedUnit = gs.units[coord]
-        val tappedTile = gs.map.tiles[coord]
-
-        when {
-            // Same tile → deselect
-            prev == coord -> {
+        val action = MapInteraction.activate(
+            currentGameState, selectedHex, coord, currentReachableHexes
+        )
+        when (action) {
+            is MapAction.OutsideMap -> Unit
+            // Acting on a fog-of-war hex does nothing — give a light haptic tick so the input
+            // doesn't feel dropped (A6).
+            is MapAction.Unexplored ->
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            is MapAction.Deselect -> {
                 selectedHex = null
                 currentOnClearSelection()
             }
-            // Friendly unit selected → interpret second activation as an action
-            prev != null && prevUnit != null && prevUnit.faction == gs.activeFaction -> when {
-                // Enemy unit in attack range → open combat preview
-                tappedUnit != null && tappedUnit.faction != gs.activeFaction &&
-                !prevUnit.hasAttacked && prev.distanceTo(coord) <= prevUnit.type.range -> {
-                    combatPreviewData = Pair(prev, coord)
-                    selectedHex = null
-                    currentOnClearSelection()
-                }
-                // Adjacent enemy planet → show siege/capture confirmation
-                tappedUnit == null && !prevUnit.hasAttacked &&
-                tappedTile?.terrain == TerrainType.PLANET &&
-                tappedTile.owner != null && tappedTile.owner != gs.activeFaction &&
-                prev.distanceTo(coord) == 1 -> {
-                    siegePreviewData = Triple(prev, coord, tappedTile.systemLevel <= 0)
-                    selectedHex = null
-                    currentOnClearSelection()
-                }
-                // Empty hex inside the unit's remaining range → move. Acting beyond it used to
-                // fire a MoveUnit the engine could only reject ("unreachable or too far"); it now
-                // just moves the selection, which is what the player meant.
-                tappedUnit == null && !prevUnit.hasMoved &&
-                    coord in currentReachableHexes -> {
-                    currentOnMoveUnit(prev, coord)
-                    selectedHex = null
-                    currentOnClearSelection()
-                }
-                // Anything else → reselect the new tile
-                else -> {
-                    selectedHex = coord
-                    currentOnHexClick(coord)
-                }
+            is MapAction.Select -> {
+                selectedHex = action.coord
+                currentOnHexClick(action.coord)
             }
-            // No friendly unit selected → select tile
-            else -> {
-                selectedHex = coord
-                currentOnHexClick(coord)
+            is MapAction.Move -> {
+                currentOnMoveUnit(action.from, action.to)
+                selectedHex = null
+                currentOnClearSelection()
+            }
+            is MapAction.PreviewCombat -> {
+                combatPreviewData = Pair(action.attacker, action.defender)
+                selectedHex = null
+                currentOnClearSelection()
+            }
+            is MapAction.PreviewSiege -> {
+                siegePreviewData = Triple(action.attacker, action.planet, action.isCapture)
+                selectedHex = null
+                currentOnClearSelection()
             }
         }
     }
@@ -687,27 +666,11 @@ fun TacticalMapScreen(
                             val start = dragStartHex
                             val path = ghostPath
                             if (start != null && path != null && path.isNotEmpty()) {
-                                val gs = currentGameState
-                                val unit = gs.units[start]
-                                val targetCoord = path.last()
-                                val targetUnit = gs.units[targetCoord]
-                                val targetTile = gs.map.tiles[targetCoord]
-
-                                when {
-                                    // Enemy unit → combat preview
-                                    targetUnit != null && targetUnit.faction != gs.activeFaction ->
-                                        combatPreviewData = Pair(start, targetCoord)
-                                    // Enemy planet adjacent → show siege/capture confirmation
-                                    unit != null && !unit.hasAttacked &&
-                                        targetUnit == null &&
-                                        targetTile?.terrain == TerrainType.PLANET &&
-                                        targetTile.owner != null && targetTile.owner != gs.activeFaction &&
-                                        start.distanceTo(targetCoord) == 1 -> {
-                                        siegePreviewData = Triple(start, targetCoord, targetTile.systemLevel <= 0)
-                                    }
-                                    // Neutral/owned/empty hex → move
-                                    targetUnit == null -> currentOnMoveUnit(start, targetCoord)
-                                }
+                                // Third copy of the selection rules, gone: onDragStart already set
+                                // `selectedHex = start`, and the ghost path is only ever built to a
+                                // hex the fleet can reach or a target in weapon range, so dropping
+                                // on `path.last()` means exactly what activating it means.
+                                activateHex(path.last())
                             }
                             dragStartHex = null
                             ghostPath = null
