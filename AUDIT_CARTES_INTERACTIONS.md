@@ -357,9 +357,21 @@ de la profondeur, politique par type d'intent, et la règle du brouillard — y 
 seule la faction agissante compte, pour que l'exploration de l'IA ne ferme pas l'historique du
 joueur).
 
-**Les tests `:app` existent enfin** : Robolectric 4.12.2 fait tourner les tests Compose sur la JVM
-dans le job normal, via une étape CI dédiée — un échec d'interface ne peut donc pas passer pour une
-régression du moteur.
+**Les tests `:app` existent enfin**, répartis selon ce que chaque harnais sait faire :
+
+| Harnais | Contenu | Tourne |
+|---------|---------|--------|
+| `test/` — Robolectric | contrat d'accessibilité (7 cas) | à chaque poussée |
+| `androidTest/` — appareil | gestes : tap, curseur clavier, bouton d'annulation (6 cas) | sur `main` |
+
+Les tests de gestes ont d'abord été écrits sous Robolectric, où ils échouent sur « Failed to
+inject touch input » et « Failed to perform RequestFocus action » : Robolectric rend l'arbre de
+sémantique mais n'assure ni l'injection d'entrées ni le focus fenêtre. Les déplacer n'est pas un
+repli — c'est leur harnais correct. Une étape CI dédiée les **compile** sur chaque branche, faute
+de quoi ils ne casseraient qu'après fusion.
+
+Conséquence à assumer : sur une branche, le câblage des gestes n'est pas gaté. Les *règles* qu'ils
+exercent le restent, elles, par `MapInteractionTest`.
 
 Exécution locale hors Gradle (AGP inaccessible ici) : **243 tests, 0 échec**.
 Compilation de `:app` : vérifiée par CI (« Assemble debug APK », vert).

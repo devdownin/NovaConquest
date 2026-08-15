@@ -70,6 +70,13 @@ jobs:
         if: github.event.inputs.skip_tests != 'true'
         run: gradle :app:testDebugUnitTest
 
+      # Les tests de gestes vivent en instrumenté (Robolectric n'injecte pas d'entrées) et ne
+      # s'exécutent que sur main. Sans cette étape ils ne seraient même pas compilés sur les
+      # branches, et casseraient après fusion.
+      - name: Compile instrumented tests
+        if: github.event.inputs.skip_tests != 'true'
+        run: gradle :app:assembleDebugAndroidTest
+
       - name: Assemble debug APK
         run: gradle :app:assembleDebug
 

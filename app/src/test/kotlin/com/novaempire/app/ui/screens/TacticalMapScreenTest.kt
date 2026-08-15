@@ -1,16 +1,9 @@
 package com.novaempire.app.ui.screens
 
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performKeyInput
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.pressKey
-import androidx.compose.ui.test.requestFocus
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.GameMap
@@ -22,7 +15,6 @@ import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.domain.state.PlayerState
 import com.novaempire.core.hex.HexCoord
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -36,7 +28,6 @@ import org.robolectric.annotation.Config
  * suite cannot see — that the screen actually composes, and that it exposes the accessibility
  * contract a screen-reader user depends on.
  */
-@OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
 class TacticalMapScreenTest {
@@ -112,7 +103,6 @@ class TacticalMapScreenTest {
         }
     }
 
-    private fun map() = rule.onNodeWithContentDescription("Secteur", substring = true)
 
     @Test
     fun theMapComposesAndAnnouncesTheHexUnderTheCursor() {
@@ -145,92 +135,6 @@ class TacticalMapScreenTest {
     fun withNoCursorTheMapStillAnnouncesHowToDriveIt() {
         setMap(testState(), null)
         rule.onNodeWithContentDescription("Carte tactique", substring = true).assertExists()
-    }
-
-    // ── wiring: the paths the pure MapInteraction suite cannot see ──────────
-    //
-    // The selection *rules* are covered by MapInteractionTest (18 cases) and the pixel-to-hex
-    // maths by HexLayoutTest. What is only observable here is whether a real gesture reaches
-    // them at all — the gesture detectors, the key handler, the callbacks.
-
-    @Test
-    fun tappingTheMapSelectsTheHexUnderTheFinger() {
-        var clicked: HexCoord? = null
-        setMap(testState(), cursor = null, onHexClick = { clicked = it })
-
-        // With the identity camera the node's centre is hex (0,0,0), and nothing is selected yet
-        // so no side panel covers it.
-        map().performTouchInput { click(center) }
-
-        assertEquals(origin, clicked)
-    }
-
-    @Test
-    fun tapsAreIgnoredWhileTheAiIsPlaying() {
-        var clicked: HexCoord? = null
-        setMap(testState(), cursor = null, isAiThinking = true, onHexClick = { clicked = it })
-
-        map().performTouchInput { click(center) }
-
-        // The reducer would refuse the intent anyway; letting the tap through only produced a
-        // queue of "AI is thinking" snackbars.
-        assertNull(clicked)
-    }
-
-    @Test
-    fun anArrowKeyWalksTheCursorToTheNeighbouringHex() {
-        setMap(testState(capital = origin), cursor = null)
-        val node = map()
-        node.requestFocus()
-
-        // The first press only lands the cursor on the capital…
-        node.performKeyInput { pressKey(Key.DirectionLeft) }
-        rule.onNodeWithContentDescription("Secteur 0, 0", substring = true).assertExists()
-
-        // …the second actually steps west.
-        node.performKeyInput { pressKey(Key.DirectionLeft) }
-        rule.onNodeWithContentDescription("Secteur -1, 0", substring = true).assertExists()
-    }
-
-    @Test
-    fun enterSelectsTheFleetUnderTheCursor() {
-        var clicked: HexCoord? = null
-        setMap(testState(capital = origin), cursor = null, onHexClick = { clicked = it })
-        val node = map()
-        node.requestFocus()
-
-        node.performKeyInput { pressKey(Key.DirectionLeft) } // land on the fleet
-        node.performKeyInput { pressKey(Key.Enter) }
-
-        assertEquals(origin, clicked)
-    }
-
-    @Test
-    fun enterOnAReachableHexOrdersTheMove() {
-        var moved: Pair<HexCoord, HexCoord>? = null
-        setMap(
-            testState(capital = origin), cursor = null,
-            onMoveUnit = { from, to -> moved = from to to }
-        )
-        val node = map()
-        node.requestFocus()
-
-        node.performKeyInput { pressKey(Key.DirectionLeft) } // land on the fleet
-        node.performKeyInput { pressKey(Key.Enter) }         // select it
-        node.performKeyInput { pressKey(Key.DirectionLeft) } // cursor one hex west
-        node.performKeyInput { pressKey(Key.Enter) }         // act on it
-
-        assertEquals(origin to west, moved)
-    }
-
-    @Test
-    fun theUndoControlDispatchesWhenPressed() {
-        var undone = false
-        setMap(testState(), cursor = origin, canUndo = true, onUndo = { undone = true })
-
-        rule.onNodeWithContentDescription("Annuler la dernière action").performClick()
-
-        assertEquals(true, undone)
     }
 
     @Test
