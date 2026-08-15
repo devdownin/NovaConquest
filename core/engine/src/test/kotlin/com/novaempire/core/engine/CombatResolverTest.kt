@@ -38,6 +38,36 @@ class CombatResolverTest {
     )
 
     @Test
+    fun eachAttackReportsItsOwnEventEvenWhenIdenticalToTheLast() {
+        // Le défaut que la sortie de l'état corrige : deux échanges identiques — même attaquant,
+        // même cible, cible survivante — produisent des CombatEvent *égaux*. Portés par l'état,
+        // ils n'en faisaient qu'un et la seconde attaque passait sans laser ni son.
+        //
+        // Les deux tours sont modélisés par le même état de départ : c'est fidèle au cas réel, où
+        // rien n'a bougé et où la fin de tour a remis les compteurs à zéro — et ça évite de faire
+        // dépendre le test de la survie de l'attaquant à la riposte.
+        val attackerCoord = HexCoord(0, 0, 0)
+        val defenderCoord = HexCoord(1, -1, 0)
+        val attacker = GameUnit(type = UnitType.FIGHTER, faction = Faction.DOMINION, position = attackerCoord, currentHp = UnitType.FIGHTER.maxHp)
+        // Cible à gros points de vie : elle survit à coup sûr, donc targetDestroyed vaut false
+        // dans les deux cas et les événements sont réellement égaux.
+        val defender = GameUnit(type = UnitType.DREADNOUGHT, faction = Faction.TRADERS, position = defenderCoord, currentHp = UnitType.DREADNOUGHT.maxHp)
+        val state = baseState(attackerCoord, defenderCoord, attacker, defender)
+        val deps = GameEngineDependencies()
+        val intent = GameIntent.AttackUnit(attackerCoord, defenderCoord)
+
+        val first = handleAttackUnit(state, intent, deps)
+        val second = handleAttackUnit(state, intent, deps)
+
+        assertTrue("le premier tir est rapporté", first.combatEvent != null)
+        assertTrue("le second aussi — c'est là que l'état échouait", second.combatEvent != null)
+        assertEquals(
+            "les deux événements sont bien égaux : c'est cette égalité qui masquait le second",
+            first.combatEvent, second.combatEvent
+        )
+    }
+
+    @Test
     fun testCombatAttackerDestroysDefender() {
         // BATTLESHIP (8 ATK + DOMINION bonus ≥ 1) vs SCOUT (5 HP) → Scout always destroyed
         val attackerCoord = HexCoord(0, 0, 0)
@@ -46,11 +76,12 @@ class CombatResolverTest {
         val defender = GameUnit(type = UnitType.SCOUT, faction = Faction.TRADERS, position = defenderCoord, currentHp = UnitType.SCOUT.maxHp)
         val state = baseState(attackerCoord, defenderCoord, attacker, defender)
 
-        val resultState = CombatResolver.resolveCombatWithRng(state, attackerCoord, defenderCoord, deterministicRng)
+        val outcome = CombatResolver.resolveCombatWithRng(state, attackerCoord, defenderCoord, deterministicRng)
+        val resultState = outcome.state
 
         assertNull("Scout should be destroyed", resultState.units[defenderCoord])
         assertTrue(resultState.units[attackerCoord]?.hasAttacked == true)
-        assertEquals(true, resultState.lastCombatEvent?.targetDestroyed)
+        assertEquals(true, outcome.event?.targetDestroyed)
     }
 
     @Test
@@ -63,7 +94,8 @@ class CombatResolverTest {
         val defender = GameUnit(type = UnitType.CRUISER, faction = Faction.TRADERS, position = defenderCoord, currentHp = UnitType.CRUISER.maxHp)
         val state = baseState(attackerCoord, defenderCoord, attacker, defender)
 
-        val resultState = CombatResolver.resolveCombatWithRng(state, attackerCoord, defenderCoord, Random(42))
+        val outcome = CombatResolver.resolveCombatWithRng(state, attackerCoord, defenderCoord, Random(42))
+        val resultState = outcome.state
 
         // Defender survives with reduced HP (FIGHTER 5 ATK ±20% → damage 4–6, Cruiser 25HP survives)
         val resultingDefender = resultState.units[defenderCoord]
@@ -73,7 +105,7 @@ class CombatResolverTest {
         // Attacker survives counter (CRUISER 6 ATK ±20% → damage 4–7, Fighter 12HP survives if counter is low)
         val resultingAttacker = resultState.units[attackerCoord]
         assertTrue("Attacker should be marked as attacked", resultingAttacker?.hasAttacked == true)
-        assertEquals(false, resultState.lastCombatEvent?.targetDestroyed)
+        assertEquals(false, outcome.event?.targetDestroyed)
     }
 
     @Test
@@ -85,11 +117,12 @@ class CombatResolverTest {
         val defender = GameUnit(type = UnitType.DREADNOUGHT, faction = Faction.TRADERS, position = defenderCoord, currentHp = UnitType.DREADNOUGHT.maxHp)
         val state = baseState(attackerCoord, defenderCoord, attacker, defender)
 
-        val resultState = CombatResolver.resolveCombatWithRng(state, attackerCoord, defenderCoord, deterministicRng)
+        val outcome = CombatResolver.resolveCombatWithRng(state, attackerCoord, defenderCoord, deterministicRng)
+        val resultState = outcome.state
 
         // Scout (5HP) vs Dreadnought counter (10 ATK min 8) → Scout always dies
         assertNull("Scout should be killed by counter-attack", resultState.units[attackerCoord])
-        assertEquals(false, resultState.lastCombatEvent?.targetDestroyed)
+        assertEquals(false, outcome.event?.targetDestroyed)
     }
 
     @Test
@@ -102,7 +135,7 @@ class CombatResolverTest {
         val defender = GameUnit(type = UnitType.CRUISER, faction = Faction.TRADERS, position = defenderCoord, currentHp = UnitType.CRUISER.maxHp)
         val state = baseState(attackerCoord, defenderCoord, attacker, defender)
 
-        val resultState = CombatResolver.resolveCombatWithRng(state, attackerCoord, defenderCoord, fixedRng)
+        val resultState = CombatResolver.resolveCombatWithRng(state, attackerCoord, defenderCoord, fixedRng).state
 
         assertEquals("Attacker keeps full HP (no counter from out-of-range defender)",
             UnitType.BATTLESHIP.maxHp, resultState.units[attackerCoord]?.currentHp)
@@ -120,7 +153,7 @@ class CombatResolverTest {
         val defender = GameUnit(type = UnitType.CRUISER, faction = Faction.DOMINION, position = defenderCoord, currentHp = UnitType.CRUISER.maxHp)
         val state = baseState(attackerCoord, defenderCoord, attacker, defender)
 
-        val resultState = CombatResolver.resolveCombatWithRng(state, attackerCoord, defenderCoord, fixedRng)
+        val resultState = CombatResolver.resolveCombatWithRng(state, attackerCoord, defenderCoord, fixedRng).state
 
         assertEquals("Counter uses the defender's +10% attack bonus", 5, resultState.units[attackerCoord]?.currentHp)
     }

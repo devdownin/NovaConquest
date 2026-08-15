@@ -52,24 +52,28 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Spotless check
-        if: github.event.inputs.skip_tests != 'true'
-        run: gradle spotlessCheck || echo "Spotless not configured, skipping"
-
-      - name: Detekt
-        if: github.event.inputs.skip_tests != 'true'
-        run: gradle detekt || echo "Detekt not configured, skipping"
+      # Pas de contrôle de style ici : ni Spotless ni Detekt n'est appliqué dans le build. Deux
+      # étapes les appelaient, enveloppées dans `|| echo "not configured, skipping"`, donc toujours
+      # vertes — 80 s par run pour une assurance qui n'existait pas, et d'autant plus trompeuse
+      # qu'elle s'affiche maintenant sur les pull requests. Les rétablir suppose de vraiment
+      # configurer les outils : voir la note dans CLAUDE.md.
 
       - name: Unit tests — core modules
         if: github.event.inputs.skip_tests != 'true'
         run: gradle :core:hex:test :core:domain:test :core:engine:test
 
-      # Tests JVM du module Android : uniquement de la logique sans dépendance Android (libellés,
-      # options d'écran). Les tests d'interface Compose demandent un appareil et vivent dans
-      # androidTest, exécuté par le job `android-test` sur `main`.
-      - name: Unit tests — app (JVM)
+      # Kept as its own step so a Compose/Robolectric failure is never mistaken for a core
+      # regression. These are the only tests that exercise :app at all.
+      - name: Unit tests — app (Compose / Robolectric)
         if: github.event.inputs.skip_tests != 'true'
         run: gradle :app:testDebugUnitTest
+
+      # Les tests de gestes vivent en instrumenté (Robolectric n'injecte pas d'entrées) et ne
+      # s'exécutent que sur main. Sans cette étape ils ne seraient même pas compilés sur les
+      # branches, et casseraient après fusion.
+      - name: Compile instrumented tests
+        if: github.event.inputs.skip_tests != 'true'
+        run: gradle :app:assembleDebugAndroidTest
 
       - name: Assemble debug APK
         run: gradle :app:assembleDebug
@@ -86,7 +90,7 @@ jobs:
         uses: dorny/test-reporter@v1
         with:
           name: Unit Test Results
-          path: '**/build/test-results/test/TEST-*.xml'
+          path: '**/build/test-results/*/TEST-*.xml'
           reporter: java-junit
           fail-on-error: false
           fail-on-empty: 'false'

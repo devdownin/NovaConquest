@@ -23,13 +23,23 @@ class GameGridMap(private val state: GameState, private val faction: Faction? = 
         else -> 1
     }
 
+    /**
+     * Wormhole exits, resolved once per grid instead of once per expanded node.
+     * [getNeighbors] is called for every hex A* or the reachability flood-fill touches, so
+     * re-scanning the whole tile map in there made pathfinding quadratic in map size for any
+     * faction holding `tech_wormhole_nav` (~469 tiles on GIGANTIC → ~220k tile visits per path).
+     */
+    private val wormholeCoords: List<HexCoord> by lazy(LazyThreadSafetyMode.NONE) {
+        if (!hasWormholeNav) emptyList()
+        else state.map.tiles.values.filter { it.terrain == TerrainType.WORMHOLE }.map { it.coord }
+    }
+
     override fun getNeighbors(coord: HexCoord): List<HexCoord> {
-        val standard = HexCoord.directions.map { coord + it }.filter { state.map.tiles.containsKey(it) }
+        val standard = HexCoord.directions.mapNotNull { dir ->
+            (coord + dir).takeIf { state.map.tiles.containsKey(it) }
+        }
         if (hasWormholeNav && state.map.tiles[coord]?.terrain == TerrainType.WORMHOLE) {
-            val otherWormholes = state.map.tiles.values
-                .filter { it.terrain == TerrainType.WORMHOLE && it.coord != coord }
-                .map { it.coord }
-            return standard + otherWormholes
+            return standard + wormholeCoords.filter { it != coord }
         }
         return standard
     }

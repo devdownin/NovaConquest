@@ -26,4 +26,14 @@ object MovementCalculator {
         )
         return (unit.type.movement + moveMod).coerceAtLeast(1)
     }
+
+    /**
+     * Movement points [unit] still has this turn — its budget less what it has already spent.
+     *
+     * This, not [effectiveMovement], is what the reachable-range highlight, the drag preview and
+     * the reducer must all use, so that a fleet halfway through its allowance is offered exactly
+     * the hexes it can still get to.
+     */
+    fun remainingMovement(state: GameState, unit: GameUnit): Int =
+        (effectiveMovement(state, unit) - unit.movementUsed).coerceAtLeast(0)
 }

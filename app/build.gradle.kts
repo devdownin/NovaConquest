@@ -46,6 +46,22 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    testOptions {
+        unitTests {
+            // Robolectric needs the merged manifest and resources to stand up an Activity, which
+            // is what lets the Compose UI tests run on the JVM in the normal CI job instead of
+            // waiting for the emulator job that only fires on main.
+            isIncludeAndroidResources = true
+        }
+    }
+}
+
+// The pure modules all declare `jvmToolchain(21)`; :app only set compileOptions/kotlinOptions,
+// so its classes were built for Java 21 while `testDebugUnitTest` forked on CI's JDK 17 and threw
+// UnsupportedClassVersionError before a single test ran. Declaring the toolchain makes the test
+// JVM match what the module compiles to.
+kotlin {
+    jvmToolchain(21)
 }
 
 dependencies {
@@ -64,6 +80,11 @@ dependencies {
     implementation("androidx.compose.material3:material3")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.12.2")
+    testImplementation("androidx.test.ext:junit:1.1.5")
+    testImplementation(platform("androidx.compose:compose-bom:2024.05.00"))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.05.00"))

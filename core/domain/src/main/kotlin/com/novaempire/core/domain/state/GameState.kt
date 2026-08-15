@@ -36,8 +36,7 @@ data class GameState(
     val eventTargetFaction: Faction? = null,
     val winner: Faction? = null,
     val victoryReason: String? = null,
-    val dominationTurns: Map<Faction, Int> = emptyMap(),
-    @Transient val lastCombatEvent: CombatEvent? = null
+    val dominationTurns: Map<Faction, Int> = emptyMap()
 )
 
 @Serializable

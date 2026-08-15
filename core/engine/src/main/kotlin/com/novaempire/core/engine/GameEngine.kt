@@ -27,9 +27,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
-data class GameResult(val newState: GameState, val error: String? = null, val notification: String? = null)
+data class GameResult(
+    val newState: GameState,
+    val error: String? = null,
+    val notification: String? = null,
+    /** Effet ponctuel remonté par le réducteur — voir [CombatOutcome]. */
+    val combatEvent: com.novaempire.core.domain.state.CombatEvent? = null
+)
 
 sealed class GameEffect {
+    /** Un échange de tirs vient d'être résolu : à animer une fois, pas à conserver. */
+    data class CombatResolved(val event: com.novaempire.core.domain.state.CombatEvent) : GameEffect()
     data class PlaySound(val soundId: String) : GameEffect()
     data class ShowNotification(val message: String, val color: String = "CYAN") : GameEffect()
     object ShakeCamera : GameEffect()
@@ -44,6 +52,17 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
 
     private val _isAiThinking = MutableStateFlow(false)
     val isAiThinking: StateFlow<Boolean> = _isAiThinking.asStateFlow()
+
+    /** Only touched from the single coroutine draining [intentChannel], so it needs no locking. */
+    private val undoHistory = UndoHistory()
+
+    private val _canUndo = MutableStateFlow(false)
+    val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
+
+    /** L'annulation est indisponible parce qu'une action a découvert du terrain — pas parce qu'il
+     *  n'y a rien à annuler. L'interface s'en sert pour l'expliquer plutôt que de rester muette. */
+    private val _undoClosedByExploration = MutableStateFlow(false)
+    val undoClosedByExploration: StateFlow<Boolean> = _undoClosedByExploration.asStateFlow()
 
     private val _state = MutableStateFlow(createInitialState(MapSize.MEDIUM, MapArchetype.STANDARD))
     val state: StateFlow<GameState> = _state.asStateFlow()
@@ -126,6 +145,21 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         intentChannel.trySend(intent)
     }
 
+    private fun pushUndo(state: GameState) {
+        undoHistory.record(state)
+        publishUndoState()
+    }
+
+    private fun clearUndo() {
+        undoHistory.clear()
+        publishUndoState()
+    }
+
+    private fun publishUndoState() {
+        _canUndo.value = undoHistory.canUndo
+        _undoClosedByExploration.value = undoHistory.closedByExploration
+    }
+
     fun dispose() {
         scope.cancel()
     }
@@ -142,7 +176,25 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
             return
         }
 
+        // Placed *after* the AI guard on purpose: rolling back mid-round would hand the player a
+        // state from before the AI moved. Today `EndTurn` also empties the history on entry, so
+        // the stack would be empty anyway — but relying on that would make the safety of this
+        // branch depend on where an unrelated call happens to sit.
+        if (intent is GameIntent.Undo) {
+            val previous = undoHistory.rollback()
+            if (previous == null) {
+                _errors.emit("Nothing to undo.")
+            } else {
+                _state.value = previous
+                publishUndoState()
+            }
+            return
+        }
+
         if (intent is GameIntent.EndTurn) {
+            // The turn is the commit point: once the AI has answered, there is nothing coherent
+            // to roll back to.
+            clearUndo()
             _isAiThinking.value = true
             val prevState = _state.value
             var currentState = prevState
@@ -194,13 +246,28 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
                 }
             }
 
-            val refreshedUnits = currentState.units.mapValues { it.value.copy(hasMoved = false, hasAttacked = false) }
+            val refreshedUnits = currentState.units.mapValues {
+                it.value.copy(hasMoved = false, hasAttacked = false, movementUsed = 0)
+            }
             currentState = currentState.copy(units = refreshedUnits)
             _state.value = checkVictoryConditions(currentState)
             _isAiThinking.value = false
         } else {
             val currentState = _state.value
             val result = reduce(currentState, intent)
+            if (result.error == null) {
+                // An action that uncovered fog forfeits the *entire* history, not just its own
+                // step: rolling back to any earlier state would re-hide the same ground and hand
+                // the player free reconnaissance one action later.
+                when {
+                    !UndoHistory.isUndoable(intent) -> clearUndo()
+                    UndoHistory.revealsNewTerritory(currentState, result.newState) -> {
+                        undoHistory.closeForExploration()
+                        publishUndoState()
+                    }
+                    else -> pushUndo(currentState)
+                }
+            }
             if (result.error != null) {
                 _errors.emit(result.error)
                 _effects.emit(GameEffect.PlaySound("UI_CLICK"))
@@ -210,8 +277,11 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
             }
 
             val nextState = result.newState
-            val combat = nextState.lastCombatEvent
-            if (combat != null && (currentState.lastCombatEvent == null || combat != currentState.lastCombatEvent)) {
+            val combat = result.combatEvent
+            if (combat != null) {
+                // Émis en flux : deux attaques identiques d'affilée sont deux événements, alors
+                // qu'en état elles n'en faisaient qu'un et la seconde passait inaperçue.
+                _effects.emit(GameEffect.CombatResolved(combat))
                 _effects.emit(GameEffect.ShakeCamera)
                 val attackerName = currentState.units[combat.attackerCoord]?.type?.name ?: "UNIT"
                 val defenderName = currentState.units[combat.defenderCoord]?.type?.name ?: "UNIT"
@@ -259,6 +329,8 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         is GameIntent.StartCampaign -> handleStartCampaign(state, intent)
         is GameIntent.EndTurn ->
             GameResult(updateVision(TurnManager.advanceTurn(state)))
+        // Handled before the reducer — it replaces the state wholesale rather than deriving one.
+        is GameIntent.Undo -> GameResult(state)
         is GameIntent.SelectFaction ->
             GameResult(state.copy(activeFaction = intent.faction, humanFaction = intent.faction))
         is GameIntent.MoveUnit     -> handleMoveUnit(state, intent, deps)
@@ -280,6 +352,9 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
 
 sealed class GameIntent {
     object EndTurn : GameIntent()
+
+    /** Roll the last player action of this turn back. See `GameEngine.isUndoable`. */
+    object Undo : GameIntent()
     data class SelectFaction(val faction: Faction) : GameIntent()
     data class MoveUnit(val from: HexCoord, val to: HexCoord) : GameIntent()
     data class AttackUnit(val attacker: HexCoord, val defender: HexCoord) : GameIntent()

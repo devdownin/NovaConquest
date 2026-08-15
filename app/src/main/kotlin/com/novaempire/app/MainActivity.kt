@@ -56,9 +56,8 @@ fun computeEndTurnSummary(state: GameState): EndTurnSummary {
 
     val techInProgress = ps?.researchInProgress?.techId
 
-    val idleFleets = state.units.values.count {
-        it.faction == state.activeFaction && !it.hasMoved && !it.hasAttacked
-    }
+    val idleFleets = com.novaempire.core.engine.FleetActions
+        .idleFleets(state, state.activeFaction).size
 
     return EndTurnSummary(
         turn = state.turn,
@@ -266,6 +265,8 @@ fun GameContainer(
 
     val gameViewModel: GameViewModel = viewModel()
     val isAiThinking by gameViewModel.isAiThinking.collectAsState()
+    val canUndo by gameViewModel.canUndo.collectAsState()
+    val undoClosedByExploration by gameViewModel.undoClosedByExploration.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
@@ -289,18 +290,21 @@ fun GameContainer(
         ?: gameState.map.tiles.values.firstOrNull { it.terrain == com.novaempire.core.domain.models.TerrainType.PLANET && it.owner == gameState.activeFaction }?.coord
         ?: gameState.map.tiles.keys.firstOrNull()
 
-    val idleFleetCount = gameState.units.values.count {
-        it.faction == gameState.activeFaction && !it.hasMoved && !it.hasAttacked
-    }
-    val idleFleets = gameState.units.values
-        .filter { it.faction == gameState.activeFaction && !it.hasMoved && !it.hasAttacked }
-        .sortedBy { it.id }
+    // « Inactive » veut dire « à qui il reste un ordre à donner », pas « intacte » : c'est ce que
+    // SMART FOCUS sert à trouver. Voir FleetActions.
+    val idleFleets = com.novaempire.core.engine.FleetActions
+        .idleFleets(gameState, gameState.activeFaction)
+    val idleFleetCount = idleFleets.size
     var smartFocusIdx by remember { mutableStateOf(0) }
     // centerRequestCounter is a re-trigger nonce (NOT a zoom level): bumping it changes the
     // Pair so TacticalMapScreen's LaunchedEffect re-centers even on the same coord.
     var centerRequestCounter by remember { mutableStateOf(0) }
     var centerRequest by remember { mutableStateOf<Pair<com.novaempire.core.hex.HexCoord, Int>?>(null) }
     var endTurnSummary by remember { mutableStateOf<EndTurnSummary?>(null) }
+    // Owned here rather than inside TacticalMapScreen: the map Composable is torn down whenever
+    // the player opens the SYSTEM / TECH / INTEL tabs, which used to reset zoom and pan back to
+    // the capital several times a turn.
+    val mapCamera = remember { com.novaempire.app.ui.screens.MapCameraState() }
     val combatLog = remember { mutableStateListOf<Pair<String, String>>() }
     LaunchedEffect(Unit) {
         gameViewModel.notifications.collect { entry ->
@@ -427,7 +431,6 @@ fun GameContainer(
                     TacticalMapScreen(
                         isAiThinking = isAiThinking,
                         gameState = gameState,
-                        onEndTurnClick = onEndTurn,
                         onMoveUnit = onMoveUnit,
                         onAttackUnit = onAttackUnit,
                         onSiegePlanet = onSiegePlanet,
@@ -444,7 +447,15 @@ fun GameContainer(
                         onOpenAcademy = onOpenAcademy,
                         centerRequest = centerRequest,
                         initialSelectedHex = selectedCoord,
-                        combatLog = combatLog
+                        combatLog = combatLog,
+                        camera = mapCamera,
+                        canUndo = canUndo,
+                        undoClosedByExploration = undoClosedByExploration,
+                        combatEvents = gameViewModel.combatEvents,
+                        onUndo = {
+                            gameViewModel.dispatch(GameIntent.Undo)
+                            selectedCoord = null
+                        }
                     )
                 }
                 GameTab.SYSTEM -> {
