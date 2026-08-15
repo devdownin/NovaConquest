@@ -56,9 +56,8 @@ fun computeEndTurnSummary(state: GameState): EndTurnSummary {
 
     val techInProgress = ps?.researchInProgress?.techId
 
-    val idleFleets = state.units.values.count {
-        it.faction == state.activeFaction && !it.hasMoved && !it.hasAttacked
-    }
+    val idleFleets = com.novaempire.core.engine.FleetActions
+        .idleFleets(state, state.activeFaction).size
 
     return EndTurnSummary(
         turn = state.turn,
@@ -267,6 +266,7 @@ fun GameContainer(
     val gameViewModel: GameViewModel = viewModel()
     val isAiThinking by gameViewModel.isAiThinking.collectAsState()
     val canUndo by gameViewModel.canUndo.collectAsState()
+    val undoClosedByExploration by gameViewModel.undoClosedByExploration.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
@@ -290,12 +290,11 @@ fun GameContainer(
         ?: gameState.map.tiles.values.firstOrNull { it.terrain == com.novaempire.core.domain.models.TerrainType.PLANET && it.owner == gameState.activeFaction }?.coord
         ?: gameState.map.tiles.keys.firstOrNull()
 
-    val idleFleetCount = gameState.units.values.count {
-        it.faction == gameState.activeFaction && !it.hasMoved && !it.hasAttacked
-    }
-    val idleFleets = gameState.units.values
-        .filter { it.faction == gameState.activeFaction && !it.hasMoved && !it.hasAttacked }
-        .sortedBy { it.id }
+    // « Inactive » veut dire « à qui il reste un ordre à donner », pas « intacte » : c'est ce que
+    // SMART FOCUS sert à trouver. Voir FleetActions.
+    val idleFleets = com.novaempire.core.engine.FleetActions
+        .idleFleets(gameState, gameState.activeFaction)
+    val idleFleetCount = idleFleets.size
     var smartFocusIdx by remember { mutableStateOf(0) }
     // centerRequestCounter is a re-trigger nonce (NOT a zoom level): bumping it changes the
     // Pair so TacticalMapScreen's LaunchedEffect re-centers even on the same coord.
@@ -451,6 +450,7 @@ fun GameContainer(
                         combatLog = combatLog,
                         camera = mapCamera,
                         canUndo = canUndo,
+                        undoClosedByExploration = undoClosedByExploration,
                         onUndo = {
                             gameViewModel.dispatch(GameIntent.Undo)
                             selectedCoord = null

@@ -33,6 +33,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Whether the last action of the current turn can be taken back — drives the UNDO button. */
     val canUndo: StateFlow<Boolean> = engine.canUndo
+
+    /** Distingue « rien à annuler » de « l'action a levé du brouillard, elle est définitive ». */
+    val undoClosedByExploration: StateFlow<Boolean> = engine.undoClosedByExploration
     val errors: SharedFlow<String> = engine.errors
     val effects: SharedFlow<GameEffect> = engine.effects
 

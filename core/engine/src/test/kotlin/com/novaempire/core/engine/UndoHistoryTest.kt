@@ -66,6 +66,32 @@ class UndoHistoryTest {
     }
 
     @Test
+    fun closingForExplorationIsDistinguishableFromAnEmptyHistory() {
+        val history = UndoHistory()
+        assertFalse("un historique neuf n'a pas été fermé par l'exploration", history.closedByExploration)
+
+        history.record(a)
+        history.closeForExploration()
+        assertFalse(history.canUndo)
+        assertTrue(history.closedByExploration)
+
+        // Une action ordinaire rouvre l'historique et efface la raison.
+        history.record(b)
+        assertTrue(history.canUndo)
+        assertFalse(history.closedByExploration)
+    }
+
+    @Test
+    fun anOrdinaryClearIsNotAnExplorationClose() {
+        // Fin de tour, chargement : rien à expliquer au joueur, le bouton est simplement vide.
+        val history = UndoHistory()
+        history.record(a)
+        history.closeForExploration()
+        history.clear()
+        assertFalse(history.closedByExploration)
+    }
+
+    @Test
     fun playerActionsAreUndoable() {
         val coord = HexCoord(0, 0, 0)
         val undoable = listOf(

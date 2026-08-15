@@ -70,6 +70,7 @@ import com.novaempire.core.domain.models.*
 import com.novaempire.core.domain.state.CombatEvent
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.engine.AttackCalculator
+import com.novaempire.core.engine.FleetActions
 import com.novaempire.core.engine.GameGridMap
 import com.novaempire.core.engine.IncomeCalculator
 import com.novaempire.core.engine.MapAction
@@ -198,6 +199,7 @@ fun TacticalMapScreen(
     onClearSelection: () -> Unit,
     canUndo: Boolean = false,
     onUndo: () -> Unit = {},
+    undoClosedByExploration: Boolean = false,
     // (coord, nonce): the Int is a monotonically increasing re-trigger counter — NOT a zoom
     // level — so LaunchedEffect(centerRequest) re-fires even when re-focusing the same coord.
     centerRequest: Pair<HexCoord, Int>? = null,
@@ -974,7 +976,9 @@ fun TacticalMapScreen(
                     val pulseAlpha = 0.25f + pulseProgress.value * 0.45f
                     val pulseStroke = 2f + pulseProgress.value * 2.5f
                     gameState.units.values.forEach { unit ->
-                        if (unit.faction == gameState.activeFaction && !unit.hasMoved && !unit.hasAttacked) {
+                        if (unit.faction == gameState.activeFaction &&
+                            FleetActions.hasActionsLeft(gameState, unit)
+                        ) {
                             val ux = centerX + horizSpacing * (unit.position.q + unit.position.r / 2f)
                             val uy = centerY + vertSpacing * unit.position.r
                             drawCircle(
@@ -1128,7 +1132,14 @@ fun TacticalMapScreen(
                 ) {
                     Icon(
                         imageVector = Icons.Default.ArrowBack,
-                        contentDescription = if (canUndo) "Annuler la dernière action" else "Rien à annuler",
+                        // Un éclaireur avance presque toujours dans le brouillard, donc ce bouton
+                        // s'éteint souvent. Dire *pourquoi* évite que la règle passe pour un bug.
+                        contentDescription = when {
+                            canUndo -> "Annuler la dernière action"
+                            undoClosedByExploration ->
+                                "Annulation impossible : la dernière action a découvert du terrain"
+                            else -> "Rien à annuler"
+                        },
                         tint = if (canUndo && !isAiThinking) NeonOrange else TextSecondary.copy(alpha = 0.4f)
                     )
                 }

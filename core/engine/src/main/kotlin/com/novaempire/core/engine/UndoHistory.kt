@@ -21,18 +21,37 @@ class UndoHistory(private val depth: Int = DEFAULT_DEPTH) {
 
     val canUndo: Boolean get() = stack.isNotEmpty()
 
+    /**
+     * Vrai quand l'historique a été fermé parce qu'une action a levé du brouillard.
+     *
+     * Sans cette distinction, le bouton d'annulation s'éteint sans un mot après presque chaque
+     * déplacement d'éclaireur, et le joueur conclut au bug plutôt qu'à la règle.
+     */
+    var closedByExploration: Boolean = false
+        private set
+
     val size: Int get() = stack.size
 
     /** Remembers [state] as a point to come back to, dropping the oldest beyond [depth]. */
     fun record(state: GameState) {
         stack.addLast(state)
+        closedByExploration = false
         while (stack.size > depth) stack.removeFirst()
+    }
+
+    /** Ferme l'historique parce que du terrain vient d'être découvert. */
+    fun closeForExploration() {
+        stack.clear()
+        closedByExploration = true
     }
 
     /** The most recent recorded state, or null when there is nothing to take back. */
     fun rollback(): GameState? = stack.removeLastOrNull()
 
-    fun clear() = stack.clear()
+    fun clear() {
+        stack.clear()
+        closedByExploration = false
+    }
 
     companion object {
 

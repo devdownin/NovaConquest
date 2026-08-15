@@ -51,6 +51,11 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
     private val _canUndo = MutableStateFlow(false)
     val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
 
+    /** L'annulation est indisponible parce qu'une action a découvert du terrain — pas parce qu'il
+     *  n'y a rien à annuler. L'interface s'en sert pour l'expliquer plutôt que de rester muette. */
+    private val _undoClosedByExploration = MutableStateFlow(false)
+    val undoClosedByExploration: StateFlow<Boolean> = _undoClosedByExploration.asStateFlow()
+
     private val _state = MutableStateFlow(createInitialState(MapSize.MEDIUM, MapArchetype.STANDARD))
     val state: StateFlow<GameState> = _state.asStateFlow()
 
@@ -134,12 +139,17 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
 
     private fun pushUndo(state: GameState) {
         undoHistory.record(state)
-        _canUndo.value = undoHistory.canUndo
+        publishUndoState()
     }
 
     private fun clearUndo() {
         undoHistory.clear()
-        _canUndo.value = false
+        publishUndoState()
+    }
+
+    private fun publishUndoState() {
+        _canUndo.value = undoHistory.canUndo
+        _undoClosedByExploration.value = undoHistory.closedByExploration
     }
 
     fun dispose() {
@@ -168,7 +178,7 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
                 _errors.emit("Nothing to undo.")
             } else {
                 _state.value = previous
-                _canUndo.value = undoHistory.canUndo
+                publishUndoState()
             }
             return
         }
@@ -241,9 +251,14 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
                 // An action that uncovered fog forfeits the *entire* history, not just its own
                 // step: rolling back to any earlier state would re-hide the same ground and hand
                 // the player free reconnaissance one action later.
-                val undoable = UndoHistory.isUndoable(intent) &&
-                    !UndoHistory.revealsNewTerritory(currentState, result.newState)
-                if (undoable) pushUndo(currentState) else clearUndo()
+                when {
+                    !UndoHistory.isUndoable(intent) -> clearUndo()
+                    UndoHistory.revealsNewTerritory(currentState, result.newState) -> {
+                        undoHistory.closeForExploration()
+                        publishUndoState()
+                    }
+                    else -> pushUndo(currentState)
+                }
             }
             if (result.error != null) {
                 _errors.emit(result.error)
