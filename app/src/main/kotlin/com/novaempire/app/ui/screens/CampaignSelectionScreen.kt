@@ -28,7 +28,9 @@ import com.novaempire.core.domain.models.CampaignObjective
 import com.novaempire.core.domain.models.CampaignObjectiveType
 import com.novaempire.core.domain.models.GloryPerk
 import com.novaempire.core.domain.models.GloryRegistry
+import com.novaempire.core.domain.models.MissionSetup
 import com.novaempire.core.domain.models.ObjectiveMode
+import com.novaempire.core.domain.models.TechRegistry
 
 @Composable
 fun CampaignSelectionScreen(
@@ -163,6 +165,26 @@ fun CampaignSelectionScreen(
                                         )
                                     }
                                 }
+                                // Sans cela, le joueur choisit ses perks sans savoir ce que la
+                                // mission lui donne déjà — et peut acheter un croiseur alors qu'il
+                                // en reçoit trois.
+                                val opening = describeSetup(mission.setup)
+                                if (opening.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text(
+                                        text = "Départ imposé :",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    opening.forEach {
+                                        Text(
+                                            text = "• $it",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
                                 Spacer(modifier = Modifier.height(12.dp))
                                 if (selectedMission!!.turnLimit > 0) {
                                     Text(
@@ -242,6 +264,28 @@ private fun describeObjective(objective: CampaignObjective): String = when (obje
     CampaignObjectiveType.ACCUMULATE_CREDITS -> "Détenir ${objective.targetValue} crédits"
     CampaignObjectiveType.DEFEAT_FACTION -> "Éliminer la faction ennemie"
     CampaignObjectiveType.CAPTURE_SPECIFIC_PLANET -> "Capturer le monde en ${objective.targetString}"
+}
+
+/**
+ * Lines describing a mission's scripted opening, empty when it starts the standard way.
+ *
+ * Descriptive only, like [describeObjective]: what the mission grants is `applyLoadout`'s business.
+ * Ships are grouped by type so a squadron reads as "3 × CRUISER" rather than three identical lines.
+ */
+private fun describeSetup(setup: MissionSetup): List<String> = buildList {
+    setup.startingCredits?.let { add("Trésor de départ : $it crédits") }
+    if (setup.startingFleet.isNotEmpty()) {
+        val fleet = setup.startingFleet.groupingBy { it }.eachCount()
+            .entries.joinToString(", ") { (type, n) -> "$n × ${type.name}" }
+        add("Flotte : $fleet")
+    }
+    if (setup.startingTechs.isNotEmpty()) {
+        val names = setup.startingTechs.map { id -> TechRegistry.ALL_TECHS.find { it.id == id }?.name ?: id }
+        add("Technologies acquises : ${names.joinToString(", ")}")
+    }
+    if (setup.startingPlanets.isNotEmpty()) {
+        add("Mondes déjà tenus : ${setup.startingPlanets.joinToString(", ")}")
+    }
 }
 
 /**

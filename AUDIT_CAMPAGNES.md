@@ -9,7 +9,7 @@
 > est inaccessible et Gradle ne démarre pas. Les correctifs sont en `:core:*` et couverts par des
 > tests JVM exercés en CI ; les retouches d'affichage sont revues statiquement et vérifiées à la
 > compilation seulement (`:app:assembleDebug` en CI). **Aucun des nombres d'équilibrage n'a été
-> joué** — voir §6.
+> joué** — voir §7.
 
 ## 1. Le constat de départ : un échafaudage, pas une campagne
 
@@ -226,7 +226,49 @@ tout acheter, donc **choisir redevient un arbitrage**. C'était le déséquilibr
 lot précédent, et c'est la bonne façon de le corriger — étoffer l'offre plutôt que renchérir ce qui
 existait.
 
-## 6. Ce qui n'a pas pu être vérifié
+## 6. Corrigé — conditions de départ scriptées (P4)
+
+Jusqu'ici une mission ne faisait varier que carte, factions, bourse ennemie et échéance : **tous les
+scénarios s'ouvraient de la même façon**, mêmes vaisseaux et même trésor vide. `MissionSetup` ajoute
+les quatre leviers qui font qu'une mission se joue à un *tempo* différent — flotte de départ,
+technologies déjà acquises, trésor initial, mondes déjà tenus.
+
+### Un seul chemin d'application
+
+Deux choses très différentes produisent désormais une dotation de départ : le scénario et les perks
+de gloire achetés. Elles **doivent** s'appliquer identiquement. Avant ce lot, les perks avaient leur
+propre code d'application dans `handleStartCampaign` ; ajouter les setups aurait signifié une
+seconde copie, et les deux auraient divergé au premier champ ajouté.
+
+`Loadout` / `applyLoadout` sont ce chemin unique. L'ordre y est fixé une fois pour toutes plutôt
+qu'à chaque appel : **le trésor est posé avant d'être augmenté**, donc la base du scénario et le
+bonus d'un perk se composent de façon prévisible. Un test vérifie précisément ce cumul — si l'un des
+deux l'emportait silencieusement, ce serait un bug d'équilibrage invisible.
+
+### Les deux tempos livrés
+
+| Mission | Départ | Ce que ça change |
+|---|---|---|
+| **The Kaelen Gate** | 40 crédits, coques renforcées, 2 croiseurs + 1 cuirassé | Un corps expéditionnaire sans économie : la mission se joue sur ce qu'on amène. |
+| **Twin Anvils** | 2 plateformes de défense, scanners profonds | De quoi tenir, pas de quoi frapper. Le trésor reste au standard — l'augmenter affaiblirait l'objectif économique de la mission elle-même. |
+
+### Le levier qu'aucune mission n'utilise
+
+`startingPlanets` est implémenté et testé, mais **aucune mission livrée ne s'en sert**, et c'est
+délibéré. Seules les coordonnées de `MapFactory.spawnPointsFor` sont garanties être des planètes sur
+toutes les graines — or ce sont les capitales des autres factions. En attribuer une au joueur
+créerait un état croisé (une faction dont la capitale est prise avant le premier tour, son
+`capitalCoord` pointant sur un monde qu'elle ne possède plus) que je ne peux pas éprouver en jeu
+depuis ici.
+
+Un monde n'est cédé que si la case porte **déjà** une planète : transformer du terrain quelconque
+laisserait une mission en poser une dans un champ d'astéroïdes, que la passe de connectivité de
+`MapFactory` n'a jamais promis de garder atteignable.
+
+> Ce que cela demande vraiment : que `MapFactory` expose des coordonnées de planètes neutres
+> garanties. C'est le déblocage naturel de ce levier, et il n'a rien d'urgent.
+
+## 7. Ce qui n'a pas pu être vérifié
 
 **L'équilibrage n'a toujours pas été joué**, et la surface non jouée vient de s'élargir :
 
@@ -259,16 +301,13 @@ L'écran de sélection n'a été relu que statiquement. La liste d'objectifs et 
 la même zone défilante et le bouton de lancement est en dehors, mais **je n'ai pas pu regarder cet
 écran** — et il vient de gagner deux blocs de texte.
 
-## 7. Suggestions pour la suite (non implémentées)
+## 8. Suggestions pour la suite (non implémentées)
 
 Par ordre de rapport valeur/effort :
 
-1. **Conditions de départ scriptées.** Aujourd'hui une mission ne fait varier que carte, faction,
-   ennemi, bonus et échéance. Les leviers les plus rentables, dans l'ordre : flotte de départ
-   imposée, technologies déjà débloquées, crédits initiaux, planètes pré-possédées. C'est ce qui
-   permet des *tempos* différents — un raid à trois vaisseaux sans économie, un siège avec un unique
-   dreadnought. Les perks de gloire ouvrent déjà deux de ces leviers (crédits, technos) : la
-   structure de données est là, il reste à la mettre entre les mains du concepteur de mission.
+1. **Coordonnées de planètes neutres garanties.** `MapFactory` ne promet que les capitales ; sans
+   un point d'ancrage neutre, `startingPlanets` reste inutilisable par les données de mission
+   (voir §6).
 2. **Événements scriptés.** `GalacticEvent` est purement aléatoire. Déclencher un événement à un tour
    donné (« au tour 8, tempête ionique ») créerait des pics dramatiques reproductibles sans nouveau
    moteur — le système d'effets existe déjà.
@@ -279,7 +318,7 @@ Par ordre de rapport valeur/effort :
    champ `requiresMissionId` permettrait un ordre de progression — l'écran de sélection sait déjà
    quelles missions sont terminées.
 
-## 8. Ce qui fonctionnait déjà bien
+## 9. Ce qui fonctionnait déjà bien
 
 - **La guerre scriptée est forcée** : `handleStartCampaign` met le joueur et l'ennemi en `WAR`, sans
   quoi l'IA — qui n'engage que les factions en guerre — resterait passive et la mission serait vide.
