@@ -9,7 +9,7 @@
 > est inaccessible et Gradle ne démarre pas. Les correctifs sont en `:core:*` et couverts par des
 > tests JVM exercés en CI ; les retouches d'affichage sont revues statiquement et vérifiées à la
 > compilation seulement (`:app:assembleDebug` en CI). **Aucun des nombres d'équilibrage n'a été
-> joué** — voir §5.
+> joué** — voir §6.
 
 ## 1. Le constat de départ : un échafaudage, pas une campagne
 
@@ -115,9 +115,10 @@ C'était la suggestion la plus structurante de la version précédente de cet au
 
 - **Gagner** : `CampaignMission.gloryReward`, versé **à la première réussite seulement**. Sans ce garde-fou, la mission la plus courte devient une ferme à
   perks : rejouer, encaisser, rejouer.
-- **Dépenser** : `GloryRegistry` propose trois perks achetés avant le lancement — coffre de guerre
-  (+150 crédits), coques prototypes (`tech_hull_plating` acquise) et éclaireurs avancés
-  (`tech_deep_scanners` acquise).
+- **Dépenser** : `GloryRegistry` propose des perks achetés avant le lancement. Les trois premiers
+  sont volontairement chiffrés — coffre de guerre (+150 crédits), coques prototypes
+  (`tech_hull_plating`) et éclaireurs avancés (`tech_deep_scanners`) — et valident l'économie sans
+  rien inventer. Les trois suivants changent la manière de jouer : voir §5.
 
 Les effets sont **des données, pas du code** : un perk déclare ce qu'il accorde, et
 `handleStartCampaign` applique chaque champ de la même façon pour tous. Un `when (perk.id)` aurait
@@ -183,7 +184,49 @@ objectif du type « ne jamais perdre d'unité » demanderait ce suivi.
   seule erreur de donnée que les tests d'intégrité ne peuvent pas attraper, et cette mission existe
   pour prouver la logique de combinaison, pas la carte.
 
-## 5. Ce qui n'a pas pu être vérifié
+## 5. Corrigé — des perks qui changent la manière de jouer (P3)
+
+Les trois premiers perks étaient volontairement ternes : ils validaient l'économie sans rien
+inventer. Un catalogue qui ne contient que des nombres fait de la gloire une seconde monnaie, pas un
+choix. Trois entrées s'y ajoutent, chacune faisant ce que ni crédits ni technos ne peuvent faire :
+
+| Perk | Coût | Ce qu'il change |
+|------|------|-----------------|
+| **Vanguard Cruiser** | 3 | Un croiseur **en service au tour 1**. Ce n'est pas « les crédits pour l'acheter » : la production prend des tours, pas ce perk. Il change le tempo d'ouverture. |
+| **Captured Star Charts** | 2 | La carte est **explorée** dès le départ — mais pas *visible*. Le terrain et les mondes sont connus, les flottes ennemies non. Cela achète de la **planification**, pas du renseignement. |
+| **The Seer's Contract** | 4 | Nix sous contrat au tour 1 : +1 PV/tour sur toute la flotte. Change entièrement l'arithmétique d'attrition. |
+
+Trois points de conception valent d'être signalés :
+
+**Explored ≠ visible.** C'est tout le sel du perk de carte, et c'est aussi ce qui l'empêche d'être
+trop fort. `updateVision` n'ajoute jamais que des hexs à `exploredHexes`, donc l'amorçage survit à
+tous les recalculs ultérieurs, et le brouillard continue de masquer les unités. Un test vérifie
+précisément cette distinction : toute la carte explorée, **rien** de visible (la vision ne vient que
+des unités, et le plateau n'en a encore aucune).
+
+**Un seul propriétaire pour la règle de placement.** Le croiseur offert et la file de construction
+doivent s'accorder sur ce qu'est une case libre. `UnitPlacement.freeHexNear` est extrait de
+`TurnManager` et partagé : une règle qui dirait « la planète, sinon une case voisine » ici et quelque
+chose de subtilement différent là-bas est la façon dont un perk finirait par faire apparaître un
+vaisseau dans un champ d'astéroïdes que le chantier aurait refusé.
+
+**Une capitale encerclée ne rend pas la gloire.** Si aucune case n'est libre, le vaisseau n'apparaît
+pas et le perk reste débité. C'est délibéré : refuser le lancement à ce stade — plateau déjà
+construit — serait pire. Le cas est documenté et testé plutôt que laissé à découvrir en jeu.
+
+**Seuls les mercenaires sont offrables.** Un champion de faction au service de la mission d'un rival
+contredirait la tarification par affinité sur laquelle repose tout le système de héros. Nix est le
+seul mercenaire du roster, et un test garde-fou refuse tout perk qui offrirait un héros loyal à une
+faction.
+
+### Effet sur l'équilibre
+
+Le catalogue passe de 8 à **17 points d'achats pour 16 points gagnables** : il n'est plus possible de
+tout acheter, donc **choisir redevient un arbitrage**. C'était le déséquilibre signalé à la fin du
+lot précédent, et c'est la bonne façon de le corriger — étoffer l'offre plutôt que renchérir ce qui
+existait.
+
+## 6. Ce qui n'a pas pu être vérifié
 
 **L'équilibrage n'a toujours pas été joué**, et la surface non jouée vient de s'élargir :
 
@@ -192,7 +235,7 @@ objectif du type « ne jamais perdre d'unité » demanderait ce suivi.
 | Échéances missions 2 et 3 | 40 tours | estimation |
 | Bonus ennemi mission 3 | 60 crédits | estimation |
 | Récompenses de mission | 2 / 3 / 4 / 4 | **estimation, non jouée** |
-| Coûts des perks | 2 / 3 / 3 | **estimation, non jouée** |
+| Coûts des perks | 2 / 3 / 3 / 3 / 2 / 4 | **estimation, non jouée** |
 | Primes d'objectifs facultatifs | +1 / +2 | **estimation, non jouée** |
 | mission_4 : 20 tours, 300 crédits, échéance 35 | — | **estimation, non jouée** |
 
@@ -200,12 +243,12 @@ objectif du type « ne jamais perdre d'unité » demanderait ce suivi.
 de réduire une planète de niveau 2 à 0 par le siège, puis de la capturer. C'est plausible en 40 tours,
 mais je ne peux ni le mesurer ni le ressentir : ni build, ni émulateur ici.
 
-Le rapport gains/coûts de la gloire reste le point le plus fragile, et **les objectifs facultatifs
-viennent de l'aggraver** : le total gagnable passe de 9 à 16 points pour 8 points de perks
-disponibles. Un joueur qui termine tout peut désormais tout acheter, et il reste de la marge. C'est
-tolérable tant que le catalogue de perks est petit, mais **cela demande soit d'autres perks, soit des
-coûts plus élevés** — la première option est de loin la plus intéressante, et c'est la suggestion 2
-ci-dessous.
+Le rapport gains/coûts de la gloire s'est **rééquilibré sur le papier** : 16 points gagnables pour 17
+points d'achats, contre 16 pour 8 avant l'ajout des trois derniers perks. Tout acheter n'est plus
+possible, donc choisir redevient un arbitrage. Mais « sur le papier » est le mot juste — un catalogue
+équilibré en total peut très bien contenir un perk qui écrase les autres, et **c'est précisément ce
+qu'un tableau ne montre pas.** Le croiseur du tour 1 est mon principal suspect : arriver avec une
+flotte que l'adversaire n'a pas encore pourrait décider une mission courte à lui seul.
 
 Le fait que les primes soient jugées **à l'instant de la victoire** a une conséquence de jeu que je
 ne peux pas évaluer sans jouer : sur mission_3, il peut devenir rationnel de retarder la capture
@@ -216,7 +259,7 @@ L'écran de sélection n'a été relu que statiquement. La liste d'objectifs et 
 la même zone défilante et le bouton de lancement est en dehors, mais **je n'ai pas pu regarder cet
 écran** — et il vient de gagner deux blocs de texte.
 
-## 6. Suggestions pour la suite (non implémentées)
+## 7. Suggestions pour la suite (non implémentées)
 
 Par ordre de rapport valeur/effort :
 
@@ -226,20 +269,17 @@ Par ordre de rapport valeur/effort :
    permet des *tempos* différents — un raid à trois vaisseaux sans économie, un siège avec un unique
    dreadnought. Les perks de gloire ouvrent déjà deux de ces leviers (crédits, technos) : la
    structure de données est là, il reste à la mettre entre les mains du concepteur de mission.
-2. **Des perks qui ne soient pas que des bonus chiffrés.** Les trois premiers sont volontairement
-   ternes — ils valident l'économie sans rien inventer. Un héros de départ, une unité offerte ou une
-   carte partiellement révélée changeraient une manière de jouer plutôt qu'un total.
-3. **Événements scriptés.** `GalacticEvent` est purement aléatoire. Déclencher un événement à un tour
+2. **Événements scriptés.** `GalacticEvent` est purement aléatoire. Déclencher un événement à un tour
    donné (« au tour 8, tempête ionique ») créerait des pics dramatiques reproductibles sans nouveau
    moteur — le système d'effets existe déjà.
-4. **Narration.** Il n'y a qu'un champ `description`. Un texte d'introduction et un texte de
+3. **Narration.** Il n'y a qu'un champ `description`. Un texte d'introduction et un texte de
    conclusion (victoire / défaite) par mission coûtent presque rien et changent radicalement la
    perception d'une campagne.
-5. **Déverrouillage séquentiel.** Maintenant que `completedMissions` est peuplé *et durable*, un
+4. **Déverrouillage séquentiel.** Maintenant que `completedMissions` est peuplé *et durable*, un
    champ `requiresMissionId` permettrait un ordre de progression — l'écran de sélection sait déjà
    quelles missions sont terminées.
 
-## 7. Ce qui fonctionnait déjà bien
+## 8. Ce qui fonctionnait déjà bien
 
 - **La guerre scriptée est forcée** : `handleStartCampaign` met le joueur et l'ennemi en `WAR`, sans
   quoi l'IA — qui n'engage que les factions en guerre — resterait passive et la mission serait vide.

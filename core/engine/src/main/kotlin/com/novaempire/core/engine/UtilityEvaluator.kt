@@ -60,6 +60,15 @@ object UtilityEvaluator : AIStrategy {
             }
         }
 
+        // Même raisonnement pour Sarn, mais sur le mouvement : le saut de caravane rend leurs points
+        // aux unités déjà déplacées, donc un second passage est un vrai second déplacement.
+        if (shouldUseCaravanJump(currentState, aiFaction)) {
+            currentState = reduce(currentState, GameIntent.UseHeroAbility(HeroRegistry.SARN))
+            for (id in unitIds) {
+                currentState = actUnit(currentState, id, aiFaction, reduce)
+            }
+        }
+
         val refreshedUnits = currentState.units.mapValues {
             if (it.value.faction == aiFaction) it.value.copy(hasMoved = false, hasAttacked = false, movementUsed = 0)
             else it.value
@@ -275,7 +284,9 @@ object UtilityEvaluator : AIStrategy {
         reduce: (GameState, GameIntent) -> GameState
     ): GameState {
         var s = state
-        for (heroId in listOf(HeroRegistry.KAEL, HeroRegistry.NIX, HeroRegistry.ELARA)) {
+        // Sarn and Vance are absent on purpose: both act on what the fleet has already done this
+        // turn, so they are triggered after the tactical layer (see [executeAITurn]).
+        for (heroId in listOf(HeroRegistry.KAEL, HeroRegistry.NIX, HeroRegistry.ELARA, HeroRegistry.YSAR, HeroRegistry.VASHK)) {
             if (!canUseAbility(s, faction, heroId)) continue
             if (!isAbilityWorthwhile(s, faction, heroId)) continue
             s = reduce(s, GameIntent.UseHeroAbility(heroId))
@@ -305,8 +316,27 @@ object UtilityEvaluator : AIStrategy {
             }
             // Des caisses vides alors qu'il y a de quoi dépenser : le convoi débloque un tour.
             HeroRegistry.ELARA -> ps.credits < ELARA_CREDITS_THRESHOLD
+            // Cartographier une galaxie déjà connue ne rapporte rien : on attend qu'il reste
+            // vraiment à découvrir.
+            HeroRegistry.YSAR -> {
+                val total = state.map.tiles.size
+                total > 0 && ps.exploredHexes.size * 2 < total
+            }
+            // Une file assez lourde pour que sauter l'attente vaille l'usage unique. Évaluée avant
+            // `evaluateProduction`, donc sur la file du tour précédent — ce qui est le bon moment :
+            // ce sont ces commandes-là qui attendent depuis longtemps.
+            HeroRegistry.VASHK -> ps.buildQueue.any { it.turnsRemaining >= VASHK_MIN_TURNS_SAVED }
             else -> false
         }
+    }
+
+    /**
+     * Sarn : rendre son mouvement à la flotte ne vaut qu'après coup, comme la frappe de Vance —
+     * avant la phase tactique, rien n'a bougé et l'aptitude partirait à vide.
+     */
+    internal fun shouldUseCaravanJump(state: GameState, faction: Faction): Boolean {
+        if (!canUseAbility(state, faction, HeroRegistry.SARN)) return false
+        return state.units.values.count { it.faction == faction && it.hasMoved } >= SARN_MIN_UNITS_MOVED
     }
 
     /**
@@ -355,6 +385,10 @@ object UtilityEvaluator : AIStrategy {
     private const val ELARA_CREDITS_THRESHOLD = 15
     /** Unités ayant déjà tiré à partir desquelles la frappe de Vance vaut son usage unique. */
     private const val VANCE_MIN_UNITS_SPENT = 2
+    /** Unités déjà déplacées à partir desquelles le saut de caravane de Sarn vaut son usage unique. */
+    private const val SARN_MIN_UNITS_MOVED = 2
+    /** Tours d'attente sur une commande à partir desquels l'éclosion de Vashk vaut son usage unique. */
+    private const val VASHK_MIN_TURNS_SAVED = 3
 
     private fun heroScore(hero: Hero, faction: Faction, atWar: Boolean, woundedFleet: Boolean): Int {
         // Affinity dominates: a hero aligned with the faction is the natural hire.
@@ -364,6 +398,9 @@ object UtilityEvaluator : AIStrategy {
             HeroRegistry.NIX -> if (woundedFleet) 8 else 1      // fleet healing
             HeroRegistry.ELARA -> if (atWar) 3 else 7           // income snowball
             HeroRegistry.KAEL -> if (atWar) 3 else 6            // tech discount
+            HeroRegistry.SARN -> if (atWar) 5 else 4            // reach, and a cheaper fleet to keep
+            HeroRegistry.YSAR -> if (atWar) 4 else 6            // tougher hulls, better expansion
+            HeroRegistry.VASHK -> if (atWar) 7 else 3           // raw damage per strike
             else -> 2
         }
         return affinity + situational

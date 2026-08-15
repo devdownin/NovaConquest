@@ -128,9 +128,7 @@ object TurnManager {
                 val buildTick = forgeTick + productionBonus
                 val newTurns = order.turnsRemaining - buildTick
                 if (newTurns <= 0) {
-                    val gridMap = GameGridMap(stateAfterBuilds)
-                    val candidates = listOf(order.planetCoord) + gridMap.getNeighbors(order.planetCoord)
-                    val spawnHex = candidates.firstOrNull { stateAfterBuilds.units[it] == null && gridMap.isPassable(it) }
+                    val spawnHex = UnitPlacement.freeHexNear(stateAfterBuilds, order.planetCoord)
                     if (spawnHex != null) {
                         val spawningPlayer = stateAfterBuilds.playerStates[state.activeFaction]
                         val hpBonus = BonusRegistry.sum(BonusType.UNIT_HP_ON_SPAWN, spawningPlayer, nextState.activeEvent)

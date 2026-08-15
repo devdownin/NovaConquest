@@ -27,6 +27,9 @@ object HeroRegistry {
     const val ELARA = "hero_elara"
     const val NIX   = "hero_nix"
     const val KAEL  = "hero_kael"
+    const val SARN  = "hero_sarn"
+    const val YSAR  = "hero_ysar"
+    const val VASHK = "hero_vashk"
 
     /** Crédits versés par l'aptitude d'Elara. */
     const val ELARA_ABILITY_CREDITS = 80
@@ -46,6 +49,23 @@ object HeroRegistry {
         Hero(KAEL, "Architect Kael", Faction.SYNTH, 60, "-10% Tech Cost",
             listOf(BonusModifier(BonusType.TECH_COST_PERCENT, 10)),
             HeroAbility("Prototype", "complete current research instantly")),
+
+        // NOMADS, KAELEN and XYLAR had no champion of their own. Because affinity is priced rather
+        // than locked, a player of those factions paid double for someone else's hero — punished by
+        // missing content rather than by a choice they made.
+        //
+        // Each passive deliberately grants something its faction does *not* already have: doubling
+        // the faction trait would make the hero feel like more of the same, and would stack two
+        // bonuses of one kind into a single build.
+        Hero(SARN, "Wayfinder Sarn", Faction.NOMADS, 45, "-1 Upkeep per unit",
+            listOf(BonusModifier(BonusType.UPKEEP_MODIFIER, -1)),
+            HeroAbility("Saut de Caravane", "every fleet unit may move again this turn")),
+        Hero(YSAR, "Archivist Ysar", Faction.KAELEN, 55, "+4 HP on newly built units",
+            listOf(BonusModifier(BonusType.UNIT_HP_ON_SPAWN, 4)),
+            HeroAbility("Archives Anciennes", "chart the entire galaxy")),
+        Hero(VASHK, "Broodmother Vashk", Faction.XYLAR, 50, "+2 attack damage per strike",
+            listOf(BonusModifier(BonusType.ATTACK_FLAT, 2)),
+            HeroAbility("Éclosion", "every build order in progress delivers next turn")),
     )
 
     fun getHero(id: String) = ALL_HEROES.find { it.id == id }
