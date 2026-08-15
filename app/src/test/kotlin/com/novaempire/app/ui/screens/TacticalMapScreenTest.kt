@@ -67,9 +67,10 @@ class TacticalMapScreenTest {
         )
     }
 
-    private fun setMap(state: GameState, cursor: HexCoord?) {
+    private fun setMap(state: GameState, cursor: HexCoord?, canUndo: Boolean = false) {
         rule.setContent {
             TacticalMapScreen(
+                canUndo = canUndo,
                 gameState = state,
                 visibleHexes = state.playerStates[state.activeFaction]?.visibleHexes ?: emptySet(),
                 onHexClick = {},
@@ -116,5 +117,17 @@ class TacticalMapScreenTest {
     fun withNoCursorTheMapStillAnnouncesHowToDriveIt() {
         setMap(testState(), null)
         rule.onNodeWithContentDescription("Carte tactique", substring = true).assertExists()
+    }
+
+    @Test
+    fun theUndoControlStatesWhetherThereIsAnythingToTakeBack() {
+        setMap(testState(), origin, canUndo = false)
+        rule.onNodeWithContentDescription("Rien à annuler").assertExists()
+    }
+
+    @Test
+    fun theUndoControlOffersTheActionOnceThereIsHistory() {
+        setMap(testState(), origin, canUndo = true)
+        rule.onNodeWithContentDescription("Annuler la dernière action").assertExists()
     }
 }

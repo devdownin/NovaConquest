@@ -69,6 +69,14 @@ object HexPathfinder {
         return path
     }
 
+    /**
+     * Movement points a [path] from [findPath] consumes: the entry cost of every hex stepped
+     * into. The start hex is not part of the path and is never charged, which matches how
+     * [findPath] accumulates cost.
+     */
+    fun pathCost(path: List<HexCoord>, gridMap: GridMap): Int =
+        path.sumOf { gridMap.enterCost(it) }
+
     /** BFS flood-fill: all hexes reachable from [start] within [maxCost] steps. */
     fun findReachable(start: HexCoord, gridMap: GridMap, maxCost: Int): Set<HexCoord> {
         if (maxCost <= 0) return emptySet()

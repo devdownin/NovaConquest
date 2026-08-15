@@ -26,6 +26,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     val gameState: StateFlow<GameState> = engine.state
     val isAiThinking: StateFlow<Boolean> = engine.isAiThinking
+
+    /** Whether the last action of the current turn can be taken back — drives the UNDO button. */
+    val canUndo: StateFlow<Boolean> = engine.canUndo
     val errors: SharedFlow<String> = engine.errors
     val effects: SharedFlow<GameEffect> = engine.effects
 

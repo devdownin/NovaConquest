@@ -45,6 +45,12 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
     private val _isAiThinking = MutableStateFlow(false)
     val isAiThinking: StateFlow<Boolean> = _isAiThinking.asStateFlow()
 
+    /** Only touched from the single coroutine draining [intentChannel], so it needs no locking. */
+    private val undoHistory = UndoHistory()
+
+    private val _canUndo = MutableStateFlow(false)
+    val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
+
     private val _state = MutableStateFlow(createInitialState(MapSize.MEDIUM, MapArchetype.STANDARD))
     val state: StateFlow<GameState> = _state.asStateFlow()
 
@@ -113,11 +119,35 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         intentChannel.trySend(intent)
     }
 
+    private fun pushUndo(state: GameState) {
+        undoHistory.record(state)
+        _canUndo.value = undoHistory.canUndo
+    }
+
+    private fun clearUndo() {
+        undoHistory.clear()
+        _canUndo.value = false
+    }
+
     fun dispose() {
         scope.cancel()
     }
 
     private suspend fun handleIntent(intent: GameIntent) {
+        if (intent is GameIntent.Undo) {
+            // Taking back an action must work even while the AI is thinking? No: the snapshot
+            // would be from before the AI's round and would hand the player a rewound galaxy.
+            // The guard below covers it, so this only ever runs on the player's own turn.
+            val previous = undoHistory.rollback()
+            if (previous == null) {
+                _errors.emit("Nothing to undo.")
+            } else {
+                _state.value = previous
+                _canUndo.value = undoHistory.canUndo
+            }
+            return
+        }
+
         if (_isAiThinking.value &&
             intent !is GameIntent.LoadGame &&
             intent !is GameIntent.StartNewGame &&
@@ -130,6 +160,9 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         }
 
         if (intent is GameIntent.EndTurn) {
+            // The turn is the commit point: once the AI has answered, there is nothing coherent
+            // to roll back to.
+            clearUndo()
             _isAiThinking.value = true
             val prevState = _state.value
             var currentState = prevState
@@ -181,13 +214,18 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
                 }
             }
 
-            val refreshedUnits = currentState.units.mapValues { it.value.copy(hasMoved = false, hasAttacked = false) }
+            val refreshedUnits = currentState.units.mapValues {
+                it.value.copy(hasMoved = false, hasAttacked = false, movementUsed = 0)
+            }
             currentState = currentState.copy(units = refreshedUnits)
             _state.value = checkVictoryConditions(currentState)
             _isAiThinking.value = false
         } else {
             val currentState = _state.value
             val result = reduce(currentState, intent)
+            if (result.error == null) {
+                if (UndoHistory.isUndoable(intent)) pushUndo(currentState) else clearUndo()
+            }
             if (result.error != null) {
                 _errors.emit(result.error)
                 _effects.emit(GameEffect.PlaySound("UI_CLICK"))
@@ -232,6 +270,8 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         is GameIntent.StartCampaign -> handleStartCampaign(state, intent)
         is GameIntent.EndTurn ->
             GameResult(updateVision(TurnManager.advanceTurn(state)))
+        // Handled before the reducer — it replaces the state wholesale rather than deriving one.
+        is GameIntent.Undo -> GameResult(state)
         is GameIntent.SelectFaction ->
             GameResult(state.copy(activeFaction = intent.faction, humanFaction = intent.faction))
         is GameIntent.MoveUnit     -> handleMoveUnit(state, intent, deps)
@@ -253,6 +293,9 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
 
 sealed class GameIntent {
     object EndTurn : GameIntent()
+
+    /** Roll the last player action of this turn back. See `GameEngine.isUndoable`. */
+    object Undo : GameIntent()
     data class SelectFaction(val faction: Faction) : GameIntent()
     data class MoveUnit(val from: HexCoord, val to: HexCoord) : GameIntent()
     data class AttackUnit(val attacker: HexCoord, val defender: HexCoord) : GameIntent()

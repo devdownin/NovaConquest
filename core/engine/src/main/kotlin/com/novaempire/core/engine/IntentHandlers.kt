@@ -50,15 +50,26 @@ internal fun handleMoveUnit(state: GameState, intent: GameIntent.MoveUnit, deps:
     IntentValidator.notMoved(unit)?.let { return GameResult(state, it) }
 
     val gridMap = GameGridMap(state, state.activeFaction)
-    val effectiveMovement = MovementCalculator.effectiveMovement(state, unit)
-    val path = HexPathfinder.findPath(intent.from, intent.to, gridMap, effectiveMovement)
+    val budget = MovementCalculator.effectiveMovement(state, unit)
+    val remaining = MovementCalculator.remainingMovement(state, unit)
+    val path = HexPathfinder.findPath(intent.from, intent.to, gridMap, remaining)
 
     if (path == null || path.isEmpty()) return GameResult(state, "Target position is unreachable or too far.")
+
+    // Charge only what the trip cost. A move used to consume the whole allowance whatever the
+    // distance, so a SCOUT that stepped one hex lost the other two; `hasMoved` now flips only
+    // when the budget runs out.
+    val spent = HexPathfinder.pathCost(path, gridMap)
+    val usedAfter = unit.movementUsed + spent
 
     val preExplored = state.playerStates[unit.faction]?.exploredHexes ?: emptySet()
     val updatedUnits = state.units.toMutableMap()
     updatedUnits.remove(intent.from)
-    updatedUnits[intent.to] = unit.copy(position = intent.to, hasMoved = true)
+    updatedUnits[intent.to] = unit.copy(
+        position = intent.to,
+        movementUsed = usedAfter,
+        hasMoved = usedAfter >= budget
+    )
     val movedState = updateVision(state.copy(units = updatedUnits), setOf(unit.faction))
     val freshHexes = (movedState.playerStates[unit.faction]?.exploredHexes ?: emptySet()) - preExplored
     return if (freshHexes.isNotEmpty() && deps.rng.nextFloat() < 0.3f) {

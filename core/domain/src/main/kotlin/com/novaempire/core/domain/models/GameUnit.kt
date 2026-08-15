@@ -19,5 +19,17 @@ data class GameUnit(
      * rather than folding it into [cargo] so existing saves (which store cargo as plain type names)
      * still decode; a legacy entry with no recorded HP simply deploys at full health.
      */
-    val cargoHp: List<Int> = emptyList()
+    val cargoHp: List<Int> = emptyList(),
+    /**
+     * Movement points already spent this turn.
+     *
+     * A move used to be all-or-nothing: stepping one hex burned a SCOUT's entire allowance of
+     * three. Tracking the spend lets a fleet move, look, and move again within its budget.
+     * [hasMoved] now means "no movement left" — it flips only once the budget is exhausted, or
+     * when combat ends the ship's turn outright.
+     *
+     * Defaulted, and appended rather than inserted, so existing saves still decode (there is no
+     * schema migration layer) and positional constructor calls keep compiling.
+     */
+    val movementUsed: Int = 0
 )

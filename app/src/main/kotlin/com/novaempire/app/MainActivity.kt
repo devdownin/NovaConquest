@@ -262,6 +262,7 @@ fun GameContainer(
 
     val gameViewModel: GameViewModel = viewModel()
     val isAiThinking by gameViewModel.isAiThinking.collectAsState()
+    val canUndo by gameViewModel.canUndo.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
@@ -444,7 +445,12 @@ fun GameContainer(
                         centerRequest = centerRequest,
                         initialSelectedHex = selectedCoord,
                         combatLog = combatLog,
-                        camera = mapCamera
+                        camera = mapCamera,
+                        canUndo = canUndo,
+                        onUndo = {
+                            gameViewModel.dispatch(GameIntent.Undo)
+                            selectedCoord = null
+                        }
                     )
                 }
                 GameTab.SYSTEM -> {

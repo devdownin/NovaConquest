@@ -49,7 +49,7 @@ object UtilityEvaluator : AIStrategy {
         }
 
         val refreshedUnits = currentState.units.mapValues {
-            if (it.value.faction == aiFaction) it.value.copy(hasMoved = false, hasAttacked = false)
+            if (it.value.faction == aiFaction) it.value.copy(hasMoved = false, hasAttacked = false, movementUsed = 0)
             else it.value
         }
         return currentState.copy(units = refreshedUnits)

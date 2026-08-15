@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -41,6 +42,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
@@ -193,6 +195,8 @@ fun TacticalMapScreen(
     onDeployUnit: (HexCoord, HexCoord, Int) -> Unit = { _, _, _ -> },
     onOpenAcademy: () -> Unit,
     onClearSelection: () -> Unit,
+    canUndo: Boolean = false,
+    onUndo: () -> Unit = {},
     // (coord, nonce): the Int is a monotonically increasing re-trigger counter — NOT a zoom
     // level — so LaunchedEffect(centerRequest) re-fires even when re-focusing the same coord.
     centerRequest: Pair<HexCoord, Int>? = null,
@@ -254,6 +258,8 @@ fun TacticalMapScreen(
     val currentIsAiThinking by rememberUpdatedState(isAiThinking)
     val currentOnHexClick by rememberUpdatedState(onHexClick)
     val currentOnClearSelection by rememberUpdatedState(onClearSelection)
+    val currentOnUndo by rememberUpdatedState(onUndo)
+    val currentCanUndo by rememberUpdatedState(canUndo)
     // Le thème effectif est résolu une seule fois par NovaEmpireTheme. Lire ici
     // `gameState.themeConfig.currentTheme` brut court-circuitait la résolution saisonnière : la
     // carte se dessinait avec les réglages DEFAULT alors que l'interface était en HALLOWEEN.
@@ -292,7 +298,10 @@ fun TacticalMapScreen(
         val sel = selectedHex ?: return@remember emptySet<HexCoord>()
         val unit = gameState.units[sel] ?: return@remember emptySet<HexCoord>()
         if (unit.faction != gameState.activeFaction || unit.hasMoved) return@remember emptySet<HexCoord>()
-        HexPathfinder.findReachable(sel, GameGridMap(gameState, gameState.activeFaction), MovementCalculator.effectiveMovement(gameState, unit))
+        HexPathfinder.findReachable(
+            sel, GameGridMap(gameState, gameState.activeFaction),
+            MovementCalculator.remainingMovement(gameState, unit)
+        )
     }
     // Same set, readable from the tap handler (see the note on rememberUpdatedState above).
     val currentReachableHexes by rememberUpdatedState(reachableHexes)
@@ -572,6 +581,15 @@ fun TacticalMapScreen(
                             currentOnClearSelection()
                             true
                         }
+                        Key.Z -> {
+                            // Ctrl+Z only: a bare Z would fight any future letter shortcut.
+                            if (event.isCtrlPressed && currentCanUndo) {
+                                currentOnUndo()
+                                true
+                            } else {
+                                false
+                            }
+                        }
                         else -> false
                     }
                     if (handled) keyboardActive = true
@@ -702,7 +720,10 @@ fun TacticalMapScreen(
                             val path = if (targetUnit != null && targetUnit.faction != gs.activeFaction) {
                                 if (start.distanceTo(coord) <= unit.type.range) listOf(coord) else null
                             } else {
-                                HexPathfinder.findPath(start, coord, gridMap, maxCost = MovementCalculator.effectiveMovement(gs, unit))
+                                HexPathfinder.findPath(
+                                    start, coord, gridMap,
+                                    maxCost = MovementCalculator.remainingMovement(gs, unit)
+                                )
                             }
 
                             if (path != null && path != ghostPath) {
@@ -1089,6 +1110,17 @@ fun TacticalMapScreen(
                 }, modifier = Modifier.size(40.dp)) {
                     Icon(imageVector = Icons.Default.Refresh, contentDescription = "Reset view", tint = NeonCyan)
                 }
+                IconButton(
+                    onClick = onUndo,
+                    enabled = canUndo && !isAiThinking,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = if (canUndo) "Annuler la dernière action" else "Rien à annuler",
+                        tint = if (canUndo && !isAiThinking) NeonOrange else TextSecondary.copy(alpha = 0.4f)
+                    )
+                }
                 Spacer(modifier = Modifier.width(12.dp))
                 Text("NOVA CONQUEST", style = MaterialTheme.typography.titleSmall, color = NeonCyan)
             }
@@ -1256,7 +1288,11 @@ fun TacticalMapScreen(
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     StatChip("ATK", unitOnTile.type.attack.toString())
                                     StatChip("RNG", unitOnTile.type.range.toString())
-                                    StatChip("MOV", if (unitOnTile.hasMoved) "0/${unitOnTile.type.movement}" else unitOnTile.type.movement.toString())
+                                    StatChip(
+                                        "MOV",
+                                        "${MovementCalculator.remainingMovement(gameState, unitOnTile)}/" +
+                                            "${MovementCalculator.effectiveMovement(gameState, unitOnTile)}"
+                                    )
                                 }
                             }
                         }
@@ -1970,10 +2006,13 @@ private fun describeHexForAccessibility(
         parts += "${unit.type.name}, ${unit.faction.displayName}, " +
             "${unit.currentHp} points de vie sur ${unit.type.maxHp}"
         if (unit.faction == state.activeFaction) {
+            val left = MovementCalculator.remainingMovement(state, unit)
             parts += when {
                 unit.hasMoved && unit.hasAttacked -> "tour terminé"
-                unit.hasMoved -> "déjà déplacée"
+                unit.hasMoved -> "plus de mouvement"
                 unit.hasAttacked -> "a déjà tiré"
+                left < MovementCalculator.effectiveMovement(state, unit) ->
+                    "disponible, $left points de mouvement restants"
                 else -> "disponible"
             }
         }

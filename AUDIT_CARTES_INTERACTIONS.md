@@ -264,6 +264,60 @@ doigt ne voit pas un second contour suivre ses taps.
 
 ---
 
+## 5bis. Suites données au rapport
+
+Trois chantiers issus des suggestions de fin d'audit, menés après coup.
+
+### T1 — Les règles d'interaction sortent du Composable  ✅
+
+`:app` n'avait **aucun test** : ni répertoire, ni fichier, alors que les dépendances
+`androidTest` et un job CI étaient déclarés depuis longtemps. Les cinq branches de la sélection
+en deux temps vivaient dans le gestionnaire de tap, hors de portée de tout gate.
+
+Elles forment désormais `MapInteraction` (`:core:engine`), une fonction pure qui renvoie une
+`MapAction` décrivant ce qu'il faut faire ; le Composable ne garde que les effets. Les règles
+existaient en **trois exemplaires** — tap, clavier, glisser — il n'en reste qu'un.
+
+**Deux bugs sont tombés en écrivant les tests.** `MapFactory` sème des planètes **sans
+propriétaire au niveau 2 à 4** (nœuds Zodiac au niveau 5). Pour ces mondes, le moteur autorise
+l'assaut (`handleSiegePlanet` ne refuse qu'une planète que l'on possède déjà), la surbrillance
+les cerclait, le bouton du panneau latéral proposait l'action — mais la branche du tap exigeait
+`owner != null`. Taper une forteresse neutre cerclée y **envoyait la flotte** au lieu de
+l'assiéger, les planètes étant franchissables. Même défaut dans le glisser. C'est la classe de
+bug visée par B3 de l'audit précédent, sur le contenu de carte le plus courant qui soit.
+*Changement de comportement assumé* : taper une planète neutre adjacente ouvre maintenant la
+boîte assaut/capture au lieu de s'y déplacer.
+
+### T2 — Points de mouvement partiels  ✅
+
+`handleMoveUnit` posait `hasMoved = true` **quelle que soit la distance** : un SCOUT (mouvement
+5) qui avançait d'une case perdait les quatre autres. Le trajet est désormais facturé à son coût
+réel (`HexPathfinder.pathCost`, terrain difficile compris), `GameUnit.movementUsed` porte la
+dépense, et `hasMoved` ne bascule qu'à l'épuisement du budget — ou lors d'un combat, qui consomme
+le tour entier comme avant.
+
+`MovementCalculator.remainingMovement` devient la source unique pour la surbrillance, la
+prévisualisation du glisser et le réducteur, dans la continuité de B3. Le champ est **défaillant
+à 0 et ajouté en fin de constructeur** : les sauvegardes existantes décodent toujours (il n'y a
+pas de couche de migration) et les appels positionnels compilent encore. L'IA n'est pas affectée
+— elle n'itère qu'une fois par unité et ne déplace qu'une fois.
+
+### T3 — Annulation dans le tour, mode confort  ✅
+
+Il n'existait aucun undo. L'architecture le rendait pourtant presque gratuit : `GameState` est
+immuable et tout passe par `reduce`, donc une pile d'états suffit. `UndoHistory` (objet séparé,
+testable sans piloter la coroutine d'intents), profondeur 20, vidée à la fin de tour et au
+chargement d'une partie.
+
+**Le choix de conception, explicite** : l'annulation est libre. Revenir en arrière restaure
+`exploredHexes`, mais le joueur a déjà *vu* ce que le déplacement révélait — l'exploration par
+avance-regarde-annule reste donc possible. L'option stricte (refuser d'annuler un déplacement
+ayant levé du brouillard) a été écartée : elle punit précisément le cas pour lequel la
+fonctionnalité existe, la fausse manipulation. Bouton dans la barre de la carte, `Ctrl+Z` au
+clavier.
+
+---
+
 ## 6. Tests
 
 Nouveaux (`:core:hex`, `HexLayoutTest` — 9 cas) :
@@ -287,5 +341,14 @@ l'inverse de `screenToLocal`, une case centrée est « confortablement visible �
 au bord ne l'est pas, et un viewport pas encore mesuré (première frame) est traité comme
 confortable — sinon le curseur recentrerait la caméra dès la première touche.
 
-Exécution locale hors Gradle (AGP inaccessible ici) : **210 tests, 0 échec**.
+Ajoutés par les chantiers de la §5bis : `MapInteractionTest` (18 cas, dont les mondes neutres),
+`PartialMovementTest` (6 cas : coût réel, deux déplacements dans un tour, épuisement du budget,
+terrain difficile, structure immobile) et `UndoHistoryTest` (6 cas : ordre inverse, éviction au-delà
+de la profondeur, politique par type d'intent).
+
+**Les tests `:app` existent enfin** : Robolectric 4.12.2 fait tourner les tests Compose sur la JVM
+dans le job normal, via une étape CI dédiée — un échec d'interface ne peut donc pas passer pour une
+régression du moteur.
+
+Exécution locale hors Gradle (AGP inaccessible ici) : **240 tests, 0 échec**.
 Compilation de `:app` : vérifiée par CI (« Assemble debug APK », vert).
