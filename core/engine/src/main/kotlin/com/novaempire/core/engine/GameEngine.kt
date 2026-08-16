@@ -43,6 +43,27 @@ sealed class GameEffect {
     object ShakeCamera : GameEffect()
 }
 
+/**
+ * Un tir de l'IA, retenu le temps du tour pour être rejoué au joueur ensuite.
+ *
+ * Les noms accompagnent l'événement parce qu'ils ne sont plus retrouvables après coup : une cible
+ * détruite a quitté l'état, et le message parlerait d'« UNIT ».
+ */
+private data class AiCombat(
+    val event: com.novaempire.core.domain.state.CombatEvent,
+    val attackerName: String,
+    val defenderName: String
+)
+
+/**
+ * Combien de tirs d'IA sont animés par fin de tour.
+ *
+ * Chaque animation retient la main du joueur le temps de se jouer, donc ce nombre est un budget de
+ * patience, pas une limite technique. Cinq suffit à raconter ce qui vient d'arriver ; au-delà, une
+ * bataille générale transformerait chaque fin de tour en séquence à regarder.
+ */
+private const val AI_COMBAT_ANIMATION_LIMIT = 5
+
 class GameEngine(private val deps: GameEngineDependencies = GameEngineDependencies()) {
 
     constructor(aiStrategy: AIStrategy) : this(GameEngineDependencies(aiStrategy = aiStrategy))
@@ -240,16 +261,44 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
                 _effects.emit(GameEffect.ShowNotification(eventBanner(currentState), "ORANGE"))
             }
 
+            // Les tirs de l'IA, retenus pour être rejoués une fois le tour résolu.
+            //
+            // `executeAITurn` reçoit un `reduce` qui ne rendait que l'état : chaque `combatEvent`
+            // qu'il produisait était calculé puis jeté. Résultat, le joueur voyait ses vaisseaux
+            // perdre des points de vie sans jamais voir le tir — la seule information de combat que
+            // l'IA laissait derrière elle était l'écart de points de vie entre deux tours.
+            //
+            // Rempli depuis le `withContext(Dispatchers.Default)` ci-dessous, relu ici après :
+            // `withContext` suspend l'appelant jusqu'au retour, ce qui donne la relation
+            // « happens-before » nécessaire. Les tours d'IA s'enchaînent l'un après l'autre, donc
+            // aucun accès concurrent malgré le changement de thread.
+            val aiCombats = mutableListOf<AiCombat>()
+
             while (currentState.activeFaction != humanFaction) {
+                val combatsBeforeFaction = aiCombats.size
                 currentState = try {
                     withContext(Dispatchers.Default) {
                         withTimeout(10_000L) {
                             deps.aiStrategy.executeAITurn(currentState, currentState.activeFaction) { s, i ->
-                                reduce(s, i).newState
+                                val result = reduce(s, i)
+                                // Les noms sont relevés sur l'état *d'avant* le tir : après, une
+                                // cible détruite n'est plus là et le message dirait « UNIT ».
+                                result.combatEvent?.let { combat ->
+                                    aiCombats += AiCombat(
+                                        event = combat,
+                                        attackerName = s.units[combat.attackerCoord]?.type?.name ?: "UNIT",
+                                        defenderName = s.units[combat.defenderCoord]?.type?.name ?: "UNIT"
+                                    )
+                                }
+                                result.newState
                             }
                         }
                     }
                 } catch (e: TimeoutCancellationException) {
+                    // L'état produit par ce tour est jeté : `currentState` reste celui d'avant. Les
+                    // tirs déjà relevés n'ont donc jamais eu lieu, et les rejouer montrerait des
+                    // combats sans la moindre trace sur le plateau.
+                    aiCombats.subList(combatsBeforeFaction, aiCombats.size).clear()
                     _effects.emit(GameEffect.ShowNotification("IA : tour forcé (délai dépassé)", "ORANGE"))
                     currentState
                 }
@@ -269,7 +318,17 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
                 it.value.copy(hasMoved = false, hasAttacked = false, movementUsed = 0)
             }
             currentState = currentState.copy(units = refreshedUnits)
-            _state.value = checkVictoryConditions(currentState)
+            val settledState = checkVictoryConditions(currentState)
+            _state.value = settledState
+            // Les tirs sont rejoués après la publication de l'état, et non pendant le tour d'IA :
+            // les états intermédiaires ont l'IA pour faction active, et l'interface y lit ses
+            // crédits, son brouillard et sa couleur. Les publier ferait clignoter le bandeau aux
+            // couleurs de l'adversaire à chaque action.
+            //
+            // `isAiThinking` reste vrai jusqu'au bout : le tour n'est pas fini tant que le joueur
+            // n'a pas vu ce qui lui est arrivé, et le laisser jouer par-dessus mêlerait ses propres
+            // tirs à ceux qu'on est en train de lui montrer.
+            replayAiCombats(aiCombats, settledState)
             _isAiThinking.value = false
         } else {
             val currentState = _state.value
@@ -298,21 +357,85 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
             val nextState = result.newState
             val combat = result.combatEvent
             if (combat != null) {
-                // Émis en flux : deux attaques identiques d'affilée sont deux événements, alors
-                // qu'en état elles n'en faisaient qu'un et la seconde passait inaperçue.
-                _effects.emit(GameEffect.CombatResolved(combat))
-                _effects.emit(GameEffect.ShakeCamera)
-                val attackerName = currentState.units[combat.attackerCoord]?.type?.name ?: "UNIT"
-                val defenderName = currentState.units[combat.defenderCoord]?.type?.name ?: "UNIT"
-                val outcome = if (combat.targetDestroyed) "$attackerName DESTROYED $defenderName"
-                              else "$attackerName HIT $defenderName"
-                _effects.emit(GameEffect.ShowNotification(outcome, "RED"))
-                _effects.emit(if (combat.targetDestroyed) GameEffect.PlaySound("COMBAT_EXPLOSION")
-                              else GameEffect.PlaySound("COMBAT_LASER"))
+                reportCombat(
+                    combat = combat,
+                    // Relevés sur l'état d'avant le tir : après, une cible détruite n'y est plus.
+                    attackerName = currentState.units[combat.attackerCoord]?.type?.name ?: "UNIT",
+                    defenderName = currentState.units[combat.defenderCoord]?.type?.name ?: "UNIT"
+                )
             }
 
             _state.value = checkVictoryConditions(nextState)
         }
+    }
+
+    /**
+     * Publie un échange de tirs : l'animation, la secousse, la ligne de journal et le son.
+     *
+     * Un seul endroit pour les quatre, parce qu'il y a maintenant deux chemins qui les émettent —
+     * l'attaque du joueur et le rejeu du tour d'IA — et que deux copies dériveraient : c'est
+     * exactement comme ça que le journal de combat et la bannière ont fini par colorer le même
+     * message de deux façons.
+     *
+     * Émis en flux et non en état : deux attaques identiques d'affilée sont deux événements, alors
+     * qu'en état elles n'en faisaient qu'un et la seconde passait inaperçue.
+     *
+     * [animate] à faux ne garde que la ligne de journal — voir [replayAiCombats].
+     */
+    private suspend fun reportCombat(
+        combat: com.novaempire.core.domain.state.CombatEvent,
+        attackerName: String,
+        defenderName: String,
+        animate: Boolean = true
+    ) {
+        if (animate) {
+            _effects.emit(GameEffect.CombatResolved(combat))
+            _effects.emit(GameEffect.ShakeCamera)
+        }
+        val outcome = if (combat.targetDestroyed) "$attackerName DESTROYED $defenderName"
+                      else "$attackerName HIT $defenderName"
+        _effects.emit(GameEffect.ShowNotification(outcome, "RED"))
+        if (animate) {
+            _effects.emit(if (combat.targetDestroyed) GameEffect.PlaySound("COMBAT_EXPLOSION")
+                          else GameEffect.PlaySound("COMBAT_LASER"))
+        }
+    }
+
+    /**
+     * Rejoue les tirs du tour d'IA au joueur.
+     *
+     * Deux filtres, pour deux raisons différentes :
+     *
+     * - **La visibilité.** Un tir dont ni le tireur ni la cible ne sont observés n'a pas à être
+     *   montré : l'animer révélerait une escarmouche entre deux IA au fond du brouillard, et
+     *   trahirait au passage la position des deux flottes. Qu'un seul des deux bouts suffise est
+     *   délibéré : un vaisseau qui tire depuis le brouillard se désigne lui-même, et cacher au
+     *   joueur d'où on lui tire dessus serait lui retirer une information qu'il a légitimement.
+     * - **Le nombre.** Au-delà de [AI_COMBAT_ANIMATION_LIMIT] tirs visibles, la fin de tour
+     *   deviendrait une séquence dont le joueur n'a pas la main — chaque animation tient le pas
+     *   par contre-pression. Les tirs suivants gardent leur ligne de journal, ce qui laisse le
+     *   compte exact, mais ne passent plus à l'écran.
+     *
+     * La cadence n'est pas gérée ici : `_effects` n'a pas de tampon, donc chaque `emit` attend que
+     * l'interface ait fini d'animer le précédent. C'est elle qui connaît la durée de ses
+     * animations, pas le moteur.
+     */
+    private suspend fun replayAiCombats(
+        combats: List<AiCombat>,
+        state: GameState
+    ) {
+        if (combats.isEmpty()) return
+        val visible = state.playerStates[state.humanFaction]?.visibleHexes ?: emptySet()
+        combats
+            .filter { it.event.attackerCoord in visible || it.event.defenderCoord in visible }
+            .forEachIndexed { index, record ->
+                reportCombat(
+                    combat = record.event,
+                    attackerName = record.attackerName,
+                    defenderName = record.defenderName,
+                    animate = index < AI_COMBAT_ANIMATION_LIMIT
+                )
+            }
     }
 
     /**
