@@ -66,6 +66,10 @@ import com.novaempire.app.audio.AudioManager
 import com.novaempire.app.audio.SoundType
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.components.IndustrialPanel
+import com.novaempire.app.ui.components.motionDelay
+import com.novaempire.app.ui.components.motionMillis
+import com.novaempire.app.ui.components.pointAlongPath
+import com.novaempire.app.ui.components.rememberMotionLoop
 import com.novaempire.app.ui.theme.*
 import com.novaempire.core.domain.models.*
 import com.novaempire.core.domain.state.CombatEvent
@@ -104,6 +108,80 @@ private const val MAP_PAN_MARGIN_PX = 96f
 
 /** Below this zoom the per-hex sector IDs are illegible, so drawing them is pure cost. */
 private const val SECTOR_LABEL_MIN_SCALE = 0.9f
+
+/** Débattement maximal de la secousse de caméra, à amplitude pleine. */
+private val SHAKE_AMPLITUDE_DP = 5.dp
+
+/** Durée de la secousse. Assez court pour ponctuer l'impact, trop court pour gêner la lecture. */
+private const val SHAKE_DURATION_MS = 260
+
+// Fréquences (en demi-tours) des deux axes de la secousse. Premières entre elles et paires, pour
+// que le déplacement parte de zéro et y revienne exactement : une caméra qui se remet en place
+// d'un coup sec se voit plus que la secousse elle-même.
+private const val SHAKE_FREQ_X = 6f
+private const val SHAKE_FREQ_Y = 4f
+
+/** Durée par hex traversé, et bornes du total — un long trajet ne doit pas devenir une attente. */
+private const val MOVE_MS_PER_HEX = 150
+private const val MOVE_MS_MIN = 220
+private const val MOVE_MS_MAX = 900
+
+/** Levée du brouillard : le voile s'efface sur cette durée. */
+private const val REVEAL_MS = 550
+
+/** Onde de choc d'une prise ou d'un siège. */
+private const val PLANET_FLASH_MS = 700
+
+/**
+ * Au-delà de tant de tuiles modifiées d'un coup, ce n'est pas une conquête mais un chargement de
+ * partie ou un début de mission : illuminer la moitié de la galaxie n'apprendrait rien au joueur.
+ */
+private const val PLANET_FLASH_MAX_BATCH = 4
+
+/** Unité détruite, conservée le temps de la montrer disparaître. */
+private data class Wreck(val unit: GameUnit, val coord: HexCoord)
+
+/**
+ * Le chemin qu'une flotte vient d'emprunter, reconstruit sur l'état **d'avant** le déplacement.
+ *
+ * Rejoué avec le même A* et la même grille que `handleMoveUnit`, donc il retrouve le trajet du
+ * moteur plutôt qu'un trajet plausible. L'état d'avant est indispensable : sur celui d'après,
+ * l'arrivée est occupée par la flotte elle-même, `GameGridMap.isPassable` la déclare bloquée et A*
+ * ne renvoie rien.
+ *
+ * Repli sur le saut direct quand aucun chemin n'existe — un déploiement depuis un transporteur ou
+ * un saut par trou de ver ne *sont* pas des trajets pas à pas, et une animation ratée ne doit pas
+ * empêcher l'unité d'arriver.
+ */
+private fun tracePath(previous: GameState, faction: Faction, from: HexCoord, to: HexCoord): List<HexCoord> {
+    val steps = HexPathfinder.findPath(from, to, GameGridMap(previous, faction))
+    return if (steps.isNullOrEmpty()) listOf(from, to) else listOf(from) + steps
+}
+
+/**
+ * La fin de [path] que le joueur a le droit de voir : le plus long suffixe entièrement visible.
+ *
+ * Sans ce découpage, animer les déplacements de l'IA trahirait le brouillard de guerre — la couche
+ * statique cache une flotte ennemie hors de vue, mais une trajectoire tracée depuis un hex non
+ * observé montrerait justement d'où elle vient. Un suffixe d'un seul point veut dire « elle est
+ * apparue au bord de la vision » : il n'y a alors rien à animer, la couche statique la dessine.
+ */
+internal fun visiblePathSuffix(path: List<HexCoord>, visible: Set<HexCoord>): List<HexCoord> {
+    var start = path.size - 1
+    while (start > 0 && path[start - 1] in visible) start--
+    return path.subList(start, path.size)
+}
+
+/**
+ * Une flotte en mouvement et le chemin qu'elle emprunte réellement.
+ *
+ * [path] part de l'hex de départ et inclut chaque étape : l'interpolation en ligne droite d'avant
+ * faisait traverser les astéroïdes que la flotte contournait justement.
+ */
+private data class MovingUnitAnim(val unit: GameUnit, val path: List<HexCoord>)
+
+/** Prise de planète (couleur du nouveau propriétaire) ou siège réussi (niveau perdu). */
+private data class PlanetFlash(val coord: HexCoord, val color: Color)
 
 // Neighbour steps named for where they land on screen (x = √3·R·(q + r/2), y = 1.5·R·r).
 // A pointy-top hex has no neighbour straight above it, so the four arrows are mapped to the
@@ -205,6 +283,8 @@ fun TacticalMapScreen(
     undoClosedByExploration: Boolean = false,
     /** Tirs résolus, à animer. Un flux, pas un champ d'état : voir CombatOutcome. */
     combatEvents: Flow<CombatEvent> = emptyFlow(),
+    /** Secousses demandées par le moteur (`GameEffect.ShakeCamera`), une par impact. */
+    shakeEvents: Flow<Unit> = emptyFlow(),
     // (coord, nonce): the Int is a monotonically increasing re-trigger counter — NOT a zoom
     // level — so LaunchedEffect(centerRequest) re-fires even when re-focusing the same coord.
     centerRequest: Pair<HexCoord, Int>? = null,
@@ -275,15 +355,55 @@ fun TacticalMapScreen(
     val mapPalette = com.novaempire.app.ui.theme.LocalMapPalette.current
     val displaySettings = com.novaempire.app.settings.LocalDisplaySettings.current
 
+    // Toutes les animations de jeu passent par ce drapeau — voir `Motion.kt`.
+    val animationsOn = !displaySettings.reducedMotion
+    // Les collecteurs `LaunchedEffect(Unit)` ci-dessous vivent aussi longtemps que l'écran : sans
+    // `rememberUpdatedState`, basculer « Reduced Motion » en cours de partie resterait sans effet
+    // sur le combat tant que la carte n'est pas quittée.
+    val currentDisplaySettings by rememberUpdatedState(displaySettings)
+    val currentAnimationsOn by rememberUpdatedState(animationsOn)
+
     val laserProgress = remember { Animatable(0f) }
     val explosionScale = remember { Animatable(0f) }
     var activeCombatEvent by remember { mutableStateOf<CombatEvent?>(null) }
 
-    // Unit movement animation
-    data class MovingUnitAnim(val id: String, val from: HexCoord, val to: HexCoord)
-    var movingUnitAnim by remember { mutableStateOf<MovingUnitAnim?>(null) }
+    // Épave de l'unité détruite. Elle n'est plus dans `gameState.units` dès l'état suivant, donc la
+    // garder ici est le seul moyen de la montrer mourir — et c'est bien un effet ponctuel, pas de
+    // l'état de partie.
+    var wreck by remember { mutableStateOf<Wreck?>(null) }
+    // Dernière unité *vue* sur chaque hex, jamais purgée : l'effet de combat et le nouvel état
+    // arrivent par deux chemins asynchrones distincts, donc l'ordre entre les deux n'est pas garanti.
+    // Un registre qui n'oublie rien retrouve la victime quel que soit celui qui arrive le premier.
+    val lastSeenUnits = remember { mutableMapOf<HexCoord, GameUnit>().apply { putAll(gameState.units) } }
+
+    // Secousse de caméra. Amplitude décroissante 1 → 0 ; l'oscillation est dérivée de cette seule
+    // valeur (voir SHAKE_*), ce qui évite une deuxième animation à synchroniser.
+    val shakeDecay = remember { Animatable(0f) }
+    val shakeAmplitudePx = with(LocalDensity.current) { SHAKE_AMPLITUDE_DP.toPx() }
+
+    // Déplacements en cours. Une *liste* : pendant un tour d'IA plusieurs flottes bougent dans la
+    // même transition d'état, et n'en animer qu'une téléportait toutes les autres.
+    var movingUnits by remember { mutableStateOf<List<MovingUnitAnim>>(emptyList()) }
     val movingProgress = remember { Animatable(1f) }
-    val prevUnits = remember { mutableStateOf(gameState.units) }
+    // L'état complet, pas seulement les unités : reconstruire le chemin parcouru demande la carte
+    // *d'avant* le déplacement — sur celle d'après, l'arrivée est occupée par l'unité elle-même et
+    // A* ne trouve plus rien.
+    val prevState = remember { mutableStateOf(gameState) }
+
+    // Hexs révélés à l'instant, à faire apparaître en fondu. `revealedBaseline` est ce qui était
+    // déjà connu : le fondu ne porte que sur la différence, pas sur tout ce qui est exploré.
+    var revealedHexes by remember { mutableStateOf<Set<HexCoord>>(emptySet()) }
+    val revealProgress = remember { Animatable(1f) }
+    // `null` = première composition : ce qui est déjà exploré n'est pas une découverte, et le
+    // révéler en fondu à l'ouverture de la carte ferait clignoter la moitié de l'empire.
+    val revealedBaseline = remember { mutableStateOf<Set<HexCoord>?>(null) }
+
+    // Planètes qui viennent de changer de main ou de perdre un niveau (siège). Déduit de la carte
+    // plutôt que d'un `GameEffect` : les prises de l'IA ne passent par aucun effet — son tour
+    // remplace l'état d'un bloc — et un diff les attrape toutes.
+    var planetFlashes by remember { mutableStateOf<List<PlanetFlash>>(emptyList()) }
+    val planetFlashProgress = remember { Animatable(1f) }
+    val prevTiles = remember { mutableStateOf(gameState.map.tiles) }
 
     // Seuil « compact » de Material : en dessous, la largeur ne permet pas une colonne latérale
     // sans manger le plateau.
@@ -293,6 +413,11 @@ fun TacticalMapScreen(
     val playerState = gameState.playerStates[gameState.activeFaction]
     val exploredHexes = playerState?.exploredHexes ?: emptySet()
     val credits = playerState?.credits ?: 0
+    val rolledCredits by animateIntAsState(
+        targetValue = credits,
+        animationSpec = tween(displaySettings.motionMillis(600), easing = FastOutSlowInEasing),
+        label = "Credits"
+    )
     val activeFactionColor = getFactionColor(gameState.activeFaction)
 
     // Income preview comes from the shared IncomeCalculator — the same formula TurnManager grants
@@ -485,35 +610,120 @@ fun TacticalMapScreen(
     LaunchedEffect(Unit) {
         combatEvents.collect { combat ->
             activeCombatEvent = combat
+            // La victime doit être capturée *avant* que l'explosion ne commence : à ce moment-là
+            // elle a déjà quitté l'état, ou elle est sur le point de le quitter.
+            wreck = if (combat.targetDestroyed) {
+                lastSeenUnits[combat.defenderCoord]?.let { Wreck(it, combat.defenderCoord) }
+            } else null
             AudioManager.playSound(SoundType.COMBAT_LASER)
             laserProgress.snapTo(0f)
             explosionScale.snapTo(0f)
 
-            laserProgress.animateTo(1f, animationSpec = tween(300))
+            laserProgress.animateTo(1f, animationSpec = tween(currentDisplaySettings.motionMillis(300)))
             AudioManager.playSound(SoundType.COMBAT_EXPLOSION)
-            explosionScale.animateTo(1f, animationSpec = tween(400))
+            // L'épave se désintègre sur la même horloge que l'explosion : une seule animation à
+            // suivre, donc aucun risque de voir les deux se désynchroniser.
+            explosionScale.animateTo(1f, animationSpec = tween(currentDisplaySettings.motionMillis(400)))
 
-            kotlinx.coroutines.delay(200)
+            kotlinx.coroutines.delay(currentDisplaySettings.motionDelay(200))
             activeCombatEvent = null
+            wreck = null
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        shakeEvents.collect {
+            if (!currentAnimationsOn) return@collect
+            shakeDecay.snapTo(1f)
+            shakeDecay.animateTo(0f, animationSpec = tween(SHAKE_DURATION_MS, easing = LinearEasing))
         }
     }
 
     LaunchedEffect(gameState.units) {
-        val prev = prevUnits.value
+        val prev = prevState.value
         val curr = gameState.units
-        val prevById = prev.values.associateBy { it.id }
-        val movedUnit = curr.values.firstOrNull { unit ->
-            val prevPos = prevById[unit.id]?.position
-            prevPos != null && prevPos != unit.position
+        curr.forEach { (coord, unit) -> lastSeenUnits[coord] = unit }
+        val prevById = prev.units.values.associateBy { it.id }
+        val moved = curr.values.mapNotNull { unit ->
+            val from = prevById[unit.id]?.position
+            if (from == null || from == unit.position) return@mapNotNull null
+            // Même règle de visibilité que la couche statique des flottes, sinon une flotte
+            // ennemie invisible se mettrait à voler sous les yeux du joueur.
+            if (unit.faction != gameState.activeFaction && unit.position !in visibleHexes) {
+                return@mapNotNull null
+            }
+            val full = tracePath(prev, unit.faction, from, unit.position)
+            val shown = if (unit.faction == gameState.activeFaction) full
+                        else visiblePathSuffix(full, visibleHexes)
+            if (shown.size < 2) return@mapNotNull null
+            MovingUnitAnim(unit, shown)
         }
-        if (movedUnit != null) {
-            val fromCoord = prevById[movedUnit.id]!!.position
-            movingUnitAnim = MovingUnitAnim(movedUnit.id, fromCoord, movedUnit.position)
+        prevState.value = gameState
+        if (moved.isNotEmpty()) {
+            movingUnits = moved
             movingProgress.snapTo(0f)
-            movingProgress.animateTo(1f, animationSpec = tween(350, easing = FastOutSlowInEasing))
-            movingUnitAnim = null
+            // Une seule horloge pour toutes les flottes : chacune parcourt sa propre polyligne à la
+            // même fraction, donc les trajets courts arrivent avant les longs sans coordination.
+            val longest = moved.maxOf { it.path.size - 1 }.coerceAtLeast(1)
+            val duration = (MOVE_MS_PER_HEX * longest).coerceIn(MOVE_MS_MIN, MOVE_MS_MAX)
+            try {
+                movingProgress.animateTo(
+                    1f,
+                    animationSpec = tween(displaySettings.motionMillis(duration), easing = FastOutSlowInEasing)
+                )
+            } finally {
+                // Un nouvel état pendant l'animation annule cet effet : sans ce `finally`, les
+                // flottes concernées resteraient marquées « en vol » et la couche statique
+                // continuerait à ne pas les dessiner — invisibles jusqu'à la fin de la partie.
+                // Le test d'identité évite d'effacer une animation que le tour suivant a déjà
+                // installée à notre place.
+                if (movingUnits === moved) movingUnits = emptyList()
+            }
         }
-        prevUnits.value = curr
+    }
+
+    // Levée du brouillard. Le voile s'efface dans la couche d'animation, pas dans celle du terrain :
+    // faire varier la tuile elle-même obligerait à redessiner toute la galaxie à chaque frame.
+    LaunchedEffect(exploredHexes) {
+        val baseline = revealedBaseline.value
+        revealedBaseline.value = exploredHexes
+        if (baseline == null) return@LaunchedEffect
+        val fresh = exploredHexes - baseline
+        if (fresh.isNotEmpty() && animationsOn) {
+            revealedHexes = fresh
+            revealProgress.snapTo(0f)
+            try {
+                revealProgress.animateTo(1f, animationSpec = tween(REVEAL_MS, easing = LinearEasing))
+            } finally {
+                // Sans ce `finally`, une annulation en cours de fondu laisserait un voile opaque
+                // figé sur les hexs concernés, définitivement.
+                if (revealedHexes === fresh) revealedHexes = emptySet()
+            }
+        }
+    }
+
+    LaunchedEffect(gameState.map.tiles) {
+        val previous = prevTiles.value
+        val changed = gameState.map.tiles.values.mapNotNull { tile ->
+            val old = previous[tile.coord] ?: return@mapNotNull null
+            when {
+                old.owner != tile.owner && tile.owner != null ->
+                    PlanetFlash(tile.coord, getFactionColor(tile.owner!!))
+                // Un siège fait chuter le niveau du système sans changer le drapeau.
+                old.systemLevel > tile.systemLevel -> PlanetFlash(tile.coord, NeonOrange)
+                else -> null
+            }
+        }
+        prevTiles.value = gameState.map.tiles
+        if (changed.isNotEmpty() && changed.size <= PLANET_FLASH_MAX_BATCH && animationsOn) {
+            planetFlashes = changed
+            planetFlashProgress.snapTo(0f)
+            try {
+                planetFlashProgress.animateTo(1f, animationSpec = tween(PLANET_FLASH_MS, easing = LinearEasing))
+            } finally {
+                if (planetFlashes === changed) planetFlashes = emptyList()
+            }
+        }
     }
 
     // Center map on a coord when requested by SMART FOCUS
@@ -539,22 +749,18 @@ fun TacticalMapScreen(
         runCatching { focusRequester.requestFocus() }
     }
 
-    val sweepProgress = rememberInfiniteTransition(label = "Scanline").animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(4000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "ScanlineSweep"
+    // Les deux boucles continues s'arrêtent vraiment en mouvement réduit : une durée nulle ferait
+    // tourner `infiniteRepeatable` à vide, image par image, pour un résultat immobile.
+    val sweepProgress = rememberMotionLoop(
+        enabled = animationsOn, durationMillis = 4000, label = "ScanlineSweep"
     )
-    val pulseProgress = rememberInfiniteTransition(label = "UnitPulse").animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
+    // Au repos, le halo reste à mi-course : les flottes qui ont encore un ordre à donner restent
+    // désignées, elles ne clignotent simplement plus.
+    val pulseProgress = rememberMotionLoop(
+        enabled = animationsOn,
+        durationMillis = 900,
+        repeatMode = RepeatMode.Reverse,
+        restValue = 0.5f,
         label = "UnitPulse"
     )
 
@@ -756,8 +962,15 @@ fun TacticalMapScreen(
                     .graphicsLayer {
                         scaleX = camera.scale
                         scaleY = camera.scale
-                        translationX = camera.pan.x
-                        translationY = camera.pan.y
+                        // La secousse est ajoutée ici et jamais écrite dans `camera.pan` : le pan
+                        // est ce que le joueur a réglé, il doit se retrouver intact une fois
+                        // l'impact passé — et le clamp de `clampPan` n'a pas à arbitrer un
+                        // déplacement qui n'est pas un déplacement.
+                        val decay = shakeDecay.value
+                        translationX = camera.pan.x +
+                            if (decay > 0f) sin(decay * PI.toFloat() * SHAKE_FREQ_X) * shakeAmplitudePx * decay else 0f
+                        translationY = camera.pan.y +
+                            if (decay > 0f) sin(decay * PI.toFloat() * SHAKE_FREQ_Y) * shakeAmplitudePx * decay else 0f
                     }
             ) {
                 // Terrain layer. It carries its own graphicsLayer: sibling draw modifiers that have
@@ -946,13 +1159,13 @@ fun TacticalMapScreen(
                     }
 
                     // Fleets. Drawn after the overlays so a sprite is never tinted by a range wash.
-                    val animatedUnitId = movingUnitAnim?.id
+                    val animatedUnitIds = movingUnits.mapTo(mutableSetOf()) { it.unit.id }
                     gameState.units.values.forEach { unit ->
                         if (unit.faction != gameState.activeFaction && !visibleHexes.contains(unit.position)) return@forEach
                         // The unit in flight is drawn at its interpolated position by the animation
                         // layer; drawing it here too showed the ship in two places at once for the
                         // 350 ms of the move.
-                        if (unit.id == animatedUnitId) return@forEach
+                        if (unit.id in animatedUnitIds) return@forEach
                         val ux = centerX + horizSpacing * (unit.position.q + unit.position.r / 2f)
                         val uy = centerY + vertSpacing * unit.position.r
                         if (!onScreen(ux, uy)) return@forEach
@@ -970,6 +1183,46 @@ fun TacticalMapScreen(
                     val hexRadius = hexRadiusPx
                     val horizSpacing = sqrt(3f) * hexRadius
                     val vertSpacing = 1.5f * hexRadius
+
+                    // Levée du brouillard : le voile part opaque et s'efface, donc le terrain
+                    // dessous — déjà peint par la couche statique — se révèle sans qu'elle bouge.
+                    if (revealedHexes.isNotEmpty()) {
+                        val fade = 1f - revealProgress.value
+                        revealedHexes.forEach { coord ->
+                            val rx = centerX + horizSpacing * (coord.q + coord.r / 2f)
+                            val ry = centerY + vertSpacing * coord.r
+                            drawHexagonPath(
+                                centerX = rx, centerY = ry, radius = hexRadius,
+                                color = mapPalette.unexplored.copy(alpha = fade), fill = true
+                            )
+                            // Liseré qui s'allume puis retombe : c'est lui qui dit « ceci vient
+                            // d'être découvert », le fondu seul passe inaperçu sur un hex vide.
+                            drawHexagonPath(
+                                centerX = rx, centerY = ry, radius = hexRadius,
+                                color = NeonCyan.copy(alpha = fade * 0.7f), fill = false, strokeWidth = 2.5f
+                            )
+                        }
+                    }
+
+                    // Prise de planète / siège : une onde qui s'écarte et s'éteint.
+                    if (planetFlashes.isNotEmpty()) {
+                        val t = planetFlashProgress.value
+                        planetFlashes.forEach { flash ->
+                            if (flash.coord !in exploredHexes) return@forEach
+                            val fx = centerX + horizSpacing * (flash.coord.q + flash.coord.r / 2f)
+                            val fy = centerY + vertSpacing * flash.coord.r
+                            drawCircle(
+                                color = flash.color.copy(alpha = (1f - t) * 0.8f),
+                                radius = hexRadius * (0.5f + t * 1.3f),
+                                center = Offset(fx, fy),
+                                style = Stroke(width = 3f + (1f - t) * 4f)
+                            )
+                            drawHexagonPath(
+                                centerX = fx, centerY = fy, radius = hexRadius,
+                                color = flash.color.copy(alpha = (1f - t) * 0.35f), fill = true
+                            )
+                        }
+                    }
 
                     // Blueprint scanline sweep (animation — lives here to avoid terrain redraw).
                     // Purement décoratif : coupé avec les effets holographiques.
@@ -1040,6 +1293,26 @@ fun TacticalMapScreen(
                         }
                     }
 
+                    // Épave — dessinée avant l'explosion, donc en dessous d'elle. Le vaisseau
+                    // détruit s'écrasait jusqu'ici sur le frame suivant, sans transition : la
+                    // seule trace de sa mort était une phrase dans le journal.
+                    wreck?.let { dead ->
+                        val wx = centerX + horizSpacing * (dead.coord.q + dead.coord.r / 2f)
+                        val wy = centerY + vertSpacing * dead.coord.r
+                        // Rétréci jusqu'à zéro plutôt qu'estompé : `drawUnit` peint une dizaine de
+                        // couches d'encre, leur appliquer une opacité commune demanderait un
+                        // `saveLayer` par frame là où une échelle ne coûte rien.
+                        val shrink = 1f - explosionScale.value
+                        if (shrink > 0.02f) {
+                            withTransform({
+                                rotate(degrees = explosionScale.value * 140f, pivot = Offset(wx, wy))
+                                scale(scaleX = shrink, scaleY = shrink, pivot = Offset(wx, wy))
+                            }) {
+                                drawUnit(wx, wy, dead.unit, hexRadius, mapPalette)
+                            }
+                        }
+                    }
+
                     activeCombatEvent?.let { combat ->
                         val ax = centerX + horizSpacing * (combat.attackerCoord.q + combat.attackerCoord.r / 2f)
                         val ay = centerY + vertSpacing * combat.attackerCoord.r
@@ -1087,26 +1360,39 @@ fun TacticalMapScreen(
                         }
                     }
 
-                    // Moving unit — drawn on top at its interpolated position
-                    val anim = movingUnitAnim
-                    if (anim != null) {
-                        val fromX = centerX + horizSpacing * (anim.from.q + anim.from.r / 2f)
-                        val fromY = centerY + vertSpacing * anim.from.r
-                        val toX = centerX + horizSpacing * (anim.to.q + anim.to.r / 2f)
-                        val toY = centerY + vertSpacing * anim.to.r
+                    // Flottes en vol — dessinées par-dessus tout le reste, à leur position
+                    // interpolée le long du chemin réellement emprunté.
+                    if (movingUnits.isNotEmpty()) {
                         val t = movingProgress.value
-                        val animX = fromX + (toX - fromX) * t
-                        val animY = fromY + (toY - fromY) * t
-                        if (t < 0.95f) {
-                            drawLine(
-                                color = NeonCyan.copy(alpha = 0.5f * (1f - t)),
-                                start = Offset(fromX, fromY),
-                                end = Offset(animX, animY),
-                                strokeWidth = 3f
-                            )
+                        movingUnits.forEach { anim ->
+                            val points = anim.path.map { coord ->
+                                Offset(
+                                    centerX + horizSpacing * (coord.q + coord.r / 2f),
+                                    centerY + vertSpacing * coord.r
+                                )
+                            }
+                            val position = pointAlongPath(points, t)
+
+                            // Sillage : les segments déjà franchis, puis le bout de segment en
+                            // cours. Il dit d'où vient la flotte, ce que la seule position finale
+                            // ne raconte pas quand plusieurs bougent en même temps.
+                            if (t < 0.95f) {
+                                val trailAlpha = 0.5f * (1f - t)
+                                val segments = points.size - 1
+                                val reached = (t * segments).toInt().coerceAtMost(segments - 1)
+                                for (i in 0 until reached) {
+                                    drawLine(
+                                        color = NeonCyan.copy(alpha = trailAlpha),
+                                        start = points[i], end = points[i + 1], strokeWidth = 3f
+                                    )
+                                }
+                                drawLine(
+                                    color = NeonCyan.copy(alpha = trailAlpha),
+                                    start = points[reached], end = position, strokeWidth = 3f
+                                )
+                            }
+                            drawUnit(position.x, position.y, anim.unit, hexRadius, mapPalette)
                         }
-                        val animUnit = gameState.units[anim.to] ?: gameState.units[anim.from]
-                        if (animUnit != null) drawUnit(animX, animY, animUnit, hexRadius, mapPalette)
                     }
                 }
             }
@@ -1168,7 +1454,10 @@ fun TacticalMapScreen(
                         Icon(Icons.Default.Star, contentDescription = null, tint = NeonOrange, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
-                            Text("$credits C", style = MaterialTheme.typography.labelLarge)
+                            // Le compteur défile jusqu'à sa nouvelle valeur : un revenu de fin de
+                            // tour ou le prix d'un vaisseau se lisaient jusqu'ici comme un simple
+                            // saut de chiffre, impossible à relier à ce qui venait de se passer.
+                            Text("${rolledCredits} C", style = MaterialTheme.typography.labelLarge)
                             Text(
                                 text = "${if (incomePerTurn >= 0) "+" else ""}$incomePerTurn C/turn",
                                 style = MaterialTheme.typography.labelSmall,

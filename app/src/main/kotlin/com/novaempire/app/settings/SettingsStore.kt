@@ -23,7 +23,8 @@ class SettingsStore(context: Context) {
             masterVolume = prefs.getFloat(KEY_MASTER_VOLUME, defaults.masterVolume).coerceIn(0f, 1f),
             sfxVolume = prefs.getFloat(KEY_SFX_VOLUME, defaults.sfxVolume).coerceIn(0f, 1f),
             holographicEffects = prefs.getBoolean(KEY_HOLO, defaults.holographicEffects),
-            highContrast = prefs.getBoolean(KEY_HIGH_CONTRAST, defaults.highContrast)
+            highContrast = prefs.getBoolean(KEY_HIGH_CONTRAST, defaults.highContrast),
+            reducedMotion = prefs.getBoolean(KEY_REDUCED_MOTION, defaults.reducedMotion)
         )
     }
 
@@ -34,6 +35,7 @@ class SettingsStore(context: Context) {
             .putFloat(KEY_SFX_VOLUME, settings.sfxVolume)
             .putBoolean(KEY_HOLO, settings.holographicEffects)
             .putBoolean(KEY_HIGH_CONTRAST, settings.highContrast)
+            .putBoolean(KEY_REDUCED_MOTION, settings.reducedMotion)
             .apply()
     }
 
@@ -58,6 +60,7 @@ class SettingsStore(context: Context) {
         const val KEY_SFX_VOLUME = "sfx_volume"
         const val KEY_HOLO = "holographic_effects"
         const val KEY_HIGH_CONTRAST = "high_contrast"
+        const val KEY_REDUCED_MOTION = "reduced_motion"
         const val VALUE_AUTO = "AUTO"
     }
 }

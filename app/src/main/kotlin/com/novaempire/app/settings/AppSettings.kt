@@ -16,13 +16,18 @@ import com.novaempire.core.domain.theme.ThemeType
  *   balayage de la carte. Les couper allège le rendu et le bruit visuel.
  * @param highContrast renforce la lisibilité : contours de carte pleins et épais, texte secondaire
  *   à la couleur du texte principal.
+ * @param reducedMotion coupe les animations *de jeu* — déplacement, tir, secousse, révélation du
+ *   brouillard, compteurs qui défilent. Distinct de [holographicEffects], qui ne concerne que le
+ *   décor : ici l'information arrive toujours, elle arrive simplement d'un coup. Forcé à `true`
+ *   quand le système est réglé sur « supprimer les animations » (voir `NovaEmpireTheme`).
  */
 data class AppSettings(
     val theme: ThemeType? = null,
     val masterVolume: Float = 0.8f,
     val sfxVolume: Float = 0.7f,
     val holographicEffects: Boolean = true,
-    val highContrast: Boolean = false
+    val highContrast: Boolean = false,
+    val reducedMotion: Boolean = false
 )
 
 /**

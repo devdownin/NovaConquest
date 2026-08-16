@@ -50,6 +50,20 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             .filterIsInstance<GameEffect.CombatResolved>()
             .map { it.event }
             .shareIn(viewModelScope, SharingStarted.Eagerly)
+    /**
+     * Secousses de caméra demandées par le moteur.
+     *
+     * `ShakeCamera` était émis depuis le début et n'était collecté nulle part : le commentaire du
+     * `when` ci-dessous affirmait que « la couche UI collecte les effets directement », mais aucun
+     * écran ne le faisait. L'exposer comme un flux dédié, à l'image de [combatEvents], donne à la
+     * carte quelque chose à collecter sans lui faire filtrer la sealed class elle-même.
+     */
+    val shakeEvents: SharedFlow<Unit> =
+        engine.effects
+            .filterIsInstance<GameEffect.ShakeCamera>()
+            .map { }
+            .shareIn(viewModelScope, SharingStarted.Eagerly)
+
     val errors: SharedFlow<String> = engine.errors
     val effects: SharedFlow<GameEffect> = engine.effects
 
@@ -136,7 +150,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                         _notifications.emit(effect.message to effect.color)
                     }
                     is GameEffect.ShakeCamera -> {
-                        // UI layer collects `effects` directly for haptic / animation
+                        // Consommé par `shakeEvents`, que la carte collecte pour secouer la caméra.
                     }
                     is GameEffect.CombatResolved -> {
                         // Consommé par `combatEvents`, que l'écran de carte collecte pour animer
