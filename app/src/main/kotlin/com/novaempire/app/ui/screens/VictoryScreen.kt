@@ -16,6 +16,7 @@ import com.novaempire.app.ui.theme.NeonCyan
 import com.novaempire.app.ui.theme.NeonGold
 import com.novaempire.app.ui.theme.NeonRed
 import com.novaempire.app.ui.theme.TextSecondary
+import com.novaempire.core.domain.models.CampaignRegistry
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.engine.VictoryChecker
 
@@ -29,6 +30,12 @@ fun VictoryScreen(
     onMainMenuClick: () -> Unit
 ) {
     val isDefeat = outcome == GameOutcome.DEFEAT
+    // Lu depuis l'état plutôt que passé en paramètre : l'écran sait déjà quelle mission tournait,
+    // et un paramètre de plus serait un fil à oublier de brancher au prochain appelant.
+    val epilogue = gameState.campaignState.activeMissionId
+        ?.let { id -> CampaignRegistry.MISSIONS.find { it.id == id } }
+        ?.let { if (isDefeat) it.defeatText else it.victoryText }
+        ?.takeIf { it.isNotBlank() && outcome != GameOutcome.DRAW }
     val accentColor = when (outcome) {
         GameOutcome.VICTORY -> NeonCyan
         GameOutcome.DEFEAT -> NeonRed
@@ -59,8 +66,20 @@ fun VictoryScreen(
                 text = gameState.victoryReason ?: if (isDefeat) "Eliminated" else "Domination",
                 style = MaterialTheme.typography.headlineMedium,
                 color = TextSecondary,
-                modifier = Modifier.padding(bottom = 64.dp)
+                modifier = Modifier.padding(bottom = if (epilogue == null) 64.dp else 24.dp)
             )
+
+            // Épilogue de mission. Une campagne dont on ne retient que « Campaign Mission Complete »
+            // n'a pas d'histoire ; deux phrases écrites coûtent presque rien et changent tout ce
+            // qu'on garde d'un scénario.
+            epilogue?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = TextSecondary,
+                    modifier = Modifier.padding(bottom = 48.dp)
+                )
+            }
 
             Surface(
                 modifier = Modifier.fillMaxWidth(),

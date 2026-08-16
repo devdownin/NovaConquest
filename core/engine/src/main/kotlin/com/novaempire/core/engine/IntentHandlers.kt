@@ -185,6 +185,16 @@ internal fun handleStartCampaign(state: GameState, intent: GameIntent.StartCampa
     val mission = com.novaempire.core.domain.models.CampaignRegistry.MISSIONS.find { it.id == intent.missionId }
         ?: return GameResult(state, "Unknown mission: ${intent.missionId}.")
 
+    // Sequential unlocking is enforced here rather than only in the selection screen: a rule that
+    // lives in the UI is a rule the engine does not have, and the two drift.
+    mission.requiresMissionId?.let { prerequisite ->
+        if (prerequisite !in state.campaignState.completedMissions) {
+            val name = com.novaempire.core.domain.models.CampaignRegistry.MISSIONS
+                .find { it.id == prerequisite }?.name ?: prerequisite
+            return GameResult(state, "Locked: complete \"$name\" first.")
+        }
+    }
+
     // Everything the loadout could refuse is checked before anything is applied. A half-started
     // mission — board reset, glory charged, bonuses missing — is far worse than a refused launch.
     val perks = intent.perkIds.mapNotNull { com.novaempire.core.domain.models.GloryRegistry.find(it) }
