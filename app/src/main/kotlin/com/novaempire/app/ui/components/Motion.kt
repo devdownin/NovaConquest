@@ -13,19 +13,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.Offset
 import com.novaempire.app.settings.AppSettings
 
-/**
- * Le vocabulaire du mouvement, en un seul endroit.
- *
- * Deux raisons de ne pas écrire `tween(300)` à la main dans les écrans :
- *
- * 1. **L'accessibilité doit être impossible à oublier.** `reducedMotion` ne peut être respecté que
- *    si chaque durée passe par [AppSettings.motionMillis] ; une durée écrite en dur est un réglage
- *    silencieusement ignoré, et c'est exactement le genre de manquement qu'on ne voit pas en
- *    relecture.
- * 2. **Une boucle infinie ne se coupe pas en mettant sa durée à zéro** : `infiniteRepeatable` avec
- *    une durée nulle tourne à vide à chaque frame. [rememberMotionLoop] la remplace par une valeur
- *    fixe, donc plus aucune invalidation.
- */
+// Le vocabulaire du mouvement, en un seul endroit.
+//
+// Deux raisons de ne pas écrire `tween(300)` à la main dans les écrans :
+//
+// 1. L'accessibilité doit être impossible à oublier. `reducedMotion` ne peut être respecté que si
+//    chaque durée passe par `motionMillis` ; une durée écrite en dur est un réglage silencieusement
+//    ignoré, et c'est exactement le genre de manquement qu'on ne voit pas en relecture.
+// 2. Une boucle infinie ne se coupe pas en mettant sa durée à zéro : `infiniteRepeatable` avec une
+//    durée nulle tourne à vide à chaque frame. `rememberMotionLoop` la remplace par une valeur
+//    fixe, donc plus aucune invalidation.
 
 /**
  * Durée d'une animation ponctuelle, ramenée à 0 quand le joueur (ou le système) a demandé des
