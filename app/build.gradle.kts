@@ -76,6 +76,10 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.05.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
+    // Tirée jusqu'ici en transitif par material3. La bannière de notification dépend directement
+    // d'`AnimatedVisibility` : une dépendance directe se déclare, sinon elle disparaît le jour où
+    // material3 réorganise la sienne.
+    implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
 

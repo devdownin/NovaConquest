@@ -16,6 +16,7 @@ const val THEME_STATUS_TAG = "theme_status"
 /** `testTag` des interrupteurs de la section VISUALS. */
 const val HOLOGRAPHIC_SWITCH_TAG = "switch_holographic"
 const val HIGH_CONTRAST_SWITCH_TAG = "switch_high_contrast"
+const val REDUCED_MOTION_SWITCH_TAG = "switch_reduced_motion"
 
 /**
  * `testTag` d'une option du sélecteur.

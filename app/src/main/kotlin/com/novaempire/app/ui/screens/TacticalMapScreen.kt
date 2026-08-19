@@ -26,12 +26,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.clipPath
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
@@ -65,8 +60,23 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.novaempire.app.audio.AudioManager
 import com.novaempire.app.audio.SoundType
+import com.novaempire.app.ui.map.drawAnomaly
+import com.novaempire.app.ui.map.drawAsteroids
+import com.novaempire.app.ui.map.drawBlackHole
+import com.novaempire.app.ui.map.drawExplosionShards
+import com.novaempire.app.ui.map.drawHexagonPath
+import com.novaempire.app.ui.map.drawIonStorm
+import com.novaempire.app.ui.map.drawNebula
+import com.novaempire.app.ui.map.drawPlanet
+import com.novaempire.app.ui.map.drawPlasmaCloud
+import com.novaempire.app.ui.map.drawUnit
+import com.novaempire.app.ui.map.drawWormhole
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.components.IndustrialPanel
+import com.novaempire.app.ui.components.motionDelay
+import com.novaempire.app.ui.components.motionMillis
+import com.novaempire.app.ui.components.pointAlongPath
+import com.novaempire.app.ui.components.rememberMotionLoop
 import com.novaempire.app.ui.theme.*
 import com.novaempire.core.domain.models.*
 import com.novaempire.core.domain.state.CombatEvent
@@ -84,10 +94,8 @@ import kotlinx.coroutines.flow.emptyFlow
 import com.novaempire.core.hex.HexLayout
 import com.novaempire.core.hex.HexPathfinder
 import kotlin.math.PI
-import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
-import kotlin.math.roundToInt
 
 /** Hex radius in density-independent units — 30.dp reproduces the historical 60 px on a 2x screen. */
 private val HEX_RADIUS_DP = 30.dp
@@ -105,6 +113,80 @@ private const val MAP_PAN_MARGIN_PX = 96f
 
 /** Below this zoom the per-hex sector IDs are illegible, so drawing them is pure cost. */
 private const val SECTOR_LABEL_MIN_SCALE = 0.9f
+
+/** Débattement maximal de la secousse de caméra, à amplitude pleine. */
+private val SHAKE_AMPLITUDE_DP = 5.dp
+
+/** Durée de la secousse. Assez court pour ponctuer l'impact, trop court pour gêner la lecture. */
+private const val SHAKE_DURATION_MS = 260
+
+// Fréquences (en demi-tours) des deux axes de la secousse. Premières entre elles et paires, pour
+// que le déplacement parte de zéro et y revienne exactement : une caméra qui se remet en place
+// d'un coup sec se voit plus que la secousse elle-même.
+private const val SHAKE_FREQ_X = 6f
+private const val SHAKE_FREQ_Y = 4f
+
+/** Durée par hex traversé, et bornes du total — un long trajet ne doit pas devenir une attente. */
+private const val MOVE_MS_PER_HEX = 150
+private const val MOVE_MS_MIN = 220
+private const val MOVE_MS_MAX = 900
+
+/** Levée du brouillard : le voile s'efface sur cette durée. */
+private const val REVEAL_MS = 550
+
+/** Onde de choc d'une prise ou d'un siège. */
+private const val PLANET_FLASH_MS = 700
+
+/**
+ * Au-delà de tant de tuiles modifiées d'un coup, ce n'est pas une conquête mais un chargement de
+ * partie ou un début de mission : illuminer la moitié de la galaxie n'apprendrait rien au joueur.
+ */
+private const val PLANET_FLASH_MAX_BATCH = 4
+
+/** Unité détruite, conservée le temps de la montrer disparaître. */
+private data class Wreck(val unit: GameUnit, val coord: HexCoord)
+
+/**
+ * Le chemin qu'une flotte vient d'emprunter, reconstruit sur l'état **d'avant** le déplacement.
+ *
+ * Rejoué avec le même A* et la même grille que `handleMoveUnit`, donc il retrouve le trajet du
+ * moteur plutôt qu'un trajet plausible. L'état d'avant est indispensable : sur celui d'après,
+ * l'arrivée est occupée par la flotte elle-même, `GameGridMap.isPassable` la déclare bloquée et A*
+ * ne renvoie rien.
+ *
+ * Repli sur le saut direct quand aucun chemin n'existe — un déploiement depuis un transporteur ou
+ * un saut par trou de ver ne *sont* pas des trajets pas à pas, et une animation ratée ne doit pas
+ * empêcher l'unité d'arriver.
+ */
+private fun tracePath(previous: GameState, faction: Faction, from: HexCoord, to: HexCoord): List<HexCoord> {
+    val steps = HexPathfinder.findPath(from, to, GameGridMap(previous, faction))
+    return if (steps.isNullOrEmpty()) listOf(from, to) else listOf(from) + steps
+}
+
+/**
+ * La fin de [path] que le joueur a le droit de voir : le plus long suffixe entièrement visible.
+ *
+ * Sans ce découpage, animer les déplacements de l'IA trahirait le brouillard de guerre — la couche
+ * statique cache une flotte ennemie hors de vue, mais une trajectoire tracée depuis un hex non
+ * observé montrerait justement d'où elle vient. Un suffixe d'un seul point veut dire « elle est
+ * apparue au bord de la vision » : il n'y a alors rien à animer, la couche statique la dessine.
+ */
+internal fun visiblePathSuffix(path: List<HexCoord>, visible: Set<HexCoord>): List<HexCoord> {
+    var start = path.size - 1
+    while (start > 0 && path[start - 1] in visible) start--
+    return path.subList(start, path.size)
+}
+
+/**
+ * Une flotte en mouvement et le chemin qu'elle emprunte réellement.
+ *
+ * [path] part de l'hex de départ et inclut chaque étape : l'interpolation en ligne droite d'avant
+ * faisait traverser les astéroïdes que la flotte contournait justement.
+ */
+private data class MovingUnitAnim(val unit: GameUnit, val path: List<HexCoord>)
+
+/** Prise de planète (couleur du nouveau propriétaire) ou siège réussi (niveau perdu). */
+private data class PlanetFlash(val coord: HexCoord, val color: Color)
 
 // Neighbour steps named for where they land on screen (x = √3·R·(q + r/2), y = 1.5·R·r).
 // A pointy-top hex has no neighbour straight above it, so the four arrows are mapped to the
@@ -206,6 +288,8 @@ fun TacticalMapScreen(
     undoClosedByExploration: Boolean = false,
     /** Tirs résolus, à animer. Un flux, pas un champ d'état : voir CombatOutcome. */
     combatEvents: Flow<CombatEvent> = emptyFlow(),
+    /** Secousses demandées par le moteur (`GameEffect.ShakeCamera`), une par impact. */
+    shakeEvents: Flow<Unit> = emptyFlow(),
     // (coord, nonce): the Int is a monotonically increasing re-trigger counter — NOT a zoom
     // level — so LaunchedEffect(centerRequest) re-fires even when re-focusing the same coord.
     centerRequest: Pair<HexCoord, Int>? = null,
@@ -276,15 +360,55 @@ fun TacticalMapScreen(
     val mapPalette = com.novaempire.app.ui.theme.LocalMapPalette.current
     val displaySettings = com.novaempire.app.settings.LocalDisplaySettings.current
 
+    // Toutes les animations de jeu passent par ce drapeau — voir `Motion.kt`.
+    val animationsOn = !displaySettings.reducedMotion
+    // Les collecteurs `LaunchedEffect(Unit)` ci-dessous vivent aussi longtemps que l'écran : sans
+    // `rememberUpdatedState`, basculer « Reduced Motion » en cours de partie resterait sans effet
+    // sur le combat tant que la carte n'est pas quittée.
+    val currentDisplaySettings by rememberUpdatedState(displaySettings)
+    val currentAnimationsOn by rememberUpdatedState(animationsOn)
+
     val laserProgress = remember { Animatable(0f) }
     val explosionScale = remember { Animatable(0f) }
     var activeCombatEvent by remember { mutableStateOf<CombatEvent?>(null) }
 
-    // Unit movement animation
-    data class MovingUnitAnim(val id: String, val from: HexCoord, val to: HexCoord)
-    var movingUnitAnim by remember { mutableStateOf<MovingUnitAnim?>(null) }
+    // Épave de l'unité détruite. Elle n'est plus dans `gameState.units` dès l'état suivant, donc la
+    // garder ici est le seul moyen de la montrer mourir — et c'est bien un effet ponctuel, pas de
+    // l'état de partie.
+    var wreck by remember { mutableStateOf<Wreck?>(null) }
+    // Dernière unité *vue* sur chaque hex, jamais purgée : l'effet de combat et le nouvel état
+    // arrivent par deux chemins asynchrones distincts, donc l'ordre entre les deux n'est pas garanti.
+    // Un registre qui n'oublie rien retrouve la victime quel que soit celui qui arrive le premier.
+    val lastSeenUnits = remember { mutableMapOf<HexCoord, GameUnit>().apply { putAll(gameState.units) } }
+
+    // Secousse de caméra. Amplitude décroissante 1 → 0 ; l'oscillation est dérivée de cette seule
+    // valeur (voir SHAKE_*), ce qui évite une deuxième animation à synchroniser.
+    val shakeDecay = remember { Animatable(0f) }
+    val shakeAmplitudePx = with(LocalDensity.current) { SHAKE_AMPLITUDE_DP.toPx() }
+
+    // Déplacements en cours. Une *liste* : pendant un tour d'IA plusieurs flottes bougent dans la
+    // même transition d'état, et n'en animer qu'une téléportait toutes les autres.
+    var movingUnits by remember { mutableStateOf<List<MovingUnitAnim>>(emptyList()) }
     val movingProgress = remember { Animatable(1f) }
-    val prevUnits = remember { mutableStateOf(gameState.units) }
+    // L'état complet, pas seulement les unités : reconstruire le chemin parcouru demande la carte
+    // *d'avant* le déplacement — sur celle d'après, l'arrivée est occupée par l'unité elle-même et
+    // A* ne trouve plus rien.
+    val prevState = remember { mutableStateOf(gameState) }
+
+    // Hexs révélés à l'instant, à faire apparaître en fondu. `revealedBaseline` est ce qui était
+    // déjà connu : le fondu ne porte que sur la différence, pas sur tout ce qui est exploré.
+    var revealedHexes by remember { mutableStateOf<Set<HexCoord>>(emptySet()) }
+    val revealProgress = remember { Animatable(1f) }
+    // `null` = première composition : ce qui est déjà exploré n'est pas une découverte, et le
+    // révéler en fondu à l'ouverture de la carte ferait clignoter la moitié de l'empire.
+    val revealedBaseline = remember { mutableStateOf<Set<HexCoord>?>(null) }
+
+    // Planètes qui viennent de changer de main ou de perdre un niveau (siège). Déduit de la carte
+    // plutôt que d'un `GameEffect` : les prises de l'IA ne passent par aucun effet — son tour
+    // remplace l'état d'un bloc — et un diff les attrape toutes.
+    var planetFlashes by remember { mutableStateOf<List<PlanetFlash>>(emptyList()) }
+    val planetFlashProgress = remember { Animatable(1f) }
+    val prevTiles = remember { mutableStateOf(gameState.map.tiles) }
 
     // Seuil « compact » de Material : en dessous, la largeur ne permet pas une colonne latérale
     // sans manger le plateau.
@@ -294,6 +418,11 @@ fun TacticalMapScreen(
     val playerState = gameState.playerStates[gameState.activeFaction]
     val exploredHexes = playerState?.exploredHexes ?: emptySet()
     val credits = playerState?.credits ?: 0
+    val rolledCredits by animateIntAsState(
+        targetValue = credits,
+        animationSpec = tween(displaySettings.motionMillis(600), easing = FastOutSlowInEasing),
+        label = "Credits"
+    )
     val activeFactionColor = getFactionColor(gameState.activeFaction)
 
     // Income preview comes from the shared IncomeCalculator — the same formula TurnManager grants
@@ -486,35 +615,120 @@ fun TacticalMapScreen(
     LaunchedEffect(Unit) {
         combatEvents.collect { combat ->
             activeCombatEvent = combat
+            // La victime doit être capturée *avant* que l'explosion ne commence : à ce moment-là
+            // elle a déjà quitté l'état, ou elle est sur le point de le quitter.
+            wreck = if (combat.targetDestroyed) {
+                lastSeenUnits[combat.defenderCoord]?.let { Wreck(it, combat.defenderCoord) }
+            } else null
             AudioManager.playSound(SoundType.COMBAT_LASER)
             laserProgress.snapTo(0f)
             explosionScale.snapTo(0f)
 
-            laserProgress.animateTo(1f, animationSpec = tween(300))
+            laserProgress.animateTo(1f, animationSpec = tween(currentDisplaySettings.motionMillis(300)))
             AudioManager.playSound(SoundType.COMBAT_EXPLOSION)
-            explosionScale.animateTo(1f, animationSpec = tween(400))
+            // L'épave se désintègre sur la même horloge que l'explosion : une seule animation à
+            // suivre, donc aucun risque de voir les deux se désynchroniser.
+            explosionScale.animateTo(1f, animationSpec = tween(currentDisplaySettings.motionMillis(400)))
 
-            kotlinx.coroutines.delay(200)
+            kotlinx.coroutines.delay(currentDisplaySettings.motionDelay(200))
             activeCombatEvent = null
+            wreck = null
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        shakeEvents.collect {
+            if (!currentAnimationsOn) return@collect
+            shakeDecay.snapTo(1f)
+            shakeDecay.animateTo(0f, animationSpec = tween(SHAKE_DURATION_MS, easing = LinearEasing))
         }
     }
 
     LaunchedEffect(gameState.units) {
-        val prev = prevUnits.value
+        val prev = prevState.value
         val curr = gameState.units
-        val prevById = prev.values.associateBy { it.id }
-        val movedUnit = curr.values.firstOrNull { unit ->
-            val prevPos = prevById[unit.id]?.position
-            prevPos != null && prevPos != unit.position
+        curr.forEach { (coord, unit) -> lastSeenUnits[coord] = unit }
+        val prevById = prev.units.values.associateBy { it.id }
+        val moved = curr.values.mapNotNull { unit ->
+            val from = prevById[unit.id]?.position
+            if (from == null || from == unit.position) return@mapNotNull null
+            // Même règle de visibilité que la couche statique des flottes, sinon une flotte
+            // ennemie invisible se mettrait à voler sous les yeux du joueur.
+            if (unit.faction != gameState.activeFaction && unit.position !in visibleHexes) {
+                return@mapNotNull null
+            }
+            val full = tracePath(prev, unit.faction, from, unit.position)
+            val shown = if (unit.faction == gameState.activeFaction) full
+                        else visiblePathSuffix(full, visibleHexes)
+            if (shown.size < 2) return@mapNotNull null
+            MovingUnitAnim(unit, shown)
         }
-        if (movedUnit != null) {
-            val fromCoord = prevById[movedUnit.id]!!.position
-            movingUnitAnim = MovingUnitAnim(movedUnit.id, fromCoord, movedUnit.position)
+        prevState.value = gameState
+        if (moved.isNotEmpty()) {
+            movingUnits = moved
             movingProgress.snapTo(0f)
-            movingProgress.animateTo(1f, animationSpec = tween(350, easing = FastOutSlowInEasing))
-            movingUnitAnim = null
+            // Une seule horloge pour toutes les flottes : chacune parcourt sa propre polyligne à la
+            // même fraction, donc les trajets courts arrivent avant les longs sans coordination.
+            val longest = moved.maxOf { it.path.size - 1 }.coerceAtLeast(1)
+            val duration = (MOVE_MS_PER_HEX * longest).coerceIn(MOVE_MS_MIN, MOVE_MS_MAX)
+            try {
+                movingProgress.animateTo(
+                    1f,
+                    animationSpec = tween(displaySettings.motionMillis(duration), easing = FastOutSlowInEasing)
+                )
+            } finally {
+                // Un nouvel état pendant l'animation annule cet effet : sans ce `finally`, les
+                // flottes concernées resteraient marquées « en vol » et la couche statique
+                // continuerait à ne pas les dessiner — invisibles jusqu'à la fin de la partie.
+                // Le test d'identité évite d'effacer une animation que le tour suivant a déjà
+                // installée à notre place.
+                if (movingUnits === moved) movingUnits = emptyList()
+            }
         }
-        prevUnits.value = curr
+    }
+
+    // Levée du brouillard. Le voile s'efface dans la couche d'animation, pas dans celle du terrain :
+    // faire varier la tuile elle-même obligerait à redessiner toute la galaxie à chaque frame.
+    LaunchedEffect(exploredHexes) {
+        val baseline = revealedBaseline.value
+        revealedBaseline.value = exploredHexes
+        if (baseline == null) return@LaunchedEffect
+        val fresh = exploredHexes - baseline
+        if (fresh.isNotEmpty() && animationsOn) {
+            revealedHexes = fresh
+            revealProgress.snapTo(0f)
+            try {
+                revealProgress.animateTo(1f, animationSpec = tween(REVEAL_MS, easing = LinearEasing))
+            } finally {
+                // Sans ce `finally`, une annulation en cours de fondu laisserait un voile opaque
+                // figé sur les hexs concernés, définitivement.
+                if (revealedHexes === fresh) revealedHexes = emptySet()
+            }
+        }
+    }
+
+    LaunchedEffect(gameState.map.tiles) {
+        val previous = prevTiles.value
+        val changed = gameState.map.tiles.values.mapNotNull { tile ->
+            val old = previous[tile.coord] ?: return@mapNotNull null
+            when {
+                old.owner != tile.owner && tile.owner != null ->
+                    PlanetFlash(tile.coord, getFactionColor(tile.owner!!))
+                // Un siège fait chuter le niveau du système sans changer le drapeau.
+                old.systemLevel > tile.systemLevel -> PlanetFlash(tile.coord, NeonOrange)
+                else -> null
+            }
+        }
+        prevTiles.value = gameState.map.tiles
+        if (changed.isNotEmpty() && changed.size <= PLANET_FLASH_MAX_BATCH && animationsOn) {
+            planetFlashes = changed
+            planetFlashProgress.snapTo(0f)
+            try {
+                planetFlashProgress.animateTo(1f, animationSpec = tween(PLANET_FLASH_MS, easing = LinearEasing))
+            } finally {
+                if (planetFlashes === changed) planetFlashes = emptyList()
+            }
+        }
     }
 
     // Center map on a coord when requested by SMART FOCUS
@@ -540,22 +754,18 @@ fun TacticalMapScreen(
         runCatching { focusRequester.requestFocus() }
     }
 
-    val sweepProgress = rememberInfiniteTransition(label = "Scanline").animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(4000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "ScanlineSweep"
+    // Les deux boucles continues s'arrêtent vraiment en mouvement réduit : une durée nulle ferait
+    // tourner `infiniteRepeatable` à vide, image par image, pour un résultat immobile.
+    val sweepProgress = rememberMotionLoop(
+        enabled = animationsOn, durationMillis = 4000, label = "ScanlineSweep"
     )
-    val pulseProgress = rememberInfiniteTransition(label = "UnitPulse").animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
+    // Au repos, le halo reste à mi-course : les flottes qui ont encore un ordre à donner restent
+    // désignées, elles ne clignotent simplement plus.
+    val pulseProgress = rememberMotionLoop(
+        enabled = animationsOn,
+        durationMillis = 900,
+        repeatMode = RepeatMode.Reverse,
+        restValue = 0.5f,
         label = "UnitPulse"
     )
 
@@ -763,8 +973,15 @@ fun TacticalMapScreen(
                     .graphicsLayer {
                         scaleX = camera.scale
                         scaleY = camera.scale
-                        translationX = camera.pan.x
-                        translationY = camera.pan.y
+                        // La secousse est ajoutée ici et jamais écrite dans `camera.pan` : le pan
+                        // est ce que le joueur a réglé, il doit se retrouver intact une fois
+                        // l'impact passé — et le clamp de `clampPan` n'a pas à arbitrer un
+                        // déplacement qui n'est pas un déplacement.
+                        val decay = shakeDecay.value
+                        translationX = camera.pan.x +
+                            if (decay > 0f) sin(decay * PI.toFloat() * SHAKE_FREQ_X) * shakeAmplitudePx * decay else 0f
+                        translationY = camera.pan.y +
+                            if (decay > 0f) sin(decay * PI.toFloat() * SHAKE_FREQ_Y) * shakeAmplitudePx * decay else 0f
                     }
             ) {
                 // Terrain layer. It carries its own graphicsLayer: sibling draw modifiers that have
@@ -953,13 +1170,13 @@ fun TacticalMapScreen(
                     }
 
                     // Fleets. Drawn after the overlays so a sprite is never tinted by a range wash.
-                    val animatedUnitId = movingUnitAnim?.id
+                    val animatedUnitIds = movingUnits.mapTo(mutableSetOf()) { it.unit.id }
                     gameState.units.values.forEach { unit ->
                         if (unit.faction != gameState.activeFaction && !visibleHexes.contains(unit.position)) return@forEach
                         // The unit in flight is drawn at its interpolated position by the animation
                         // layer; drawing it here too showed the ship in two places at once for the
                         // 350 ms of the move.
-                        if (unit.id == animatedUnitId) return@forEach
+                        if (unit.id in animatedUnitIds) return@forEach
                         val ux = centerX + horizSpacing * (unit.position.q + unit.position.r / 2f)
                         val uy = centerY + vertSpacing * unit.position.r
                         if (!onScreen(ux, uy)) return@forEach
@@ -977,6 +1194,46 @@ fun TacticalMapScreen(
                     val hexRadius = hexRadiusPx
                     val horizSpacing = sqrt(3f) * hexRadius
                     val vertSpacing = 1.5f * hexRadius
+
+                    // Levée du brouillard : le voile part opaque et s'efface, donc le terrain
+                    // dessous — déjà peint par la couche statique — se révèle sans qu'elle bouge.
+                    if (revealedHexes.isNotEmpty()) {
+                        val fade = 1f - revealProgress.value
+                        revealedHexes.forEach { coord ->
+                            val rx = centerX + horizSpacing * (coord.q + coord.r / 2f)
+                            val ry = centerY + vertSpacing * coord.r
+                            drawHexagonPath(
+                                centerX = rx, centerY = ry, radius = hexRadius,
+                                color = mapPalette.unexplored.copy(alpha = fade), fill = true
+                            )
+                            // Liseré qui s'allume puis retombe : c'est lui qui dit « ceci vient
+                            // d'être découvert », le fondu seul passe inaperçu sur un hex vide.
+                            drawHexagonPath(
+                                centerX = rx, centerY = ry, radius = hexRadius,
+                                color = NeonCyan.copy(alpha = fade * 0.7f), fill = false, strokeWidth = 2.5f
+                            )
+                        }
+                    }
+
+                    // Prise de planète / siège : une onde qui s'écarte et s'éteint.
+                    if (planetFlashes.isNotEmpty()) {
+                        val t = planetFlashProgress.value
+                        planetFlashes.forEach { flash ->
+                            if (flash.coord !in exploredHexes) return@forEach
+                            val fx = centerX + horizSpacing * (flash.coord.q + flash.coord.r / 2f)
+                            val fy = centerY + vertSpacing * flash.coord.r
+                            drawCircle(
+                                color = flash.color.copy(alpha = (1f - t) * 0.8f),
+                                radius = hexRadius * (0.5f + t * 1.3f),
+                                center = Offset(fx, fy),
+                                style = Stroke(width = 3f + (1f - t) * 4f)
+                            )
+                            drawHexagonPath(
+                                centerX = fx, centerY = fy, radius = hexRadius,
+                                color = flash.color.copy(alpha = (1f - t) * 0.35f), fill = true
+                            )
+                        }
+                    }
 
                     // Blueprint scanline sweep (animation — lives here to avoid terrain redraw).
                     // Purement décoratif : coupé avec les effets holographiques.
@@ -1047,6 +1304,26 @@ fun TacticalMapScreen(
                         }
                     }
 
+                    // Épave — dessinée avant l'explosion, donc en dessous d'elle. Le vaisseau
+                    // détruit s'écrasait jusqu'ici sur le frame suivant, sans transition : la
+                    // seule trace de sa mort était une phrase dans le journal.
+                    wreck?.let { dead ->
+                        val wx = centerX + horizSpacing * (dead.coord.q + dead.coord.r / 2f)
+                        val wy = centerY + vertSpacing * dead.coord.r
+                        // Rétréci jusqu'à zéro plutôt qu'estompé : `drawUnit` peint une dizaine de
+                        // couches d'encre, leur appliquer une opacité commune demanderait un
+                        // `saveLayer` par frame là où une échelle ne coûte rien.
+                        val shrink = 1f - explosionScale.value
+                        if (shrink > 0.02f) {
+                            withTransform({
+                                rotate(degrees = explosionScale.value * 140f, pivot = Offset(wx, wy))
+                                scale(scaleX = shrink, scaleY = shrink, pivot = Offset(wx, wy))
+                            }) {
+                                drawUnit(wx, wy, dead.unit, hexRadius, mapPalette)
+                            }
+                        }
+                    }
+
                     activeCombatEvent?.let { combat ->
                         val ax = centerX + horizSpacing * (combat.attackerCoord.q + combat.attackerCoord.r / 2f)
                         val ay = centerY + vertSpacing * combat.attackerCoord.r
@@ -1094,26 +1371,39 @@ fun TacticalMapScreen(
                         }
                     }
 
-                    // Moving unit — drawn on top at its interpolated position
-                    val anim = movingUnitAnim
-                    if (anim != null) {
-                        val fromX = centerX + horizSpacing * (anim.from.q + anim.from.r / 2f)
-                        val fromY = centerY + vertSpacing * anim.from.r
-                        val toX = centerX + horizSpacing * (anim.to.q + anim.to.r / 2f)
-                        val toY = centerY + vertSpacing * anim.to.r
+                    // Flottes en vol — dessinées par-dessus tout le reste, à leur position
+                    // interpolée le long du chemin réellement emprunté.
+                    if (movingUnits.isNotEmpty()) {
                         val t = movingProgress.value
-                        val animX = fromX + (toX - fromX) * t
-                        val animY = fromY + (toY - fromY) * t
-                        if (t < 0.95f) {
-                            drawLine(
-                                color = NeonCyan.copy(alpha = 0.5f * (1f - t)),
-                                start = Offset(fromX, fromY),
-                                end = Offset(animX, animY),
-                                strokeWidth = 3f
-                            )
+                        movingUnits.forEach { anim ->
+                            val points = anim.path.map { coord ->
+                                Offset(
+                                    centerX + horizSpacing * (coord.q + coord.r / 2f),
+                                    centerY + vertSpacing * coord.r
+                                )
+                            }
+                            val position = pointAlongPath(points, t)
+
+                            // Sillage : les segments déjà franchis, puis le bout de segment en
+                            // cours. Il dit d'où vient la flotte, ce que la seule position finale
+                            // ne raconte pas quand plusieurs bougent en même temps.
+                            if (t < 0.95f) {
+                                val trailAlpha = 0.5f * (1f - t)
+                                val segments = points.size - 1
+                                val reached = (t * segments).toInt().coerceAtMost(segments - 1)
+                                for (i in 0 until reached) {
+                                    drawLine(
+                                        color = NeonCyan.copy(alpha = trailAlpha),
+                                        start = points[i], end = points[i + 1], strokeWidth = 3f
+                                    )
+                                }
+                                drawLine(
+                                    color = NeonCyan.copy(alpha = trailAlpha),
+                                    start = points[reached], end = position, strokeWidth = 3f
+                                )
+                            }
+                            drawUnit(position.x, position.y, anim.unit, hexRadius, mapPalette)
                         }
-                        val animUnit = gameState.units[anim.to] ?: gameState.units[anim.from]
-                        if (animUnit != null) drawUnit(animX, animY, animUnit, hexRadius, mapPalette)
                     }
                 }
             }
@@ -1175,7 +1465,10 @@ fun TacticalMapScreen(
                         Icon(Icons.Default.Star, contentDescription = null, tint = NeonOrange, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
-                            Text("$credits C", style = MaterialTheme.typography.labelLarge)
+                            // Le compteur défile jusqu'à sa nouvelle valeur : un revenu de fin de
+                            // tour ou le prix d'un vaisseau se lisaient jusqu'ici comme un simple
+                            // saut de chiffre, impossible à relier à ce qui venait de se passer.
+                            Text("${rolledCredits} C", style = MaterialTheme.typography.labelLarge)
                             Text(
                                 text = "${if (incomePerTurn >= 0) "+" else ""}$incomePerTurn C/turn",
                                 style = MaterialTheme.typography.labelSmall,
@@ -1687,382 +1980,6 @@ fun SiegePreviewOverlay(
     }
 }
 
-private const val BASE_EXPLOSION_SHARDS = 10
-
-/**
- * Éclats d'encre projetés par une explosion — le système que `particleCountMultiplier` pilote.
- *
- * Le réglage existait dans les JSON de thème et dans le guide (« 2.0 pour des explosions
- * massives ») mais n'avait aucun système à commander : l'explosion n'était qu'un dégradé radial.
- *
- * Les angles et longueurs sont dérivés de l'indice de l'éclat, pas d'un tirage aléatoire : un
- * `Random` par passe de dessin ferait scintiller les éclats à chaque frame de l'animation.
- */
-fun DrawScope.drawExplosionShards(
-    centerX: Float,
-    centerY: Float,
-    radius: Float,
-    progress: Float,
-    multiplier: Float
-) {
-    val count = (BASE_EXPLOSION_SHARDS * multiplier).roundToInt()
-    if (count <= 0) return
-
-    val fade = (1f - progress).coerceIn(0f, 1f)
-    if (fade <= 0f) return
-
-    for (i in 0 until count) {
-        // Angle d'or : répartition régulière quel que soit le nombre d'éclats, sans motif visible.
-        val angle = i * 2.399963f
-        val dirX = cos(angle)
-        val dirY = sin(angle)
-        // Longueur variable mais stable d'une frame à l'autre.
-        val reach = 0.75f + ((i * 37) % 50) / 100f
-        val inner = radius * 0.45f
-        val outer = radius * reach
-
-        drawLine(
-            color = BrunEncre.copy(alpha = fade * 0.75f),
-            start = Offset(centerX + dirX * inner, centerY + dirY * inner),
-            end = Offset(centerX + dirX * outer, centerY + dirY * outer),
-            strokeWidth = 2f,
-            cap = StrokeCap.Round
-        )
-    }
-}
-
-fun DrawScope.drawPlanet(
-    x: Float,
-    y: Float,
-    hexRadius: Float,
-    owner: Faction?,
-    graphicsConfig: com.novaempire.core.domain.theme.GraphicsConfig,
-    palette: MapPalette
-) {
-    val planetColor = owner?.let { getFactionColor(it) } ?: NeonGreen
-    val inkBlack = palette.ink
-
-    // Disque planète — gradient mat, pas de glow électrique
-    drawCircle(
-        brush = Brush.radialGradient(
-            colorStops = arrayOf(
-                0.0f to planetColor.copy(alpha = 0.55f),
-                0.6f to planetColor.copy(alpha = 0.25f),
-                1.0f to Color.Transparent
-            ),
-            center = Offset(x - hexRadius * 0.1f, y - hexRadius * 0.1f),
-            radius = hexRadius * 0.58f
-        ),
-        radius = hexRadius * 0.58f,
-        center = Offset(x, y)
-    )
-
-    // Ombrage par hachures (Cross-hatching style Graphic Noir)
-    clipPath(
-        Path().apply { addOval(androidx.compose.ui.geometry.Rect(x - hexRadius * 0.52f, y - hexRadius * 0.52f, x + hexRadius * 0.52f, y + hexRadius * 0.52f)) }
-    ) {
-        for (i in 0 until 15) {
-            val hY = y + hexRadius * 0.1f + i * 4f
-            if (hY < y + hexRadius * 0.52f) {
-                drawLine(
-                    // `planetShadowAlpha` existait dans les JSON et dans le guide de thème, mais
-                    // n'était lu nulle part : la valeur était figée à 0.6 ici même.
-                    color = inkBlack.copy(alpha = graphicsConfig.planetShadowAlpha),
-                    start = Offset(x - hexRadius * 0.5f, hY),
-                    end = Offset(x + hexRadius * 0.5f, hY - hexRadius * 0.3f),
-                    strokeWidth = 1f
-                )
-            }
-        }
-    }
-
-    // Contour encre épaisse BD avec style plus texturé
-    drawCircle(
-        color = inkBlack,
-        radius = hexRadius * 0.52f,
-        center = Offset(x, y),
-        style = Stroke(width = graphicsConfig.outlineStrokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
-    )
-    drawCircle(
-        color = planetColor.copy(alpha = 0.7f),
-        radius = hexRadius * 0.52f,
-        center = Offset(x, y),
-        style = Stroke(width = 1.5f)
-    )
-
-    // Anneau orbital discret
-    val ringPath = Path().apply {
-        addOval(androidx.compose.ui.geometry.Rect(
-            Offset(x - hexRadius * 0.75f, y - hexRadius * 0.18f),
-            Size(hexRadius * 1.5f, hexRadius * 0.36f)
-        ))
-    }
-    drawPath(path = ringPath, color = planetColor.copy(alpha = 0.28f), style = Stroke(width = 1f))
-
-    // Glint planète
-    drawLine(
-        color = Color.White.copy(alpha = 0.25f),
-        start = Offset(x - hexRadius * 0.25f, y - hexRadius * 0.38f),
-        end   = Offset(x + hexRadius * 0.05f, y - hexRadius * 0.18f),
-        strokeWidth = 1.5f
-    )
-
-    // Détails urbanisation (3 points)
-    for (i in 0 until 3) {
-        val angle = (i * 120f + 20f) * (kotlin.math.PI / 180f)
-        val dist = hexRadius * 0.2f
-        drawCircle(
-            color = planetColor.copy(alpha = 0.8f),
-            radius = 2.5f,
-            center = Offset(x + cos(angle).toFloat() * dist, y + sin(angle).toFloat() * dist)
-        )
-    }
-
-    // Tirets possession — pointillés discrets si propriétaire
-    if (owner != null) {
-        drawCircle(
-            color = planetColor.copy(alpha = 0.35f),
-            radius = hexRadius * 0.42f,
-            center = Offset(x, y),
-            style = Stroke(width = 1.5f,
-                pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(8f, 8f)))
-        )
-    }
-}
-
-fun DrawScope.drawUnit(x: Float, y: Float, unit: GameUnit, hexRadius: Float, palette: MapPalette) {
-    val factionColor = getFactionColor(unit.faction)
-    val inkBlack = palette.ink
-    // Proportional to the hex (25/60 of the historical radius) so sprites scale with the board.
-    val size = hexRadius * 0.42f
-
-    // Helper: apply Bilal layers to a path — black fill → tinted fill → black outline → color outline
-    fun applyBilalLayers(path: Path) {
-        drawPath(path, color = inkBlack, style = Fill)
-        drawPath(path, color = factionColor.copy(alpha = 0.28f), style = Fill)
-        drawPath(path, color = inkBlack, style = Stroke(width = 4.5f))
-        drawPath(path, color = factionColor, style = Stroke(width = 1.5f))
-    }
-
-    when (unit.type) {
-        UnitType.CRUISER -> {
-            val path = Path().apply {
-                moveTo(x + size, y)
-                lineTo(x - size * 0.5f, y - size * 0.7f)
-                lineTo(x - size * 0.8f, y - size * 0.4f)
-                lineTo(x - size * 0.8f, y + size * 0.4f)
-                lineTo(x - size * 0.5f, y + size * 0.7f)
-                close()
-            }
-            applyBilalLayers(path)
-            drawLine(factionColor.copy(alpha = 0.7f), Offset(x + size * 0.2f, y - size * 0.5f), Offset(x + size * 0.2f, y - size * 1.1f), strokeWidth = 1.5f)
-            drawCircle(factionColor, radius = 2f, center = Offset(x + size * 0.2f, y - size * 1.1f))
-        }
-        UnitType.BATTLESHIP -> {
-            val path = Path().apply {
-                moveTo(x + size * 1.1f, y)
-                lineTo(x + size * 0.4f, y - size * 0.4f)
-                lineTo(x - size * 0.6f, y - size * 0.5f)
-                lineTo(x - size * 0.9f, y - size * 0.2f)
-                lineTo(x - size * 0.9f, y + size * 0.2f)
-                lineTo(x - size * 0.6f, y + size * 0.5f)
-                lineTo(x + size * 0.4f, y + size * 0.4f)
-                close()
-            }
-            applyBilalLayers(path)
-            // Two turrets for battleship
-            drawCircle(factionColor.copy(alpha = 0.8f), radius = 2f, center = Offset(x + size * 0.1f, y - size * 0.2f))
-            drawLine(factionColor.copy(alpha = 0.6f), Offset(x + size * 0.1f, y - size * 0.2f), Offset(x + size * 0.5f, y - size * 0.6f), strokeWidth = 1.5f)
-
-            drawCircle(factionColor.copy(alpha = 0.8f), radius = 2f, center = Offset(x - size * 0.3f, y - size * 0.2f))
-            drawLine(factionColor.copy(alpha = 0.6f), Offset(x - size * 0.3f, y - size * 0.2f), Offset(x + size * 0.1f, y - size * 0.6f), strokeWidth = 1.5f)
-        }
-        UnitType.FIGHTER -> {
-            val path = Path().apply {
-                moveTo(x + size * 0.7f, y)
-                lineTo(x - size * 0.7f, y - size * 0.6f)
-                lineTo(x - size * 0.4f, y)
-                lineTo(x - size * 0.7f, y + size * 0.6f)
-                close()
-            }
-            applyBilalLayers(path)
-            drawRect(factionColor.copy(alpha = 0.7f), Offset(x - size * 0.8f, y - size * 0.4f), Size(7f, 3f))
-            drawRect(factionColor.copy(alpha = 0.7f), Offset(x - size * 0.8f, y + size * 0.3f), Size(7f, 3f))
-        }
-        UnitType.SCOUT -> {
-            val path = Path().apply {
-                moveTo(x + size * 0.8f, y)
-                lineTo(x, y - size * 0.4f)
-                lineTo(x - size * 0.8f, y)
-                lineTo(x, y + size * 0.4f)
-                close()
-            }
-            applyBilalLayers(path)
-            drawArc(
-                color = factionColor.copy(alpha = 0.6f),
-                startAngle = -45f, sweepAngle = 90f, useCenter = false,
-                topLeft = Offset(x - size * 0.3f, y - size * 0.3f),
-                size = Size(size * 0.6f, size * 0.6f),
-                style = Stroke(width = 1.5f)
-            )
-        }
-        UnitType.CARRIER -> {
-            val path = Path().apply {
-                moveTo(x + size, y - size * 0.4f)
-                lineTo(x + size, y + size * 0.4f)
-                lineTo(x - size, y + size * 0.6f)
-                lineTo(x - size, y - size * 0.6f)
-                close()
-            }
-            applyBilalLayers(path)
-            drawLine(factionColor.copy(alpha = 0.5f), Offset(x - size * 0.5f, y), Offset(x + size * 0.5f, y), strokeWidth = 1f)
-        }
-        UnitType.DREADNOUGHT -> {
-            val path = Path().apply {
-                moveTo(x + size * 1.2f, y)
-                lineTo(x - size * 0.2f, y - size * 0.8f)
-                lineTo(x - size, y - size * 0.6f)
-                lineTo(x - size, y + size * 0.6f)
-                lineTo(x - size * 0.2f, y + size * 0.8f)
-                close()
-            }
-            applyBilalLayers(path)
-            for (i in 0 until 3) {
-                val tx = x - size * 0.5f + (i * size * 0.4f)
-                drawCircle(factionColor.copy(alpha = 0.8f), radius = 2.5f, center = Offset(tx, y))
-                drawLine(factionColor.copy(alpha = 0.6f), Offset(tx, y), Offset(tx, y - size * 0.28f), strokeWidth = 1.5f)
-            }
-        }
-        UnitType.DEFENSE_PLATFORM -> {
-            val path = Path().apply {
-                for (i in 0 until 8) {
-                    val angle = (i * 45f) * (kotlin.math.PI / 180f)
-                    val r = size * 0.7f
-                    val px = x + cos(angle).toFloat() * r
-                    val py = y + sin(angle).toFloat() * r
-                    if (i == 0) moveTo(px, py) else lineTo(px, py)
-                }
-                close()
-            }
-            applyBilalLayers(path)
-            drawCircle(factionColor.copy(alpha = 0.35f), radius = size * 0.28f, center = Offset(x, y), style = Stroke(width = 1.5f))
-            for (i in 0 until 4) {
-                val angle = (i * 90f + 22.5f) * (kotlin.math.PI / 180f)
-                val rx = x + cos(angle).toFloat() * size * 0.9f
-                val ry = y + sin(angle).toFloat() * size * 0.9f
-                drawRect(inkBlack, Offset(rx - 4f, ry - 4f), Size(8f, 8f))
-                drawRect(factionColor, Offset(rx - 3f, ry - 3f), Size(6f, 6f))
-            }
-        }
-    }
-
-    // Glint blanc diagonal — signature reflet Bilal
-    drawLine(
-        color = Color.White.copy(alpha = 0.28f),
-        start = Offset(x - size * 0.32f, y - size * 0.52f),
-        end   = Offset(x + size * 0.08f, y - size * 0.22f),
-        strokeWidth = 1.5f
-    )
-
-    // Barre HP — métal mat, pas gris numérique
-    val hpPercent = unit.currentHp.toFloat() / unit.type.maxHp
-    val barWidth = hexRadius * 0.67f
-    val barHeight = 3.5f
-    val barTop = y + size + 9f
-    drawRect(palette.healthBarBackground, Offset(x - barWidth / 2, barTop), Size(barWidth, barHeight))
-    drawRect(factionColor.copy(alpha = 0.85f), Offset(x - barWidth / 2, barTop), Size(barWidth * hpPercent, barHeight))
-    drawRect(inkBlack, Offset(x - barWidth / 2, barTop), Size(barWidth, barHeight), style = Stroke(width = 1f))
-}
-
-fun DrawScope.drawAsteroids(x: Float, y: Float, hexRadius: Float, palette: MapPalette) {
-    val offsets = listOf(
-        Offset(-15f, -20f), Offset(10f, -25f), Offset(20f, 10f),
-        Offset(-25f, 15f), Offset(0f, 25f), Offset(-5f, 0f)
-    )
-    val sizes = listOf(8f, 12f, 10f, 14f, 6f, 16f)
-    val inkBlack = palette.ink
-
-    offsets.forEachIndexed { index, offset ->
-        val ax = x + offset.x
-        val ay = y + offset.y
-        val r = sizes[index]
-
-        val path = Path()
-        path.moveTo(ax, ay - r)
-        path.lineTo(ax + r * 0.8f, ay - r * 0.3f)
-        path.lineTo(ax + r, ay + r * 0.4f)
-        path.lineTo(ax + r * 0.2f, ay + r)
-        path.lineTo(ax - r * 0.6f, ay + r * 0.8f)
-        path.lineTo(ax - r, ay)
-        path.close()
-
-        drawPath(path, color = palette.asteroidRock, style = Fill)           // roche sombre
-        drawPath(path, color = inkBlack, style = Stroke(width = 2.5f))    // encre épaisse
-        drawPath(path, color = NeonOrange.copy(alpha = 0.5f), style = Stroke(width = 1f))  // rouille
-    }
-}
-
-fun DrawScope.drawNebula(x: Float, y: Float, hexRadius: Float, palette: MapPalette) {
-    // Nuage violet-brume Bilal — pas de violet électrique
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(palette.nebulaHaze.copy(alpha = 0.6f), Color.Transparent),
-            center = Offset(x - 10f, y - 10f),
-            radius = hexRadius * 0.72f
-        ),
-        radius = hexRadius * 0.72f,
-        center = Offset(x - 10f, y - 10f)
-    )
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(NeonCyan.copy(alpha = 0.2f), Color.Transparent),
-            center = Offset(x + 14f, y + 8f),
-            radius = hexRadius * 0.55f
-        ),
-        radius = hexRadius * 0.55f,
-        center = Offset(x + 14f, y + 8f)
-    )
-}
-
-/**
- * Unit-circle vertices of a pointy-top hexagon, resolved once at class-init.
- *
- * Every hexagon on the board is the same shape, yet [drawHexagonPath] was recomputing twelve
- * trigonometric functions per call — and it is called at least twice per tile per draw, which on
- * a GIGANTIC galaxy came to ~11 000 cos/sin per frame just to rebuild an identical outline.
- */
-private val HEX_VERTEX_COS = FloatArray(6) { cos(PI / 180.0 * (60.0 * it - 30.0)).toFloat() }
-private val HEX_VERTEX_SIN = FloatArray(6) { sin(PI / 180.0 * (60.0 * it - 30.0)).toFloat() }
-
-fun DrawScope.drawHexagonPath(
-    centerX: Float,
-    centerY: Float,
-    radius: Float,
-    color: Color = Color.Unspecified,
-    brush: Brush? = null,
-    fill: Boolean = false,
-    strokeWidth: Float = 2f
-) {
-    val path = Path()
-    for (i in 0..5) {
-        val px = centerX + radius * HEX_VERTEX_COS[i]
-        val py = centerY + radius * HEX_VERTEX_SIN[i]
-        if (i == 0) {
-            path.moveTo(px, py)
-        } else {
-            path.lineTo(px, py)
-        }
-    }
-    path.close()
-
-    if (fill) {
-        if (brush != null) drawPath(path = path, brush = brush)
-        else drawPath(path = path, color = color, style = Fill)
-    } else {
-        if (brush != null) drawPath(path = path, brush = brush, style = Stroke(width = strokeWidth))
-        else drawPath(path = path, color = color, style = Stroke(width = strokeWidth))
-    }
-}
 
 /** French label for a terrain, matching the wording of the long-press terrain sheet. */
 private fun terrainLabel(terrain: TerrainType): String = when (terrain) {
@@ -2223,278 +2140,5 @@ fun TerrainTooltipOverlay(
                 Text("Appuyez pour fermer", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
             }
         }
-    }
-}
-
-fun DrawScope.drawBlackHole(x: Float, y: Float, hexRadius: Float, palette: MapPalette) {
-    val inkBlack = palette.ink
-    val eventHorizonColor = palette.blackHole
-
-    // Accretion disk (distortion effect via gradient)
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(NeonOrange.copy(alpha = 0.8f), Color.Transparent),
-            center = Offset(x, y),
-            radius = hexRadius * 0.8f
-        ),
-        radius = hexRadius * 0.8f,
-        center = Offset(x, y)
-    )
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(NeonRed.copy(alpha = 0.6f), Color.Transparent),
-            center = Offset(x, y),
-            radius = hexRadius * 0.95f
-        ),
-        radius = hexRadius * 0.95f,
-        center = Offset(x, y)
-    )
-
-    // Event Horizon (the black hole itself)
-    drawCircle(
-        color = eventHorizonColor,
-        radius = hexRadius * 0.35f,
-        center = Offset(x, y),
-        style = Fill
-    )
-
-    // Thick comic book ink outline
-    drawCircle(
-        color = inkBlack,
-        radius = hexRadius * 0.35f,
-        center = Offset(x, y),
-        style = Stroke(width = 3.5f)
-    )
-
-    // Inner glow / edge of the void
-    drawCircle(
-        color = NeonOrange.copy(alpha = 0.9f),
-        radius = hexRadius * 0.35f,
-        center = Offset(x, y),
-        style = Stroke(width = 1.5f)
-    )
-
-    // White glint for stylistic consistency, distorted slightly
-    drawLine(
-        color = Color.White.copy(alpha = 0.25f),
-        start = Offset(x - hexRadius * 0.2f, y - hexRadius * 0.2f),
-        end   = Offset(x - hexRadius * 0.05f, y - hexRadius * 0.1f),
-        strokeWidth = 1.5f
-    )
-}
-
-fun DrawScope.drawWormhole(x: Float, y: Float, hexRadius: Float, palette: MapPalette) {
-    val inkBlack = palette.ink
-    val wormholeColor = palette.wormhole
-
-    // Spiral arms simulation with overlapping rotated ellipses
-    for (i in 0 until 4) {
-        val angle = (i * 45f)
-        withTransform({
-            rotate(angle, Offset(x, y))
-        }) {
-            drawOval(
-                brush = Brush.radialGradient(
-                    colors = listOf(NeonCyan.copy(alpha = 0.4f), Color.Transparent),
-                    center = Offset(x, y),
-                    radius = hexRadius * 0.7f
-                ),
-                topLeft = Offset(x - hexRadius * 0.7f, y - hexRadius * 0.2f),
-                size = Size(hexRadius * 1.4f, hexRadius * 0.4f)
-            )
-            drawOval(
-                color = NeonCyan.copy(alpha = 0.6f),
-                topLeft = Offset(x - hexRadius * 0.7f, y - hexRadius * 0.2f),
-                size = Size(hexRadius * 1.4f, hexRadius * 0.4f),
-                style = Stroke(width = 1f)
-            )
-        }
-    }
-
-    // Central rift
-    drawCircle(
-        color = wormholeColor,
-        radius = hexRadius * 0.25f,
-        center = Offset(x, y),
-        style = Fill
-    )
-
-    drawCircle(
-        color = inkBlack,
-        radius = hexRadius * 0.25f,
-        center = Offset(x, y),
-        style = Stroke(width = 3f)
-    )
-
-    drawCircle(
-        color = NeonCyan.copy(alpha = 0.9f),
-        radius = hexRadius * 0.25f,
-        center = Offset(x, y),
-        style = Stroke(width = 1.5f)
-    )
-
-    // Glint
-    drawLine(
-        color = Color.White.copy(alpha = 0.3f),
-        start = Offset(x - hexRadius * 0.15f, y - hexRadius * 0.15f),
-        end   = Offset(x + hexRadius * 0.05f, y - hexRadius * 0.05f),
-        strokeWidth = 1.5f
-    )
-}
-
-fun DrawScope.drawPlasmaCloud(x: Float, y: Float, hexRadius: Float, palette: MapPalette) {
-    val inkBlack = palette.ink
-
-    // Rust/orange turbulent cloud
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(NeonOrange.copy(alpha = 0.5f), Color.Transparent),
-            center = Offset(x - 5f, y + 10f),
-            radius = hexRadius * 0.8f
-        ),
-        radius = hexRadius * 0.8f,
-        center = Offset(x - 5f, y + 10f)
-    )
-
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(NeonRed.copy(alpha = 0.4f), Color.Transparent),
-            center = Offset(x + 12f, y - 12f),
-            radius = hexRadius * 0.6f
-        ),
-        radius = hexRadius * 0.6f,
-        center = Offset(x + 12f, y - 12f)
-    )
-
-    // Plasma arcs (jagged lines)
-    val path = Path().apply {
-        moveTo(x - hexRadius * 0.4f, y - hexRadius * 0.2f)
-        lineTo(x - hexRadius * 0.1f, y - hexRadius * 0.4f)
-        lineTo(x + hexRadius * 0.1f, y - hexRadius * 0.1f)
-        lineTo(x + hexRadius * 0.4f, y - hexRadius * 0.3f)
-    }
-    drawPath(path, color = NeonOrange.copy(alpha = 0.8f), style = Stroke(width = 2f))
-
-    val path2 = Path().apply {
-        moveTo(x - hexRadius * 0.3f, y + hexRadius * 0.3f)
-        lineTo(x, y + hexRadius * 0.1f)
-        lineTo(x + hexRadius * 0.2f, y + hexRadius * 0.4f)
-        lineTo(x + hexRadius * 0.5f, y + hexRadius * 0.2f)
-    }
-    drawPath(path2, color = NeonRed.copy(alpha = 0.7f), style = Stroke(width = 1.5f))
-
-    // Dark matter specks in the plasma
-    for (i in 0 until 5) {
-        val angle = (i * 72f) * (kotlin.math.PI / 180f)
-        val dist = hexRadius * 0.4f
-        drawCircle(
-            color = inkBlack,
-            radius = 3f,
-            center = Offset(x + cos(angle).toFloat() * dist, y + sin(angle).toFloat() * dist)
-        )
-    }
-}
-
-fun DrawScope.drawIonStorm(x: Float, y: Float, hexRadius: Float, palette: MapPalette) {
-    val inkBlack = palette.ink
-
-    // Heavy grey-blue cloud base
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(palette.ionStorm.copy(alpha = 0.7f), Color.Transparent),
-            center = Offset(x, y),
-            radius = hexRadius * 0.85f
-        ),
-        radius = hexRadius * 0.85f,
-        center = Offset(x, y)
-    )
-
-    // Energetic cyan flashes
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(NeonCyan.copy(alpha = 0.3f), Color.Transparent),
-            center = Offset(x - 15f, y - 5f),
-            radius = hexRadius * 0.5f
-        ),
-        radius = hexRadius * 0.5f,
-        center = Offset(x - 15f, y - 5f)
-    )
-
-    // Lightning strikes
-    val lightning = Path().apply {
-        moveTo(x - hexRadius * 0.2f, y - hexRadius * 0.5f)
-        lineTo(x - hexRadius * 0.05f, y - hexRadius * 0.1f)
-        lineTo(x - hexRadius * 0.2f, y)
-        lineTo(x + hexRadius * 0.1f, y + hexRadius * 0.4f)
-        lineTo(x, y + hexRadius * 0.1f)
-        lineTo(x + hexRadius * 0.15f, y)
-        close()
-    }
-    drawPath(lightning, color = NeonCyan.copy(alpha = 0.9f), style = Fill)
-    drawPath(lightning, color = inkBlack, style = Stroke(width = 1.5f))
-
-    val lightning2 = Path().apply {
-        moveTo(x + hexRadius * 0.3f, y - hexRadius * 0.3f)
-        lineTo(x + hexRadius * 0.1f, y)
-        lineTo(x + hexRadius * 0.2f, y + hexRadius * 0.1f)
-        lineTo(x, y + hexRadius * 0.3f)
-    }
-    drawPath(lightning2, color = NeonCyan.copy(alpha = 0.7f), style = Stroke(width = 2f))
-}
-
-fun DrawScope.drawAnomaly(x: Float, y: Float, hexRadius: Float, palette: MapPalette) {
-    val inkBlack = palette.ink
-
-    // Strange green-brown base
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(palette.anomaly.copy(alpha = 0.6f), Color.Transparent),
-            center = Offset(x, y),
-            radius = hexRadius * 0.75f
-        ),
-        radius = hexRadius * 0.75f,
-        center = Offset(x, y)
-    )
-
-    // Unnatural geometry
-    val path = Path().apply {
-        moveTo(x, y - hexRadius * 0.4f)
-        lineTo(x + hexRadius * 0.35f, y - hexRadius * 0.15f)
-        lineTo(x + hexRadius * 0.35f, y + hexRadius * 0.15f)
-        lineTo(x, y + hexRadius * 0.4f)
-        lineTo(x - hexRadius * 0.35f, y + hexRadius * 0.15f)
-        lineTo(x - hexRadius * 0.35f, y - hexRadius * 0.15f)
-        close()
-    }
-
-    // Distorted fill and thick ink stroke
-    drawPath(path, color = NeonGreen.copy(alpha = 0.2f), style = Fill)
-    drawPath(path, color = inkBlack, style = Stroke(width = 3f))
-    drawPath(path, color = NeonGreen.copy(alpha = 0.8f), style = Stroke(width = 1.5f,
-        pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(5f, 5f))))
-
-    // Glitching inner lines
-    drawLine(
-        color = NeonGreen.copy(alpha = 0.9f),
-        start = Offset(x - hexRadius * 0.2f, y),
-        end = Offset(x + hexRadius * 0.2f, y),
-        strokeWidth = 2f
-    )
-    drawLine(
-        color = NeonGreen.copy(alpha = 0.9f),
-        start = Offset(x, y - hexRadius * 0.2f),
-        end = Offset(x, y + hexRadius * 0.2f),
-        strokeWidth = 2f
-    )
-
-    // Artifact nodes
-    for (i in 0 until 4) {
-        val angle = (i * 90f + 45f) * (kotlin.math.PI / 180f)
-        val dist = hexRadius * 0.25f
-        drawCircle(
-            color = NeonOrange.copy(alpha = 0.9f),
-            radius = 2.5f,
-            center = Offset(x + cos(angle).toFloat() * dist, y + sin(angle).toFloat() * dist)
-        )
     }
 }

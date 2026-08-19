@@ -8,6 +8,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import com.novaempire.app.settings.AppSettings
@@ -49,6 +50,17 @@ fun NovaEmpireTheme(
         novaTypography(colorScheme, settings.highContrast)
     }
 
+    // « Supprimer les animations » du système d'exploitation vaut consentement : un joueur sujet au
+    // mal des transports l'a déjà réglé une fois pour tout l'appareil, et lui redemander écran par
+    // écran revient à ignorer sa réponse. Le réglage du jeu ne peut donc que *renforcer* celui du
+    // système, jamais le contredire — d'où le `||`.
+    val context = LocalContext.current
+    val systemDisablesAnimations = remember(context) { animationsDisabledBySystem(context) }
+    val effectiveSettings = remember(settings, systemDisablesAnimations) {
+        if (systemDisablesAnimations && !settings.reducedMotion) settings.copy(reducedMotion = true)
+        else settings
+    }
+
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
@@ -62,7 +74,7 @@ fun NovaEmpireTheme(
         LocalThemeType provides activeTheme,
         LocalGraphicsConfig provides graphicsConfig,
         LocalMapPalette provides mapPalette,
-        LocalDisplaySettings provides settings
+        LocalDisplaySettings provides effectiveSettings
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
@@ -71,3 +83,20 @@ fun NovaEmpireTheme(
         )
     }
 }
+
+/**
+ * L'appareil est-il réglé sur « supprimer les animations » ?
+ *
+ * `ANIMATOR_DURATION_SCALE` à 0 est le signal qu'Android donne aux applications ; il couvre à la
+ * fois l'option d'accessibilité et le réglage développeur. La lecture peut échouer sur un appareil
+ * exotique ou un environnement de test sans `Settings.Global` : dans ce cas on répond « non », ce
+ * qui laisse le joueur maître de son propre réglage plutôt que de couper les animations sur une
+ * exception.
+ */
+private fun animationsDisabledBySystem(context: android.content.Context): Boolean = runCatching {
+    android.provider.Settings.Global.getFloat(
+        context.contentResolver,
+        android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+        1f
+    ) == 0f
+}.getOrDefault(false)

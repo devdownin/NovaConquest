@@ -85,6 +85,15 @@ fun SettingsScreen(
                 onCheckedChange = { onSettingsChange(settings.copy(highContrast = it)) },
                 testTag = HIGH_CONTRAST_SWITCH_TAG
             )
+            // Distinct de « Holographic Effects » : celui-ci ne retire pas d'information de
+            // l'écran, il la fait arriver d'un coup au lieu de la faire glisser.
+            SettingsSwitch(
+                label = "Reduced Motion",
+                description = "Fleets, fire and reveals resolve instantly",
+                checked = settings.reducedMotion,
+                onCheckedChange = { onSettingsChange(settings.copy(reducedMotion = it)) },
+                testTag = REDUCED_MOTION_SWITCH_TAG
+            )
         }
 
         Spacer(modifier = Modifier.height(24.dp))

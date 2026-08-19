@@ -270,18 +270,14 @@ fun GameContainer(
     val undoClosedByExploration by gameViewModel.undoClosedByExploration.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // Le Snackbar ne porte plus que les erreurs. Les notifications de partie passent par
+    // `NotificationBanner`, qui conserve la couleur que le moteur leur donne — elle était jetée ici
+    // (`(message, _)`) alors que le journal de combat s'en servait déjà, si bien que le même
+    // message s'affichait coloré en bas et neutre au milieu.
     LaunchedEffect(Unit) {
-        launch {
-            gameViewModel.errors.collect { message ->
-                snackbarHostState.currentSnackbarData?.dismiss()
-                snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
-            }
-        }
-        launch {
-            gameViewModel.notifications.collect { (message, _) ->
-                snackbarHostState.currentSnackbarData?.dismiss()
-                snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
-            }
+        gameViewModel.errors.collect { message ->
+            snackbarHostState.currentSnackbarData?.dismiss()
+            snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
         }
     }
 
@@ -453,6 +449,7 @@ fun GameContainer(
                         canUndo = canUndo,
                         undoClosedByExploration = undoClosedByExploration,
                         combatEvents = gameViewModel.combatEvents,
+                        shakeEvents = gameViewModel.shakeEvents,
                         onUndo = {
                             gameViewModel.dispatch(GameIntent.Undo)
                             selectedCoord = null
@@ -486,6 +483,14 @@ fun GameContainer(
                     onChangeRelation = onChangeRelation
                 )
             }
+
+            // Au-dessus des onglets, sous le résumé de fin de tour : une notification ne doit jamais
+            // recouvrir un panneau modal qui attend, mais elle doit rester lisible quel que soit
+            // l'onglet ouvert — une recherche qui se termine concerne aussi l'écran TECH.
+            com.novaempire.app.ui.components.NotificationBanner(
+                notifications = gameViewModel.notifications,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
 
             endTurnSummary?.let { summary ->
                 EndTurnSummaryOverlay(summary = summary)
