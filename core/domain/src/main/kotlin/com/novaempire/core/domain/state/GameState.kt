@@ -13,7 +13,31 @@ import com.novaempire.core.hex.HexCoord
 data class CombatEvent(
     val attackerCoord: HexCoord,
     val defenderCoord: HexCoord,
-    val targetDestroyed: Boolean
+    val targetDestroyed: Boolean,
+    /** Ce que le défenseur a encaissé du tir. */
+    val defenderHit: CombatHit? = null,
+    /**
+     * Ce que l'attaquant a encaissé en retour.
+     *
+     * `null` veut dire « pas de riposte » — le défenseur est mort, ou l'attaquant tirait de plus
+     * loin que sa portée. C'est une information différente d'une riposte à zéro dégât, et
+     * l'interface les montre différemment.
+     */
+    val attackerHit: CombatHit? = null
+)
+
+/**
+ * Ce qu'un camp a encaissé dans un échange : de quoi afficher un chiffre et vider une barre.
+ *
+ * [hpBefore] accompagne [hpAfter] parce que l'unité touchée peut avoir quitté l'état au moment où
+ * l'interface anime le tir — une cible détruite n'a plus de points de vie à consulter.
+ */
+@Serializable
+data class CombatHit(
+    val damage: Int,
+    val hpBefore: Int,
+    val hpAfter: Int,
+    val maxHp: Int
 )
 
 @Serializable

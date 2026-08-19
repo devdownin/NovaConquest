@@ -3,6 +3,7 @@ package com.novaempire.core.engine
 import com.novaempire.core.domain.models.BonusType
 import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.state.CombatEvent
+import com.novaempire.core.domain.state.CombatHit
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.hex.HexCoord
 import kotlin.math.max
@@ -24,6 +25,16 @@ object CombatResolver : CombatSystem {
         var newUnits = state.units.toMutableMap()
         var updatedAttacker = attacker.copy(hasAttacked = true, hasMoved = true)
 
+        // Ce que chaque camp encaisse, relevé au fil de la résolution : après coup, une unité
+        // détruite a quitté l'état et ses points de vie avec elle.
+        val defenderHit = CombatHit(
+            damage = damageToDefender,
+            hpBefore = defender.currentHp,
+            hpAfter = defenderRemainingHp,
+            maxHp = defender.type.maxHp
+        )
+        var attackerHit: CombatHit? = null
+
         if (defenderRemainingHp <= 0) {
             newUnits.remove(defenderCoord)
             newUnits[attackerCoord] = updatedAttacker
@@ -37,6 +48,12 @@ object CombatResolver : CombatSystem {
                 val counterVariance = 0.8f + rng.nextFloat() * 0.4f
                 val damageToAttacker = max(1, (AttackCalculator.effectiveBase(state, defenderCoord, attackerCoord) * counterVariance).toInt())
                 val attackerRemainingHp = max(0, attacker.currentHp - damageToAttacker)
+                attackerHit = CombatHit(
+                    damage = damageToAttacker,
+                    hpBefore = attacker.currentHp,
+                    hpAfter = attackerRemainingHp,
+                    maxHp = attacker.type.maxHp
+                )
 
                 if (attackerRemainingHp <= 0) {
                     newUnits.remove(attackerCoord)
@@ -55,7 +72,9 @@ object CombatResolver : CombatSystem {
         val combatEvent = CombatEvent(
             attackerCoord = attackerCoord,
             defenderCoord = defenderCoord,
-            targetDestroyed = defenderRemainingHp <= 0
+            targetDestroyed = defenderRemainingHp <= 0,
+            defenderHit = defenderHit,
+            attackerHit = attackerHit
         )
 
         return CombatOutcome(state.copy(units = newUnits), combatEvent)

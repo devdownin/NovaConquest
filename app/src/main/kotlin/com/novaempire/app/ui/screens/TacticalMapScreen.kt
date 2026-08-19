@@ -63,6 +63,7 @@ import com.novaempire.app.audio.SoundType
 import com.novaempire.app.ui.map.drawAnomaly
 import com.novaempire.app.ui.map.drawAsteroids
 import com.novaempire.app.ui.map.drawBlackHole
+import com.novaempire.app.ui.map.drawCombatReadout
 import com.novaempire.app.ui.map.drawExplosionShards
 import com.novaempire.app.ui.map.drawHexagonPath
 import com.novaempire.app.ui.map.drawIonStorm
@@ -73,7 +74,6 @@ import com.novaempire.app.ui.map.drawUnit
 import com.novaempire.app.ui.map.drawWormhole
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.components.IndustrialPanel
-import com.novaempire.app.ui.components.motionDelay
 import com.novaempire.app.ui.components.motionMillis
 import com.novaempire.app.ui.components.pointAlongPath
 import com.novaempire.app.ui.components.rememberMotionLoop
@@ -90,6 +90,7 @@ import com.novaempire.core.engine.MapInteraction
 import com.novaempire.core.engine.MovementCalculator
 import com.novaempire.core.hex.HexCoord
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.emptyFlow
 import com.novaempire.core.hex.HexLayout
 import com.novaempire.core.hex.HexPathfinder
@@ -130,6 +131,20 @@ private const val SHAKE_FREQ_Y = 4f
 private const val MOVE_MS_PER_HEX = 150
 private const val MOVE_MS_MIN = 220
 private const val MOVE_MS_MAX = 900
+
+/**
+ * Durée de lecture d'un chiffre de dégâts.
+ *
+ * Elle ne passe pas par `motionMillis` : le chiffre est une information, pas une décoration. En
+ * mouvement réduit c'est son *déplacement* qui disparaît, pas le temps laissé pour le lire.
+ */
+private const val COMBAT_READOUT_MS = 700
+
+/** Attente équivalente quand le chiffre ne bouge pas. */
+private const val COMBAT_READOUT_HOLD_MS = 500L
+
+/** Part de la course du chiffre pendant laquelle la riposte reste en retrait. */
+private const val RETALIATION_READOUT_DELAY = 0.25f
 
 /** Levée du brouillard : le voile s'efface sur cette durée. */
 private const val REVEAL_MS = 550
@@ -370,6 +385,9 @@ fun TacticalMapScreen(
 
     val laserProgress = remember { Animatable(0f) }
     val explosionScale = remember { Animatable(0f) }
+    // Horloge du chiffre de dégâts, distincte de celle de l'explosion : elle survit à la boule de
+    // feu, le temps que le joueur lise ce qu'il vient d'encaisser.
+    val readoutProgress = remember { Animatable(0f) }
     var activeCombatEvent by remember { mutableStateOf<CombatEvent?>(null) }
 
     // Épave de l'unité détruite. Elle n'est plus dans `gameState.units` dès l'état suivant, donc la
@@ -626,11 +644,24 @@ fun TacticalMapScreen(
 
             laserProgress.animateTo(1f, animationSpec = tween(currentDisplaySettings.motionMillis(300)))
             AudioManager.playSound(SoundType.COMBAT_EXPLOSION)
-            // L'épave se désintègre sur la même horloge que l'explosion : une seule animation à
-            // suivre, donc aucun risque de voir les deux se désynchroniser.
-            explosionScale.animateTo(1f, animationSpec = tween(currentDisplaySettings.motionMillis(400)))
+            readoutProgress.snapTo(0f)
 
-            kotlinx.coroutines.delay(currentDisplaySettings.motionDelay(200))
+            if (currentAnimationsOn) {
+                // Le chiffre monte pendant que l'explosion retombe, et lui survit. Les deux en
+                // parallèle plutôt qu'à la suite : bout à bout, cinq tirs d'IA rejoués feraient
+                // attendre le joueur plusieurs secondes.
+                kotlinx.coroutines.coroutineScope {
+                    launch { readoutProgress.animateTo(1f, animationSpec = tween(COMBAT_READOUT_MS, easing = LinearEasing)) }
+                    // L'épave se désintègre sur la même horloge que l'explosion : une seule
+                    // animation à suivre, donc aucun risque de les voir se désynchroniser.
+                    explosionScale.animateTo(1f, animationSpec = tween(currentDisplaySettings.motionMillis(400)))
+                }
+            } else {
+                explosionScale.snapTo(1f)
+                // Rien ne bouge, mais le chiffre reste affiché le temps d'être lu.
+                kotlinx.coroutines.delay(COMBAT_READOUT_HOLD_MS)
+            }
+
             activeCombatEvent = null
             wreck = null
         }
@@ -1368,6 +1399,30 @@ fun TacticalMapScreen(
                                     multiplier = graphicsConfig.particleCountMultiplier
                                 )
                             }
+                        }
+
+                        // Chiffres de dégâts et barres de vie. Dessinés en dernier dans ce bloc,
+                        // donc au-dessus de l'explosion : c'est l'information, elle passe devant
+                        // le décor.
+                        val readout = readoutProgress.value
+                        // En mouvement réduit la barre est d'emblée à son état final et le chiffre
+                        // reste immobile : c'est le déplacement qu'on retire, pas la lecture.
+                        val barT = if (animationsOn) readout else 1f
+                        val textT = if (animationsOn) readout else 0f
+                        combat.defenderHit?.let { hit ->
+                            drawCombatReadout(dx, dy, hit, barT, textT, hexRadius, mapPalette)
+                        }
+                        combat.attackerHit?.let { hit ->
+                            // La riposte part après le tir : décaler sa lecture évite deux chiffres
+                            // qui montent à l'unisson, illisibles quand les hexs sont voisins.
+                            val counter = ((readout - RETALIATION_READOUT_DELAY) /
+                                (1f - RETALIATION_READOUT_DELAY)).coerceIn(0f, 1f)
+                            drawCombatReadout(
+                                ax, ay, hit,
+                                barProgress = if (animationsOn) counter else 1f,
+                                textProgress = if (animationsOn) counter else 0f,
+                                hexRadius = hexRadius, palette = mapPalette
+                            )
                         }
                     }
 

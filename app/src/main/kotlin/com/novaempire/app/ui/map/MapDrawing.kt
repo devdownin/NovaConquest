@@ -9,11 +9,16 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
 import com.novaempire.app.ui.screens.getFactionColor
 import com.novaempire.app.ui.theme.BrunEncre
 import com.novaempire.app.ui.theme.MapPalette
+import com.novaempire.app.ui.theme.NeonGreen
+import com.novaempire.app.ui.theme.NeonOrange
+import com.novaempire.app.ui.theme.NeonRed
 import com.novaempire.core.domain.models.GameUnit
 import com.novaempire.core.domain.models.UnitType
+import com.novaempire.core.domain.state.CombatHit
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -254,4 +259,92 @@ fun DrawScope.drawExplosionShards(
             cap = StrokeCap.Round
         )
     }
+}
+
+/** Fraction de la course pendant laquelle le chiffre reste opaque, avant de s'effacer. */
+private const val READOUT_OPAQUE_FRACTION = 0.6f
+
+/**
+ * Ce qu'un camp vient d'encaisser : le chiffre qui s'élève, et la barre de vie qui se vide.
+ *
+ * Jusqu'ici le joueur voyait un tir et une explosion, mais jamais *combien* : le résultat d'un
+ * échange ne se lisait qu'en comparant deux fois les points de vie dans le panneau latéral. Le
+ * chiffre le dit sur place, la barre dit ce qu'il en reste.
+ *
+ * [barProgress] vide la barre de `hpBefore` vers `hpAfter` ; [textProgress] fait monter le chiffre
+ * et l'efface. Deux paramètres et non un, parce que le mouvement réduit veut la barre à son état
+ * final tout de suite mais le chiffre immobile et lisible — voir plus bas.
+ */
+fun DrawScope.drawCombatReadout(
+    x: Float,
+    y: Float,
+    hit: CombatHit,
+    barProgress: Float,
+    textProgress: Float,
+    hexRadius: Float,
+    palette: MapPalette
+) {
+    val t = barProgress.coerceIn(0f, 1f)
+
+    // Barre de vie, sous le vaisseau.
+    val barWidth = hexRadius * 1.05f
+    val barHeight = hexRadius * 0.13f
+    val barLeft = x - barWidth / 2f
+    val barTop = y + hexRadius * 0.52f
+    val ratioBefore = if (hit.maxHp > 0) hit.hpBefore.toFloat() / hit.maxHp else 0f
+    val ratioAfter = if (hit.maxHp > 0) hit.hpAfter.toFloat() / hit.maxHp else 0f
+    val ratio = ratioBefore + (ratioAfter - ratioBefore) * t
+
+    drawRect(
+        color = palette.ink.copy(alpha = 0.75f),
+        topLeft = Offset(barLeft, barTop),
+        size = Size(barWidth, barHeight)
+    )
+    if (ratio > 0f) {
+        drawRect(
+            // Vert tant que la coque tient, orange à mi-vie, rouge quand un tir de plus suffit.
+            color = when {
+                ratio > 0.6f -> NeonGreen
+                ratio > 0.3f -> NeonOrange
+                else -> NeonRed
+            },
+            topLeft = Offset(barLeft, barTop),
+            size = Size(barWidth * ratio, barHeight)
+        )
+    }
+
+    // Chiffre des dégâts, qui s'élève et s'efface.
+    //
+    // Piloté à part de la barre : en mouvement réduit l'appelant fige `textProgress` à 0, ce qui
+    // donne un chiffre immobile et pleinement opaque. Couper les animations doit retirer le
+    // mouvement, pas l'information — et un chiffre qui n'a pas le temps d'être lu n'en est plus une.
+    val tt = textProgress.coerceIn(0f, 1f)
+    val fade = if (tt < READOUT_OPAQUE_FRACTION) 1f
+               else ((1f - tt) / (1f - READOUT_OPAQUE_FRACTION)).coerceIn(0f, 1f)
+    if (fade <= 0f) return
+    val textY = y - hexRadius * (0.25f + 0.75f * tt)
+    val alpha = (fade * 255f).toInt().coerceIn(0, 255)
+
+    // Deux passes : un contour d'encre puis le remplissage. Un chiffre rouge posé sur une
+    // explosion rouge serait illisible sans ce liseré.
+    val outline = android.graphics.Paint().apply {
+        isAntiAlias = true
+        textAlign = android.graphics.Paint.Align.CENTER
+        textSize = hexRadius * 0.5f
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        style = android.graphics.Paint.Style.STROKE
+        strokeWidth = hexRadius * 0.09f
+        color = android.graphics.Color.argb(alpha, 19, 15, 10)
+    }
+    val fill = android.graphics.Paint().apply {
+        isAntiAlias = true
+        textAlign = android.graphics.Paint.Align.CENTER
+        textSize = hexRadius * 0.5f
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        style = android.graphics.Paint.Style.FILL
+        color = android.graphics.Color.argb(alpha, 255, 90, 74)
+    }
+    val label = "-${hit.damage}"
+    drawContext.canvas.nativeCanvas.drawText(label, x, textY, outline)
+    drawContext.canvas.nativeCanvas.drawText(label, x, textY, fill)
 }
