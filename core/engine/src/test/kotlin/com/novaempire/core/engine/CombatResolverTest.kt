@@ -24,6 +24,16 @@ class CombatResolverTest {
     // Use a fixed seed so variance is always exactly 1.0 (nextFloat = 0.5 → variance = 0.8 + 0.5*0.4 = 1.0)
     private val deterministicRng = Random(42)
 
+    /** [CombatResolver] privé de son hasard, pour les tests qui comparent deux échanges. */
+    private val fixedVarianceCombat = object : CombatSystem {
+        override fun resolveCombat(state: GameState, attackerCoord: HexCoord, defenderCoord: HexCoord) =
+            CombatResolver.resolveCombatWithRng(state, attackerCoord, defenderCoord, fixedRng)
+        override fun siegePlanet(state: GameState, attackerCoord: HexCoord, planetCoord: HexCoord) =
+            CombatResolver.siegePlanet(state, attackerCoord, planetCoord)
+        override fun capturePlanet(state: GameState, unitCoord: HexCoord, planetCoord: HexCoord) =
+            CombatResolver.capturePlanet(state, unitCoord, planetCoord)
+    }
+
     private fun baseState(
         attackerCoord: HexCoord,
         defenderCoord: HexCoord,
@@ -53,7 +63,10 @@ class CombatResolverTest {
         // dans les deux cas et les événements sont réellement égaux.
         val defender = GameUnit(type = UnitType.DREADNOUGHT, faction = Faction.TRADERS, position = defenderCoord, currentHp = UnitType.DREADNOUGHT.maxHp)
         val state = baseState(attackerCoord, defenderCoord, attacker, defender)
-        val deps = GameEngineDependencies()
+        // Combat à variance figée : depuis que l'événement porte les dégâts encaissés, deux tirs
+        // ne sont « identiques » que si le jet l'est aussi. Sans ça le test ne prouverait plus
+        // l'égalité qu'il est là pour exhiber — il la rendrait seulement improbable.
+        val deps = GameEngineDependencies(combatSystem = fixedVarianceCombat)
         val intent = GameIntent.AttackUnit(attackerCoord, defenderCoord)
 
         val first = handleAttackUnit(state, intent, deps)
