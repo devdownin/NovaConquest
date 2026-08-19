@@ -38,7 +38,12 @@ jobs:
 
     steps:
       - name: Checkout
+        # Historique complet : `ratchetFrom("origin/main")` compare chaque fichier à son état sur
+        # la branche principale. Avec le clone superficiel par défaut, cette référence n'existe pas
+        # et Spotless échoue au lieu de contrôler quoi que ce soit.
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Git safe directory
         run: git config --global --add safe.directory /__w/NovaEmpire/NovaEmpire
@@ -52,11 +57,17 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # Pas de contrôle de style ici : ni Spotless ni Detekt n'est appliqué dans le build. Deux
-      # étapes les appelaient, enveloppées dans `|| echo "not configured, skipping"`, donc toujours
-      # vertes — 80 s par run pour une assurance qui n'existait pas, et d'autant plus trompeuse
-      # qu'elle s'affiche maintenant sur les pull requests. Les rétablir suppose de vraiment
-      # configurer les outils : voir la note dans CLAUDE.md.
+      # Le point de comparaison du cliquet, explicitement. `fetch-depth: 0` le ramène déjà, mais
+      # une PR est extraite sur une référence de fusion : mieux vaut ne pas dépendre de ce détail.
+      - name: Fetch main for the style ratchet
+        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main || true
+
+      # Contrôle de style, pour de bon cette fois. Deux étapes portaient ces noms auparavant,
+      # enveloppées dans `|| echo "not configured, skipping"` : toujours vertes, elles ne
+      # prouvaient rien et ont été retirées. Celle-ci échoue.
+      - name: Style — Spotless (ktlint, à cliquet sur main)
+        if: github.event.inputs.skip_tests != 'true'
+        run: gradle spotlessCheck
 
       - name: Unit tests — core modules
         if: github.event.inputs.skip_tests != 'true'
