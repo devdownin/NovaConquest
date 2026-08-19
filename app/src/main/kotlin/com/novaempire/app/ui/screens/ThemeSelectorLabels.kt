@@ -45,3 +45,11 @@ val THEME_OPTIONS: List<Pair<ThemeType?, String>> = listOf(
 fun themeStatusLabel(preference: ThemeType?, activeTheme: ThemeType): String =
     if (preference == null) "Seasonal — currently ${activeTheme.name}"
     else "Manual override — seasonal themes disabled"
+
+/**
+ * `testTag` du plateau de la carte tactique.
+ *
+ * Vit ici, avec les autres `testTag`, pour la même raison qu'eux : ce fichier ne dépend pas de
+ * Compose, donc les tests JVM peuvent s'y référer sans émulateur.
+ */
+const val TACTICAL_MAP_TAG = "tactical_map"
