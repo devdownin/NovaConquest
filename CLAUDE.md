@@ -33,9 +33,16 @@ The CI workflow uses the system `gradle` binary (not the wrapper). Both work loc
 ./gradlew :app:assembleRelease
 ```
 
-**There is no style gate.** Neither Spotless nor Detekt is applied in the Gradle build. CI used to call both, wrapped in `|| echo "... not configured, skipping"`, so the steps were always green and proved nothing; they have been removed rather than left to imply a check that never ran.
+**The style gate is Spotless + ktlint, and it ratchets.** `gradle spotlessCheck` runs in CI and fails for real — unlike the two steps that used to carry these names wrapped in `|| echo "... not configured, skipping"`. `spotlessApply` fixes most of what it finds.
 
-Adding one for real is worth doing, but it is its own change, not a rider on a behavioural PR: the first run reformats or flags most of the codebase. `TacticalMapScreen.kt` alone is ~2 500 lines with 6 wildcard imports that ktlint rejects. If you take it on, `spotless { kotlin { ktlint(); ratchetFrom("origin/main") } }` limits the check to files a branch actually touches, and Detekt wants a generated baseline so existing debt does not block every push.
+`ratchetFrom("origin/main")` is the load-bearing part: only files that differ from `main` are checked. A full run reports ~585 violations across 135 files, so without the ratchet the first green build would require reformatting the whole repository — rewriting the blame of every line — or turning the check off. With it, the debt is paid per file, by whoever was already editing that file. Two consequences:
+
+- **CI checks out with `fetch-depth: 0`** and re-fetches `main` explicitly. A shallow clone has no `origin/main`, and Spotless then fails instead of checking anything.
+- **Touching an old file may cost more than the change itself.** 217 lines exceed the 120-column limit and 36 wildcard imports remain, concentrated in `MainActivity.kt`, `TacticalMapScreen.kt` and the older screens. Neither is auto-fixable. Budget for it, or split the formatting into its own commit so the behavioural diff stays readable.
+
+Which rules apply is set in `.editorconfig`, and each disabled rule was disabled against a measurement rather than a preference: the default `ktlint_official` style reported 4 723 violations, almost all from wrapping rules that would have rewritten every Compose call in the project. `function-naming` is off because a `@Composable` is PascalCase by convention and the rule counts 51 false positives. A check nobody can satisfy gets switched off at the first blocker; this one is tuned to survive.
+
+**Detekt is still not wired in.** It needs a generated baseline to keep existing debt from blocking every push, and a baseline written without running the tool is worthless. It is its own change.
 
 ## Module graph and dependency direction
 

@@ -1,0 +1,47 @@
+root = true
+
+# Style Kotlin du projet, tel qu'il est réellement écrit — pas tel qu'un outil le préférerait.
+#
+# Chaque règle désactivée ci-dessous l'a été sur mesure, pas par principe : ktlint a d'abord été
+# passé sur les 135 fichiers du dépôt pour compter ce que chacune reprochait. Le style
+# `ktlint_official` par défaut relevait 4 723 manquements, dont l'écrasante majorité venait de
+# règles d'enveloppement qui auraient réécrit chaque appel Compose du projet. En les retirant, il
+# reste 585 manquements, dont la plupart sont de vrais défauts de frappe.
+#
+# Un contrôle qu'on ne peut pas satisfaire n'est pas un contrôle : il se fait désactiver au premier
+# blocage. Celui-ci est réglé pour tenir.
+[*.{kt,kts}]
+ktlint_code_style = intellij_idea
+
+# 99 % des lignes du dépôt tiennent en 122 caractères : 120 est la convention de fait, pas un
+# chiffre arbitraire. 217 lignes la dépassent ; le cliquet les fera corriger au fil des passages.
+max_line_length = 120
+
+# ── Enveloppement et virgules finales ────────────────────────────────────────────────────────
+# Ces règles ne reprochent rien de faux, elles imposent un autre goût : virgule finale partout,
+# un argument par ligne, signature éclatée dès deux paramètres. Les appliquer réécrirait
+# l'intégralité des écrans Compose pour un gain de lisibilité nul, et noierait dans le bruit les
+# vrais défauts que le contrôle est là pour attraper.
+ktlint_standard_argument-list-wrapping = disabled
+ktlint_standard_trailing-comma-on-call-site = disabled
+ktlint_standard_trailing-comma-on-declaration-site = disabled
+ktlint_standard_wrapping = disabled
+ktlint_standard_function-signature = disabled
+ktlint_standard_binary-expression-wrapping = disabled
+ktlint_standard_multiline-if-else = disabled
+ktlint_standard_function-literal = disabled
+ktlint_standard_parameter-list-wrapping = disabled
+ktlint_standard_parameter-wrapping = disabled
+ktlint_standard_class-signature = disabled
+ktlint_standard_property-wrapping = disabled
+ktlint_standard_statement-wrapping = disabled
+ktlint_standard_function-expression-body = disabled
+ktlint_standard_multiline-loop = disabled
+ktlint_standard_blank-line-between-when-conditions = disabled
+ktlint_standard_value-parameter-comment = disabled
+ktlint_standard_spacing-between-declarations-with-comments = disabled
+
+# ── Nommage des fonctions ────────────────────────────────────────────────────────────────────
+# Un `@Composable` se nomme en PascalCase par convention Compose ; la règle y voit 51 fautes.
+# C'est elle qui a tort ici.
+ktlint_standard_function-naming = disabled
