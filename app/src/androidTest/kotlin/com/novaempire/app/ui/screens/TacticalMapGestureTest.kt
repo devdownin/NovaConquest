@@ -6,6 +6,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTouchInput
@@ -111,7 +112,16 @@ class TacticalMapGestureTest {
         }
     }
 
-    private fun map() = rule.onNodeWithContentDescription("Secteur", substring = true)
+    /**
+     * Le plateau, repéré par son `testTag`.
+     *
+     * Il l'était par un morceau de sa description parlée (« Secteur »). Le jour où le cas « aucun
+     * curseur » s'est mis à annoncer « Carte tactique. Flèches pour… », les cinq tests ci-dessous
+     * ont cessé de trouver le moindre nœud — et comme ce job ne tourne que sur la branche
+     * principale, la casse y est restée plusieurs jours. Un `testTag` ne bouge pas quand la
+     * formulation change.
+     */
+    private fun map() = rule.onNodeWithTag(TACTICAL_MAP_TAG)
 
     @Test
     fun tappingTheMapSelectsTheHexUnderTheFinger() {

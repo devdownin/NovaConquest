@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -611,6 +612,12 @@ fun TacticalMapScreen(
                     if (handled) keyboardActive = true
                     handled
                 }
+                // Repère stable pour les tests. Ils visaient la carte par un morceau de sa
+                // description parlée (« Secteur ») ; le jour où le cas « aucun curseur » s'est mis
+                // à annoncer « Carte tactique. Flèches pour… », les cinq tests instrumentés se
+                // sont mis à ne plus trouver de nœud du tout. Un `testTag` ne bouge pas quand la
+                // formulation change, et c'est bien le nœud qu'on cherche, pas ce qu'il dit.
+                .testTag(TACTICAL_MAP_TAG)
                 .semantics {
                     contentDescription = cursorDescription
                     liveRegion = LiveRegionMode.Polite
