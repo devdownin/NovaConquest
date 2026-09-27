@@ -1,15 +1,15 @@
 package com.novaempire.core.engine
 
 import com.novaempire.core.domain.models.Faction
+import com.novaempire.core.domain.models.GameUnit
 import com.novaempire.core.domain.models.MapArchetype
 import com.novaempire.core.domain.models.MapSize
-import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.models.TechRegistry
+import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.domain.state.PlayerState
 import com.novaempire.core.hex.HexCoord
-import com.novaempire.core.domain.models.GameUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
