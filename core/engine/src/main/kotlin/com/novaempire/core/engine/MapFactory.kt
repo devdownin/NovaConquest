@@ -141,7 +141,7 @@ class MapFactory {
             val base = generateMap(radius, MapArchetype.STANDARD, seed = 20260927L)
             val tiles = base.tiles.toMutableMap()
             fun place(q: Int, r: Int, terrain: TerrainType, level: Int = 0,
-                    specialty: PlanetSpecialty? = null) {
+                specialty: PlanetSpecialty? = null) {
                 val coord = HexCoord(q, r, -q - r)
                 val old = tiles[coord] ?: return
                 tiles[coord] = old.copy(terrain = terrain, systemLevel = level, specialty = specialty)
