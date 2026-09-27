@@ -226,7 +226,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         perkIds: Set<String> = emptySet()
     ) {
         // Start a new game with mission parameters
-        engine.processIntent(GameIntent.StartNewGameWithSize(mission.mapSize, mission.mapArchetype))
+        engine.processIntent(GameIntent.StartNewGameWithSize(mission.mapSize, mission.mapArchetype, mission.id))
 
         // Select the correct faction
         engine.processIntent(GameIntent.SelectFaction(mission.playerFaction))

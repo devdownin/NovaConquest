@@ -102,12 +102,13 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         }
     }
 
-    private fun createInitialState(mapSize: MapSize, archetype: MapArchetype): GameState {
+    private fun createInitialState(mapSize: MapSize, archetype: MapArchetype, missionId: String? = null): GameState {
         // Draw a fresh seed from the injected RNG so every new game produces a different
         // galaxy. Without this the factory falls back to its default fixed seed and every
         // party — STANDARD or ZODIAC — would generate the exact same map. Tests inject a
         // deterministic Random, keeping map generation reproducible where it matters.
-        val map = MapFactory.generateMap(radius = mapSize.radius, archetype = archetype, seed = deps.rng.nextLong())
+        val map = if (missionId == "mission_1") MapFactory.awakeningMap()
+            else MapFactory.generateMap(radius = mapSize.radius, archetype = archetype, seed = deps.rng.nextLong())
         val spawnPoints = MapFactory.spawnPointsFor(mapSize.radius).filter { map.tiles.containsKey(it) }
         val units = mutableMapOf<HexCoord, GameUnit>()
         val playerStates = mutableMapOf<Faction, PlayerState>()
@@ -475,7 +476,7 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         is GameIntent.StartNewGame ->
             GameResult(createInitialState(MapSize.MEDIUM, MapArchetype.STANDARD).keepingCampaignProgress(state))
         is GameIntent.StartNewGameWithSize ->
-            GameResult(createInitialState(intent.mapSize, intent.archetype).keepingCampaignProgress(state))
+            GameResult(createInitialState(intent.mapSize, intent.archetype, intent.missionId).keepingCampaignProgress(state))
         is GameIntent.LoadGame ->
             // A save carries the campaign record as it stood when the file was written, which can
             // be older than the durable progress store the engine was seeded with at boot.
@@ -529,7 +530,8 @@ sealed class GameIntent {
     object StartNewGame : GameIntent()
     data class StartNewGameWithSize(
         val mapSize: MapSize = MapSize.MEDIUM,
-        val archetype: MapArchetype = MapArchetype.STANDARD
+        val archetype: MapArchetype = MapArchetype.STANDARD,
+        val missionId: String? = null
     ) : GameIntent()
     data class LoadGame(val loadedState: GameState) : GameIntent()
     data class SiegePlanet(val attackerCoord: HexCoord, val planetCoord: HexCoord) : GameIntent()
