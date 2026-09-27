@@ -692,7 +692,8 @@ fun TacticalMapScreen(
                 // parallèle plutôt qu'à la suite : bout à bout, cinq tirs d'IA rejoués feraient
                 // attendre le joueur plusieurs secondes.
                 kotlinx.coroutines.coroutineScope {
-                    launch { readoutProgress.animateTo(1f, animationSpec = tween(COMBAT_READOUT_MS, easing = LinearEasing)) }
+                    launch { readoutProgress.animateTo(1f, animationSpec = tween(COMBAT_READOUT_MS,
+                        easing = LinearEasing)) }
                     // L'épave se désintègre sur la même horloge que l'explosion : une seule
                     // animation à suivre, donc aucun risque de les voir se désynchroniser.
                     explosionScale.animateTo(1f, animationSpec = tween(currentDisplaySettings.motionMillis(400)))
@@ -1149,7 +1150,8 @@ fun TacticalMapScreen(
                                 drawTerrainEmblem(x, y, hexRadius, tile.terrain, tile.owner, mapPalette, alpha)
                             } else {
                                 when (tile.terrain) {
-                                    TerrainType.PLANET -> drawPlanet(x, y, hexRadius, tile.owner, graphicsConfig, mapPalette)
+                                    TerrainType.PLANET -> drawPlanet(x, y, hexRadius, tile.owner,
+                                        graphicsConfig, mapPalette)
                                     TerrainType.ASTEROIDS -> drawAsteroids(x, y, hexRadius, mapPalette)
                                     TerrainType.NEBULA -> drawNebula(x, y, hexRadius, mapPalette)
                                     TerrainType.BLACK_HOLE -> drawBlackHole(x, y, hexRadius, mapPalette)
@@ -1221,15 +1223,21 @@ fun TacticalMapScreen(
                         val hx = centerX + horizSpacing * (coord.q + coord.r / 2f)
                         val hy = centerY + vertSpacing * coord.r
                         if (!onScreen(hx, hy)) return
-                        drawHexagonPath(centerX = hx, centerY = hy, radius = hexRadius, color = color, fill = fill, strokeWidth = strokeWidth)
+                        drawHexagonPath(centerX = hx, centerY = hy, radius = hexRadius, color = color,
+                            fill = fill, strokeWidth = strokeWidth)
                     }
                     reachableHexes.forEach { overlayHex(it, NeonCyan.copy(alpha = 0.25f), fill = true) }
-                    reachableHexes.forEach { overlayHex(it, NeonCyan.copy(alpha = 0.55f), fill = false, strokeWidth = 2f) }
+                    reachableHexes.forEach { overlayHex(it, NeonCyan.copy(alpha = 0.55f), fill = false,
+                        strokeWidth = 2f) }
                     attackRangeHexes.forEach { overlayHex(it, NeonRed.copy(alpha = 0.10f), fill = true) }
-                    safeTargetCoords.forEach { overlayHex(it, NeonGreen.copy(alpha = 0.85f), fill = false, strokeWidth = 3.5f) }
-                    attackableCoords.forEach { if (it !in safeTargetCoords) overlayHex(it, NeonRed.copy(alpha = 0.55f), fill = false, strokeWidth = 3f) }
-                    capturableCoords.forEach { overlayHex(it, NeonGold.copy(alpha = 0.85f), fill = false, strokeWidth = 3.5f) }
-                    siegeableCoords.forEach { if (it !in capturableCoords) overlayHex(it, NeonOrange.copy(alpha = 0.85f), fill = false, strokeWidth = 3f) }
+                    safeTargetCoords.forEach { overlayHex(it, NeonGreen.copy(alpha = 0.85f), fill = false,
+                        strokeWidth = 3.5f) }
+                    attackableCoords.forEach { if (it !in safeTargetCoords) overlayHex(it,
+                        NeonRed.copy(alpha = 0.55f), fill = false, strokeWidth = 3f) }
+                    capturableCoords.forEach { overlayHex(it, NeonGold.copy(alpha = 0.85f), fill = false,
+                        strokeWidth = 3.5f) }
+                    siegeableCoords.forEach { if (it !in capturableCoords) overlayHex(it,
+                        NeonOrange.copy(alpha = 0.85f), fill = false, strokeWidth = 3f) }
                     selectedHex?.let { overlayHex(it, NeonCyan, fill = false, strokeWidth = 4f) }
 
                     // Keyboard / D-pad cursor. Drawn directly rather than through overlayHex so it
@@ -1252,7 +1260,8 @@ fun TacticalMapScreen(
                     // Fleets. Drawn after the overlays so a sprite is never tinted by a range wash.
                     val animatedUnitIds = movingUnits.mapTo(mutableSetOf()) { it.unit.id }
                     gameState.units.values.forEach { unit ->
-                        if (unit.faction != gameState.activeFaction && !visibleHexes.contains(unit.position)) return@forEach
+                        if (unit.faction != gameState.activeFaction &&
+                            !visibleHexes.contains(unit.position)) return@forEach
                         // The unit in flight is drawn at its interpolated position by the animation
                         // layer; drawing it here too showed the ship in two places at once for the
                         // 350 ms of the move.
@@ -1371,7 +1380,8 @@ fun TacticalMapScreen(
                             val highlightColor = when {
                                 targetUnit != null && targetUnit.faction != gameState.activeFaction -> NeonRed
                                 targetTile?.terrain == TerrainType.PLANET &&
-                                    targetTile.owner != null && targetTile.owner != gameState.activeFaction -> NeonOrange
+                                    targetTile.owner != null &&
+                                        targetTile.owner != gameState.activeFaction -> NeonOrange
                                 else -> NeonCyan
                             }
 
@@ -1429,9 +1439,12 @@ fun TacticalMapScreen(
                                 drawCircle(
                                     brush = Brush.radialGradient(
                                         colorStops = arrayOf(
-                                            0.0f to mapPalette.explosionCore.copy(alpha = (1f - explosionScale.value) * 0.95f),
-                                            0.4f to mapPalette.explosionMid.copy(alpha = (0.7f - explosionScale.value).coerceAtLeast(0f)),
-                                            0.8f to mapPalette.explosionEdge.copy(alpha = (0.3f - explosionScale.value).coerceAtLeast(0f)),
+                                            0.0f to mapPalette.explosionCore.copy(alpha =
+                                                (1f - explosionScale.value) * 0.95f),
+                                            0.4f to mapPalette.explosionMid.copy(alpha =
+                                                (0.7f - explosionScale.value).coerceAtLeast(0f)),
+                                            0.8f to mapPalette.explosionEdge.copy(alpha =
+                                                (0.3f - explosionScale.value).coerceAtLeast(0f)),
                                             1.0f to Color.Transparent
                                         ),
                                         center = Offset(dx, dy),
@@ -1564,9 +1577,12 @@ fun TacticalMapScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Credits + income preview
-                IndustrialPanel(modifier = Modifier.padding(vertical = 2.dp), backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)) {
-                    Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Star, contentDescription = null, tint = NeonOrange, modifier = Modifier.size(16.dp))
+                IndustrialPanel(modifier = Modifier.padding(vertical = 2.dp),
+                    backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)) {
+                    Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Star, contentDescription = null, tint = NeonOrange,
+                            modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             // Le compteur défile jusqu'à sa nouvelle valeur : un revenu de fin de
@@ -1590,9 +1606,11 @@ fun TacticalMapScreen(
 
                 // Active Faction (colored dot)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(modifier = Modifier.size(12.dp).background(activeFactionColor, shape = androidx.compose.foundation.shape.CircleShape))
+                    Box(modifier = Modifier.size(12.dp).background(activeFactionColor,
+                        shape = androidx.compose.foundation.shape.CircleShape))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(gameState.activeFaction.name, style = MaterialTheme.typography.labelLarge, color = activeFactionColor)
+                    Text(gameState.activeFaction.name, style = MaterialTheme.typography.labelLarge,
+                        color = activeFactionColor)
                 }
 
                 if (isAiThinking) {
@@ -1613,11 +1631,16 @@ fun TacticalMapScreen(
 
                 // Event
                 if (gameState.activeEvent != GalacticEvent.NONE) {
-                    IndustrialPanel(modifier = Modifier.padding(vertical = 4.dp), borderColor = NeonOrange.copy(alpha = 0.5f), backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)) {
-                        Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Menu, contentDescription = null, tint = NeonOrange, modifier = Modifier.size(16.dp))
+                    IndustrialPanel(modifier = Modifier.padding(vertical = 4.dp),
+                        borderColor = NeonOrange.copy(alpha = 0.5f),
+                            backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)) {
+                        Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Menu, contentDescription = null, tint = NeonOrange,
+                                modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(gameState.activeEvent.displayName.uppercase(), style = MaterialTheme.typography.labelLarge, color = NeonOrange)
+                            Text(gameState.activeEvent.displayName.uppercase(),
+                                style = MaterialTheme.typography.labelLarge, color = NeonOrange)
                         }
                     }
                 }
@@ -1684,39 +1707,56 @@ fun TacticalMapScreen(
                                 Text(tile.terrain.name, style = MaterialTheme.typography.labelLarge)
                             }
                             if (tile.terrain == TerrainType.PLANET) {
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Row(modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text("Owner", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                                    Text(tile.owner?.name ?: "NEUTRAL", style = MaterialTheme.typography.labelLarge, color = tile.owner?.let { getFactionColor(it) } ?: NeonGreen)
+                                    Text(tile.owner?.name ?: "NEUTRAL",
+                                        style = MaterialTheme.typography.labelLarge,
+                                            color = tile.owner?.let { getFactionColor(it) } ?: NeonGreen)
                                 }
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Row(modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text("Level", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
                                     Text(tile.systemLevel.toString(), style = MaterialTheme.typography.labelLarge)
                                 }
                                 if (tile.systemLevel > 0) {
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text("Defense", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                                        Text("${tile.systemLevel * 2} dmg/siege", style = MaterialTheme.typography.labelLarge, color = NeonOrange)
+                                    Row(modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text("Defense", style = MaterialTheme.typography.labelLarge,
+                                            color = TextSecondary)
+                                        Text("${tile.systemLevel * 2} dmg/siege",
+                                            style = MaterialTheme.typography.labelLarge, color = NeonOrange)
                                     }
                                 }
                                 tile.specialty?.let { specialty ->
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text("Specialty", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                                        Text(specialty.displayName, style = MaterialTheme.typography.labelLarge, color = NeonCyan)
+                                    Row(modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text("Specialty", style = MaterialTheme.typography.labelLarge,
+                                            color = TextSecondary)
+                                        Text(specialty.displayName,
+                                            style = MaterialTheme.typography.labelLarge, color = NeonCyan)
                                     }
                                 }
                             }
                             if (unitOnTile != null) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 // Unit name + faction color
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(unitOnTile.type.name, style = MaterialTheme.typography.labelLarge, color = getFactionColor(unitOnTile.faction))
+                                Row(modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text(unitOnTile.type.name, style = MaterialTheme.typography.labelLarge,
+                                        color = getFactionColor(unitOnTile.faction))
                                     if (unitOnTile.faction == gameState.activeFaction) {
                                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            if (unitOnTile.hasMoved) Text("MOVED", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-                                            if (unitOnTile.hasAttacked) Text("FIRED", style = MaterialTheme.typography.labelSmall, color = NeonRed.copy(alpha = 0.8f))
+                                            if (unitOnTile.hasMoved) Text("MOVED",
+                                                style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                                            if (unitOnTile.hasAttacked) Text("FIRED",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                    color = NeonRed.copy(alpha = 0.8f))
                                         }
                                     } else {
-                                        Text(unitOnTile.faction.displayName, style = MaterialTheme.typography.labelSmall, color = getFactionColor(unitOnTile.faction).copy(alpha = 0.8f))
+                                        Text(unitOnTile.faction.displayName,
+                                            style = MaterialTheme.typography.labelSmall,
+                                                color = getFactionColor(unitOnTile.faction).copy(alpha = 0.8f))
                                     }
                                 }
                                 // HP bar
@@ -1726,15 +1766,21 @@ fun TacticalMapScreen(
                                     hpFraction > 0.3f -> NeonOrange
                                     else -> NeonRed
                                 }
-                                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Box(modifier = Modifier.weight(1f).height(6.dp).background(MaterialTheme.colorScheme.surfaceVariant)) {
-                                        Box(modifier = Modifier.fillMaxHeight().fillMaxWidth(hpFraction).background(hpColor))
+                                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Box(modifier =
+                                        Modifier.weight(1f).height(6.dp)
+                                            .background(MaterialTheme.colorScheme.surfaceVariant)) {
+                                        Box(modifier =
+                                            Modifier.fillMaxHeight().fillMaxWidth(hpFraction).background(hpColor))
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("${unitOnTile.currentHp}/${unitOnTile.type.maxHp}", style = MaterialTheme.typography.labelSmall, color = hpColor)
+                                    Text("${unitOnTile.currentHp}/${unitOnTile.type.maxHp}",
+                                        style = MaterialTheme.typography.labelSmall, color = hpColor)
                                 }
                                 // Stats row
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Row(modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween) {
                                     StatChip("ATK", unitOnTile.type.attack.toString())
                                     StatChip("RNG", unitOnTile.type.range.toString())
                                     StatChip(
@@ -1762,9 +1808,12 @@ fun TacticalMapScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Text("LOAD ${candidate.type.name}", style = MaterialTheme.typography.labelSmall, color = NeonCyan)
-                                        IconButton(onClick = { currentOnLoadUnit(coord, neighbor) }, modifier = Modifier.size(32.dp)) {
-                                            Icon(Icons.Default.Star, contentDescription = "Load", tint = NeonCyan, modifier = Modifier.size(20.dp))
+                                        Text("LOAD ${candidate.type.name}",
+                                            style = MaterialTheme.typography.labelSmall, color = NeonCyan)
+                                        IconButton(onClick = { currentOnLoadUnit(coord, neighbor) },
+                                            modifier = Modifier.size(32.dp)) {
+                                            Icon(Icons.Default.Star, contentDescription = "Load",
+                                                tint = NeonCyan, modifier = Modifier.size(20.dp))
                                         }
                                     }
                                 }
@@ -1778,7 +1827,8 @@ fun TacticalMapScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text("DEPLOY ${cargoType.name}", style = MaterialTheme.typography.labelSmall, color = NeonOrange)
+                                    Text("DEPLOY ${cargoType.name}",
+                                        style = MaterialTheme.typography.labelSmall, color = NeonOrange)
                                     IconButton(
                                         onClick = {
                                             // Deploy to first empty passable adjacent hex
@@ -1791,7 +1841,8 @@ fun TacticalMapScreen(
                                         },
                                         modifier = Modifier.size(32.dp)
                                     ) {
-                                        Icon(Icons.Default.Refresh, contentDescription = "Deploy", tint = NeonOrange, modifier = Modifier.size(20.dp))
+                                        Icon(Icons.Default.Refresh, contentDescription = "Deploy",
+                                            tint = NeonOrange, modifier = Modifier.size(20.dp))
                                     }
                                 }
                             }
@@ -1807,10 +1858,12 @@ fun TacticalMapScreen(
                         }
                     }
 
-                    // Siege / Capture — unit selected with adjacent enemy planet, OR planet selected with adjacent friendly unit
+                    // Siege / Capture — unit selected with adjacent enemy planet, OR planet selected with
+                    // adjacent friendly unit
                     run {
                         val attackerUnit = when {
-                            unitOnTile != null && unitOnTile.faction == gameState.activeFaction && !unitOnTile.hasAttacked -> unitOnTile
+                            unitOnTile != null && unitOnTile.faction == gameState.activeFaction &&
+                                !unitOnTile.hasAttacked -> unitOnTile
                             else -> null
                         }
                         val attackerCoord: HexCoord?
@@ -1842,19 +1895,23 @@ fun TacticalMapScreen(
                             if (targetPlanet.systemLevel > 0) {
                                 IndustrialPanel(modifier = Modifier.size(48.dp)) {
                                     IconButton(
-                                        onClick = { siegePreviewData = Triple(attackerCoord, targetPlanet.coord, false) },
+                                        onClick = { siegePreviewData = Triple(attackerCoord,
+                                            targetPlanet.coord, false) },
                                         modifier = Modifier.fillMaxSize()
                                     ) {
-                                        Icon(Icons.Default.PlayArrow, contentDescription = "Siege Planet", tint = NeonOrange)
+                                        Icon(Icons.Default.PlayArrow, contentDescription = "Siege Planet",
+                                            tint = NeonOrange)
                                     }
                                 }
                             } else {
                                 IndustrialPanel(modifier = Modifier.size(48.dp)) {
                                     IconButton(
-                                        onClick = { siegePreviewData = Triple(attackerCoord, targetPlanet.coord, true) },
+                                        onClick = { siegePreviewData = Triple(attackerCoord,
+                                            targetPlanet.coord, true) },
                                         modifier = Modifier.fillMaxSize()
                                     ) {
-                                        Icon(Icons.Default.CheckCircle, contentDescription = "Capture Planet", tint = NeonGreen)
+                                        Icon(Icons.Default.CheckCircle, contentDescription = "Capture Planet",
+                                            tint = NeonGreen)
                                     }
                                 }
                             }
@@ -1873,7 +1930,8 @@ fun TacticalMapScreen(
                 // Damage ranges come from the shared AttackCalculator — same bonuses/terrain the
                 // engine applies — instead of re-deriving them here (which drifted from combat).
                 val (minDmg, maxDmg) = AttackCalculator.damageRange(gameState, attackerCoord, defenderCoord)
-                val (rawCounterMin, rawCounterMax) = AttackCalculator.damageRange(gameState, defenderCoord, attackerCoord)
+                val (rawCounterMin, rawCounterMax) = AttackCalculator.damageRange(gameState, defenderCoord,
+                    attackerCoord)
 
                 // The counter only happens if the defender survives AND can reach back.
                 val defenderInRange = attackerCoord.distanceTo(defenderCoord) <= defender.type.range
@@ -2037,7 +2095,8 @@ fun SiegePreviewOverlay(
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Niveau de départ", style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
-                        Text("${if (hasTerraforming) 2 else 1}", style = MaterialTheme.typography.bodyLarge, color = NeonCyan)
+                        Text("${if (hasTerraforming) 2 else 1}", style = MaterialTheme.typography.bodyLarge,
+                            color = NeonCyan)
                     }
                 } else {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -2046,7 +2105,8 @@ fun SiegePreviewOverlay(
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Représailles orbitales", style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
+                        Text("Représailles orbitales", style = MaterialTheme.typography.bodyLarge,
+                            color = TextSecondary)
                         Text("-$retaliation PV", style = MaterialTheme.typography.bodyLarge, color = NeonRed)
                     }
                     Spacer(modifier = Modifier.height(6.dp))
@@ -2060,7 +2120,8 @@ fun SiegePreviewOverlay(
                     }
                     if (hpAfter <= 0) {
                         Spacer(modifier = Modifier.height(6.dp))
-                        Text("⚠ Vaisseau détruit par les défenses", style = MaterialTheme.typography.bodySmall, color = NeonRed)
+                        Text("⚠ Vaisseau détruit par les défenses",
+                            style = MaterialTheme.typography.bodySmall, color = NeonRed)
                     }
                 }
                 Spacer(modifier = Modifier.height(24.dp))
@@ -2188,11 +2249,15 @@ fun TerrainTooltipOverlay(
         TerrainType.PLANET -> "Planète habitée. Génère des crédits. Peut être capturée ou assiégée."
         TerrainType.ASTEROIDS -> "Champ d'astéroïdes. Impassable."
         TerrainType.NEBULA -> "Nébuleuse. Bloque la vision. Les flottes peuvent la traverser."
-        TerrainType.BLACK_HOLE -> "Trou noir. Danger extrême — un vaisseau qui y stationne perd 3 PV en fin de tour et attaque à -25%."
+        TerrainType.BLACK_HOLE -> "Trou noir. Danger extrême — un vaisseau qui y stationne perd 3 PV en fin" +
+            " de tour et attaque à -25%."
         TerrainType.WORMHOLE -> "Ver de l'espace. Permet des déplacements longue distance."
-        TerrainType.PLASMA_CLOUD -> "Nuage de plasma. Bloque la vision et ralentit les flottes (coût de déplacement x2)."
-        TerrainType.ION_STORM -> "Champ ionique stationnaire. Bloque la vision et ralentit les flottes (coût de déplacement x2)."
-        TerrainType.ANOMALY -> "Anomalie galactique. Chaque fin de tour, un vaisseau qui y stationne subit une impulsion imprévisible (soin ou dégâts)."
+        TerrainType.PLASMA_CLOUD -> "Nuage de plasma. Bloque la vision et ralentit les flottes (coût de" +
+            " déplacement x2)."
+        TerrainType.ION_STORM -> "Champ ionique stationnaire. Bloque la vision et ralentit les flottes" +
+            " (coût de déplacement x2)."
+        TerrainType.ANOMALY -> "Anomalie galactique. Chaque fin de tour, un vaisseau qui y stationne subit" +
+            " une impulsion imprévisible (soin ou dégâts)."
     }
 
     Box(
@@ -2225,16 +2290,19 @@ fun TerrainTooltipOverlay(
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(description, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+                Text(description, style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface)
                 if (tile.terrain == TerrainType.PLANET) {
                     Spacer(modifier = Modifier.height(6.dp))
                     val income = 5 + tile.systemLevel * 2
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Text("Niveau ${tile.systemLevel}", style = MaterialTheme.typography.labelSmall, color = NeonOrange)
+                        Text("Niveau ${tile.systemLevel}", style = MaterialTheme.typography.labelSmall,
+                            color = NeonOrange)
                         Text("+$income C/tour", style = MaterialTheme.typography.labelSmall, color = NeonGreen)
                         val owner = tile.owner
                         if (owner != null) {
-                            Text(owner.name, style = MaterialTheme.typography.labelSmall, color = getFactionColor(owner))
+                            Text(owner.name, style = MaterialTheme.typography.labelSmall,
+                                color = getFactionColor(owner))
                         } else {
                             Text("NEUTRE", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                         }
