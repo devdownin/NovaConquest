@@ -35,14 +35,3 @@ spotless {
     }
     ratchetFrom("origin/main")
 }
-
-// Temporary branch diagnostic: run the formatter after a failed check and print its output.
-// A finalizedBy task does not change the failed check result. Remove after capturing it.
-tasks.register<Exec>("printFormattedTacticalMap") {
-    dependsOn("spotlessKotlinApply")
-    val source = "app/src/main/kotlin/com/novaempire/app/ui/screens/TacticalMapScreen.kt"
-    commandLine("sh", "-c", "echo FORMAT_START; base64 -w0 $source; echo; echo FORMAT_END")
-}
-tasks.named("spotlessKotlinCheck") {
-    finalizedBy("printFormattedTacticalMap")
-}

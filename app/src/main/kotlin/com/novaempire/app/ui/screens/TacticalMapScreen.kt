@@ -26,8 +26,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -132,12 +132,12 @@ import com.novaempire.core.engine.MovementCalculator
 import com.novaempire.core.hex.HexCoord
 import com.novaempire.core.hex.HexLayout
 import com.novaempire.core.hex.HexPathfinder
-import kotlin.math.PI
-import kotlin.math.sin
-import kotlin.math.sqrt
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
+import kotlin.math.PI
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 /** Hex radius in density-independent units — 30.dp reproduces the historical 60 px on a 2x screen. */
 private val HEX_RADIUS_DP = 30.dp
@@ -732,7 +732,7 @@ fun TacticalMapScreen(
             }
             val full = tracePath(prev, unit.faction, from, unit.position)
             val shown = if (unit.faction == gameState.activeFaction) full
-                        else visiblePathSuffix(full, visibleHexes)
+            else visiblePathSuffix(full, visibleHexes)
             if (shown.size < 2) return@mapNotNull null
             MovingUnitAnim(unit, shown)
         }
@@ -806,7 +806,7 @@ fun TacticalMapScreen(
 
     // Center map on a coord when requested by SMART FOCUS
     LaunchedEffect(centerRequest) {
-        centerRequest?.let { (coord, _) ->  // second component is the re-trigger nonce, intentionally unused here
+        centerRequest?.let { (coord, _) -> // second component is the re-trigger nonce, intentionally unused here
             val hSpacing = sqrt(3f) * hexRadiusPx
             val vSpacing = 1.5f * hexRadiusPx
             camera.pan = Offset(
@@ -843,7 +843,6 @@ fun TacticalMapScreen(
     )
 
     Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-
         // Gesture layer. The detectors sit OUTSIDE the map's graphicsLayer (see [screenToHex]):
         // inside it, every pan changed the coordinate system the next pointer event is reported
         // in, so the map lagged the finger by a factor of 1/(scale+1) and pinch-zoom could not be
@@ -1381,7 +1380,7 @@ fun TacticalMapScreen(
                                 targetUnit != null && targetUnit.faction != gameState.activeFaction -> NeonRed
                                 targetTile?.terrain == TerrainType.PLANET &&
                                     targetTile.owner != null &&
-                                        targetTile.owner != gameState.activeFaction -> NeonOrange
+                                    targetTile.owner != gameState.activeFaction -> NeonOrange
                                 else -> NeonCyan
                             }
 
@@ -1588,7 +1587,7 @@ fun TacticalMapScreen(
                             // Le compteur défile jusqu'à sa nouvelle valeur : un revenu de fin de
                             // tour ou le prix d'un vaisseau se lisaient jusqu'ici comme un simple
                             // saut de chiffre, impossible à relier à ce qui venait de se passer.
-                            Text("${rolledCredits} C", style = MaterialTheme.typography.labelLarge)
+                            Text("$rolledCredits C", style = MaterialTheme.typography.labelLarge)
                             Text(
                                 text = "${if (incomePerTurn >= 0) "+" else ""}$incomePerTurn C/turn",
                                 style = MaterialTheme.typography.labelSmall,
@@ -1633,7 +1632,7 @@ fun TacticalMapScreen(
                 if (gameState.activeEvent != GalacticEvent.NONE) {
                     IndustrialPanel(modifier = Modifier.padding(vertical = 4.dp),
                         borderColor = NeonOrange.copy(alpha = 0.5f),
-                            backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)) {
+                        backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)) {
                         Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Menu, contentDescription = null, tint = NeonOrange,
@@ -1712,7 +1711,7 @@ fun TacticalMapScreen(
                                     Text("Owner", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
                                     Text(tile.owner?.name ?: "NEUTRAL",
                                         style = MaterialTheme.typography.labelLarge,
-                                            color = tile.owner?.let { getFactionColor(it) } ?: NeonGreen)
+                                        color = tile.owner?.let { getFactionColor(it) } ?: NeonGreen)
                                 }
                                 Row(modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween) {
@@ -1751,12 +1750,12 @@ fun TacticalMapScreen(
                                                 style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                                             if (unitOnTile.hasAttacked) Text("FIRED",
                                                 style = MaterialTheme.typography.labelSmall,
-                                                    color = NeonRed.copy(alpha = 0.8f))
+                                                color = NeonRed.copy(alpha = 0.8f))
                                         }
                                     } else {
                                         Text(unitOnTile.faction.displayName,
                                             style = MaterialTheme.typography.labelSmall,
-                                                color = getFactionColor(unitOnTile.faction).copy(alpha = 0.8f))
+                                            color = getFactionColor(unitOnTile.faction).copy(alpha = 0.8f))
                                     }
                                 }
                                 // HP bar
@@ -1835,7 +1834,7 @@ fun TacticalMapScreen(
                                             val deployHex = HexCoord.directions.map { coord + it }
                                                 .firstOrNull { h ->
                                                     gameState.units[h] == null &&
-                                                    gameState.map.tiles[h]?.terrain?.isPassable == true
+                                                        gameState.map.tiles[h]?.terrain?.isPassable == true
                                                 }
                                             if (deployHex != null) currentOnDeployUnit(coord, deployHex, idx)
                                         },
@@ -2144,7 +2143,6 @@ fun SiegePreviewOverlay(
         }
     }
 }
-
 
 /** French label for a terrain, matching the wording of the long-press terrain sheet. */
 private fun terrainLabel(terrain: TerrainType): String = when (terrain) {
