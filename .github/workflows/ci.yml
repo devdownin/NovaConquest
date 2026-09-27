@@ -69,6 +69,17 @@ jobs:
         if: github.event.inputs.skip_tests != 'true'
         run: gradle spotlessCheck
 
+      # Temporary diagnostic for this branch: export formatter output after a failed check.
+      # The failed style gate remains failed; remove this step with the formatted source.
+      - name: Export tactical formatter output
+        if: failure()
+        run: |
+          gradle spotlessApply
+          echo FORMAT_START
+          base64 -w0 app/src/main/kotlin/com/novaempire/app/ui/screens/TacticalMapScreen.kt
+          echo
+          echo FORMAT_END
+
       - name: Unit tests — core modules
         if: github.event.inputs.skip_tests != 'true'
         run: gradle :core:hex:test :core:domain:test :core:engine:test
