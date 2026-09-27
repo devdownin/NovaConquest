@@ -254,7 +254,9 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
             val nextBuildQueue = currentState.playerStates[humanFaction]?.buildQueue ?: emptyList()
             if (prevBuildQueue.size > nextBuildQueue.size) {
                 val count = prevBuildQueue.size - nextBuildQueue.size
-                _effects.emit(GameEffect.ShowNotification("$count UNIT${if (count > 1) "S" else ""} READY FOR DEPLOYMENT", "CYAN"))
+                _effects.emit(
+                    GameEffect.ShowNotification("$count UNIT${if (count > 1) "S" else ""} READY FOR DEPLOYMENT", "CYAN")
+                )
             }
 
             if (prevState.activeEvent != currentState.activeEvent &&
@@ -476,7 +478,10 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         is GameIntent.StartNewGame ->
             GameResult(createInitialState(MapSize.MEDIUM, MapArchetype.STANDARD).keepingCampaignProgress(state))
         is GameIntent.StartNewGameWithSize ->
-            GameResult(createInitialState(intent.mapSize, intent.archetype, intent.missionId).keepingCampaignProgress(state))
+            GameResult(
+                createInitialState(intent.mapSize, intent.archetype, intent.missionId)
+                    .keepingCampaignProgress(state)
+            )
         is GameIntent.LoadGame ->
             // A save carries the campaign record as it stood when the file was written, which can
             // be older than the durable progress store the engine was seeded with at boot.
@@ -526,7 +531,10 @@ sealed class GameIntent {
     object CancelResearch : GameIntent()
     data class BuildUnit(val unitType: UnitType, val location: HexCoord? = null) : GameIntent()
     data class RecruitHero(val heroId: String) : GameIntent()
-    data class ChangeRelation(val targetFaction: Faction, val newRelation: com.novaempire.core.domain.models.DiplomaticRelation) : GameIntent()
+    data class ChangeRelation(
+        val targetFaction: Faction,
+        val newRelation: com.novaempire.core.domain.models.DiplomaticRelation
+    ) : GameIntent()
     object StartNewGame : GameIntent()
     data class StartNewGameWithSize(
         val mapSize: MapSize = MapSize.MEDIUM,

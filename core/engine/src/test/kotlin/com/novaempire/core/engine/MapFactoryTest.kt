@@ -91,7 +91,9 @@ class MapFactoryTest {
         // A wormhole anchor is skipped if it happens to land on a planet, so counts vary by
         // seed — compare the maximum reached across a spread of seeds instead of a single map.
         fun maxWormholes(radius: Int) = (0L until 20L).maxOf { seed ->
-            MapFactory.generateMap(radius = radius, seed = seed).tiles.values.count { it.terrain == TerrainType.WORMHOLE }
+            MapFactory.generateMap(radius = radius, seed = seed).tiles.values.count {
+                it.terrain == TerrainType.WORMHOLE
+            }
         }
         // Small maps attempt a single pair (<= 2 wormholes); large maps attempt up to three pairs.
         assertTrue("Small map should have at most one wormhole pair", maxWormholes(3) <= 2)

@@ -3,6 +3,8 @@ package com.novaempire.app.ui.viewmodels
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.novaempire.core.domain.models.MapArchetype
+import com.novaempire.core.domain.models.MapSize
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.engine.GameEngine
 import com.novaempire.core.engine.GameIntent
@@ -215,8 +217,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startNewGame(
-        mapSize: com.novaempire.core.domain.models.MapSize = com.novaempire.core.domain.models.MapSize.MEDIUM,
-        archetype: com.novaempire.core.domain.models.MapArchetype = com.novaempire.core.domain.models.MapArchetype.STANDARD
+        mapSize: MapSize = MapSize.MEDIUM,
+        archetype: MapArchetype = MapArchetype.STANDARD
     ) {
         engine.processIntent(GameIntent.StartNewGameWithSize(mapSize, archetype))
     }
