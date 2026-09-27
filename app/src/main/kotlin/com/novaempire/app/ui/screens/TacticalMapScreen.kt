@@ -72,6 +72,10 @@ import com.novaempire.app.ui.map.drawPlanet
 import com.novaempire.app.ui.map.drawPlasmaCloud
 import com.novaempire.app.ui.map.drawUnit
 import com.novaempire.app.ui.map.drawWormhole
+import com.novaempire.app.ui.map.MapDetailLevel
+import com.novaempire.app.ui.map.drawTerrainEmblem
+import com.novaempire.app.ui.map.drawTerrainEngraving
+import com.novaempire.app.ui.map.mapDetailLevel
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.components.IndustrialPanel
 import com.novaempire.app.ui.components.motionMillis
@@ -1042,6 +1046,7 @@ fun TacticalMapScreen(
                     val maxLocalY = centerY + (height - centerY - camera.pan.y) / camera.scale + cullPad
 
                     val drawSectorLabels = camera.scale >= SECTOR_LABEL_MIN_SCALE
+                    val detailLevel = mapDetailLevel(camera.scale)
 
                     // Pre-allocate paints for performance
                     val textPaintVisible = android.graphics.Paint().apply {
@@ -1103,16 +1108,23 @@ fun TacticalMapScreen(
                                 )
                             }
 
-                            when (tile.terrain) {
-                                TerrainType.PLANET -> drawPlanet(x, y, hexRadius, tile.owner, graphicsConfig, mapPalette)
-                                TerrainType.ASTEROIDS -> drawAsteroids(x, y, hexRadius, mapPalette)
-                                TerrainType.NEBULA -> drawNebula(x, y, hexRadius, mapPalette)
-                                TerrainType.BLACK_HOLE -> drawBlackHole(x, y, hexRadius, mapPalette)
-                                TerrainType.WORMHOLE -> drawWormhole(x, y, hexRadius, mapPalette)
-                                TerrainType.PLASMA_CLOUD -> drawPlasmaCloud(x, y, hexRadius, mapPalette)
-                                TerrainType.ION_STORM -> drawIonStorm(x, y, hexRadius, mapPalette)
-                                TerrainType.ANOMALY -> drawAnomaly(x, y, hexRadius, mapPalette)
-                                TerrainType.EMPTY -> {}
+                            if (detailLevel == MapDetailLevel.OVERVIEW) {
+                                drawTerrainEmblem(x, y, hexRadius, tile.terrain, tile.owner, mapPalette, alpha)
+                            } else {
+                                when (tile.terrain) {
+                                    TerrainType.PLANET -> drawPlanet(x, y, hexRadius, tile.owner, graphicsConfig, mapPalette)
+                                    TerrainType.ASTEROIDS -> drawAsteroids(x, y, hexRadius, mapPalette)
+                                    TerrainType.NEBULA -> drawNebula(x, y, hexRadius, mapPalette)
+                                    TerrainType.BLACK_HOLE -> drawBlackHole(x, y, hexRadius, mapPalette)
+                                    TerrainType.WORMHOLE -> drawWormhole(x, y, hexRadius, mapPalette)
+                                    TerrainType.PLASMA_CLOUD -> drawPlasmaCloud(x, y, hexRadius, mapPalette)
+                                    TerrainType.ION_STORM -> drawIonStorm(x, y, hexRadius, mapPalette)
+                                    TerrainType.ANOMALY -> drawAnomaly(x, y, hexRadius, mapPalette)
+                                    TerrainType.EMPTY -> Unit
+                                }
+                                if (detailLevel == MapDetailLevel.CLOSE) {
+                                    drawTerrainEngraving(x, y, hexRadius, tile.terrain, mapPalette, alpha)
+                                }
                             }
 
                             // Production indicator: small orange square on planet with active build order
