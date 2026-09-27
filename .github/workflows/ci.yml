@@ -69,7 +69,6 @@ jobs:
         if: github.event.inputs.skip_tests != 'true'
         run: gradle spotlessCheck
 
-
       - name: Unit tests — core modules
         if: github.event.inputs.skip_tests != 'true'
         run: gradle :core:hex:test :core:domain:test :core:engine:test
