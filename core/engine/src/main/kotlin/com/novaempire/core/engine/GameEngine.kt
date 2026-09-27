@@ -108,7 +108,7 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         // party — STANDARD or ZODIAC — would generate the exact same map. Tests inject a
         // deterministic Random, keeping map generation reproducible where it matters.
         val map = if (missionId == "mission_1") MapFactory.awakeningMap()
-            else MapFactory.generateMap(radius = mapSize.radius, archetype = archetype, seed = deps.rng.nextLong())
+        else MapFactory.generateMap(radius = mapSize.radius, archetype = archetype, seed = deps.rng.nextLong())
         val spawnPoints = MapFactory.spawnPointsFor(mapSize.radius).filter { map.tiles.containsKey(it) }
         val units = mutableMapOf<HexCoord, GameUnit>()
         val playerStates = mutableMapOf<Faction, PlayerState>()
@@ -396,11 +396,11 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
             _effects.emit(GameEffect.ShakeCamera)
         }
         val outcome = if (combat.targetDestroyed) "$attackerName DESTROYED $defenderName"
-                      else "$attackerName HIT $defenderName"
+        else "$attackerName HIT $defenderName"
         _effects.emit(GameEffect.ShowNotification(outcome, "RED"))
         if (animate) {
             _effects.emit(if (combat.targetDestroyed) GameEffect.PlaySound("COMBAT_EXPLOSION")
-                          else GameEffect.PlaySound("COMBAT_LASER"))
+            else GameEffect.PlaySound("COMBAT_LASER"))
         }
     }
 
@@ -469,7 +469,7 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         val e = state.activeEvent
         val target = state.eventTargetFaction
         return if (target != null) "${e.displayName} → ${target.displayName}: ${e.description}"
-               else "${e.displayName}: ${e.description}"
+        else "${e.displayName}: ${e.description}"
     }
 
     // ── Reducer dispatcher ────────────────────────────────────────────────────
@@ -502,19 +502,19 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         is GameIntent.Undo -> GameResult(state)
         is GameIntent.SelectFaction ->
             GameResult(state.copy(activeFaction = intent.faction, humanFaction = intent.faction))
-        is GameIntent.MoveUnit     -> handleMoveUnit(state, intent, deps)
-        is GameIntent.AttackUnit   -> handleAttackUnit(state, intent, deps)
+        is GameIntent.MoveUnit -> handleMoveUnit(state, intent, deps)
+        is GameIntent.AttackUnit -> handleAttackUnit(state, intent, deps)
         is GameIntent.ResearchTech -> handleResearchTech(state, intent)
         is GameIntent.CancelResearch -> handleCancelResearch(state)
-        is GameIntent.BuildUnit    -> handleBuildUnit(state, intent)
-        is GameIntent.RecruitHero  -> handleRecruitHero(state, intent)
+        is GameIntent.BuildUnit -> handleBuildUnit(state, intent)
+        is GameIntent.RecruitHero -> handleRecruitHero(state, intent)
         is GameIntent.ChangeRelation -> handleChangeRelation(state, intent)
-        is GameIntent.SiegePlanet  -> handleSiegePlanet(state, intent, deps)
+        is GameIntent.SiegePlanet -> handleSiegePlanet(state, intent, deps)
         is GameIntent.CapturePlanet -> handleCapturePlanet(state, intent, deps)
         is GameIntent.UpgradeSystem -> handleUpgradeSystem(state, intent)
-        is GameIntent.CancelBuild  -> handleCancelBuild(state, intent)
-        is GameIntent.LoadUnit     -> handleLoadUnit(state, intent)
-        is GameIntent.DeployUnit   -> handleDeployUnit(state, intent)
+        is GameIntent.CancelBuild -> handleCancelBuild(state, intent)
+        is GameIntent.LoadUnit -> handleLoadUnit(state, intent)
+        is GameIntent.DeployUnit -> handleDeployUnit(state, intent)
         is GameIntent.UseHeroAbility -> handleUseHeroAbility(state, intent)
     }
 }
