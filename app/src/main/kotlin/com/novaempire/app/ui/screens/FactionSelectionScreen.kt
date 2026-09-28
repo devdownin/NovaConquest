@@ -28,6 +28,7 @@ import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.components.IndustrialPanel
 import com.novaempire.app.ui.components.NoiseOverlay
 import com.novaempire.app.ui.components.HeaderLine
+import com.novaempire.app.ui.map.FactionBadge
 import com.novaempire.app.ui.theme.*
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.MapSize
@@ -383,12 +384,7 @@ fun FactionCard(
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                Icons.Default.Menu,
-                contentDescription = null,
-                tint = if (isSelected) getFactionColor(faction) else TextSecondary,
-                modifier = Modifier.size(40.dp).padding(bottom = 8.dp)
-            )
+            FactionBadge(faction, modifier = Modifier.size(40.dp).padding(bottom = 8.dp))
             Text(
                 text = faction.name,
                 style = MaterialTheme.typography.labelLarge,
