@@ -1,27 +1,42 @@
 package com.novaempire.app.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.novaempire.app.ui.components.HalftoneBackground
+import com.novaempire.app.ui.components.HeaderLine
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.components.IndustrialPanel
 import com.novaempire.app.ui.components.NoiseOverlay
-import com.novaempire.app.ui.components.HeaderLine
 import com.novaempire.app.ui.theme.NeonCyan
 import com.novaempire.app.ui.theme.NeonOrange
 import com.novaempire.app.ui.theme.NeonRed
@@ -69,34 +84,52 @@ fun StarSystemManagementScreen(
                 .padding(16.dp)
         ) {
             // Header
-            Row(
+            BoxWithConstraints(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onClose) {
-                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = NeonCyan)
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text("SECTOR ${coord.q},${coord.r}", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
-                        Text("SYSTEM MANAGEMENT", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                val narrow = mapWindowClass(maxWidth) == MapWindowClass.COMPACT
+                val title: @Composable () -> Unit = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onClose) {
+                            Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = NeonCyan)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("SECTOR ${coord.q},${coord.r}",
+                                style = MaterialTheme.typography.headlineMedium,
+                                color = MaterialTheme.colorScheme.onSurface)
+                            Text("SYSTEM MANAGEMENT", style = MaterialTheme.typography.labelLarge,
+                                color = TextSecondary)
+                        }
                     }
                 }
-                Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("TREASURY", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("${credits} C", style = MaterialTheme.typography.headlineMedium, color = NeonCyan)
+                val treasury: @Composable () -> Unit = {
+                    Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("TREASURY", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("$credits C", style = MaterialTheme.typography.headlineMedium, color = NeonCyan)
+                    }
+                }
+                if (narrow) {
+                    Column { title(); treasury() }
+                } else {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically) {
+                        title()
+                        treasury()
+                    }
                 }
             }
 
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val isCompact = maxWidth < 600.dp
+                val widthClass = mapWindowClass(maxWidth)
 
-                if (isCompact) {
+                if (widthClass != MapWindowClass.EXPANDED) {
                     Column(
                         modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .widthIn(max = if (widthClass == MapWindowClass.COMPACT) 400.dp else 680.dp)
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -109,7 +142,8 @@ fun StarSystemManagementScreen(
                             disabledReason = upgradeDisabledReason,
                             onUpgrade = { onUpgradeSystem(coord) }
                         )
-                        ShipyardPanel(coord, credits, playerState?.buildQueue ?: emptyList(), onBuildUnit, onCancelBuild)
+                        ShipyardPanel(coord, credits, playerState?.buildQueue ?: emptyList(),
+                            onBuildUnit, onCancelBuild)
                     }
                 } else {
                     Row(
@@ -129,8 +163,9 @@ fun StarSystemManagementScreen(
                                 onUpgrade = { onUpgradeSystem(coord) }
                             )
                         }
-                        Column(modifier = Modifier.weight(1.5f)) {
-                            ShipyardPanel(coord, credits, playerState?.buildQueue ?: emptyList(), onBuildUnit, onCancelBuild)
+                        Column(modifier = Modifier.weight(1.5f).verticalScroll(rememberScrollState())) {
+                            ShipyardPanel(coord, credits, playerState?.buildQueue ?: emptyList(),
+                                onBuildUnit, onCancelBuild)
                         }
                     }
                 }
@@ -156,7 +191,8 @@ fun InfrastructurePanel(
                 Text("SYSTEM INFRASTRUCTURE", style = MaterialTheme.typography.labelLarge)
             }
 
-            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Development Level", style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
                 Text("LEVEL $systemLevel / 5", style = MaterialTheme.typography.labelLarge, color = NeonCyan)
             }
@@ -168,13 +204,17 @@ fun InfrastructurePanel(
             Spacer(modifier = Modifier.height(12.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 16.dp)) {
-                Box(modifier = Modifier.weight(1f).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)).padding(12.dp)) {
+                Box(modifier = Modifier.weight(1f)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .padding(12.dp)) {
                     Column {
                         Text("Credit Income", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
                         Text("+$planetIncome / turn", style = MaterialTheme.typography.bodyLarge, color = NeonCyan)
                     }
                 }
-                Box(modifier = Modifier.weight(1f).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)).padding(12.dp)) {
+                Box(modifier = Modifier.weight(1f)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .padding(12.dp)) {
                     Column {
                         Text("Upgrade Cost", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
                         Text(
@@ -210,7 +250,8 @@ fun InfrastructurePanel(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ShipyardPanel(coord: HexCoord, credits: Int, buildQueue: List<BuildOrder>, onBuildUnit: (UnitType, HexCoord) -> Unit, onCancelBuild: (HexCoord) -> Unit = {}) {
+fun ShipyardPanel(coord: HexCoord, credits: Int, buildQueue: List<BuildOrder>,
+    onBuildUnit: (UnitType, HexCoord) -> Unit, onCancelBuild: (HexCoord) -> Unit = {}) {
     val activeOrder = buildQueue.firstOrNull { it.planetCoord == coord }
     IndustrialPanel(modifier = Modifier.fillMaxHeight()) {
         Column(modifier = Modifier.padding(24.dp).fillMaxHeight()) {
@@ -233,7 +274,8 @@ fun ShipyardPanel(coord: HexCoord, credits: Int, buildQueue: List<BuildOrder>, o
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(activeOrder.unitType.name, style = MaterialTheme.typography.headlineMedium)
                             Text(
-                                "${activeOrder.turnsRemaining} TURN${if (activeOrder.turnsRemaining > 1) "S" else ""} LEFT",
+                                "${activeOrder.turnsRemaining} TURN" +
+                                    "${if (activeOrder.turnsRemaining > 1) "S" else ""} LEFT",
                                 style = MaterialTheme.typography.labelLarge,
                                 color = NeonOrange
                             )
@@ -259,7 +301,8 @@ fun ShipyardPanel(coord: HexCoord, credits: Int, buildQueue: List<BuildOrder>, o
                     isPrimary = false
                 )
             } else {
-                Text("AVAILABLE BLUEPRINTS", style = MaterialTheme.typography.labelLarge, color = TextSecondary, modifier = Modifier.padding(bottom = 16.dp))
+                Text("AVAILABLE BLUEPRINTS", style = MaterialTheme.typography.labelLarge,
+                    color = TextSecondary, modifier = Modifier.padding(bottom = 16.dp))
 
                 // Driven by UnitType so every buildable ship is actually offered. Only Scout,
                 // Fighter and Cruiser used to be listed — the player could never field a Carrier
@@ -314,7 +357,8 @@ fun BlueprintCard(
                     color = TextSecondary
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(modifier = Modifier.size(8.dp).background(NeonCyan, shape = androidx.compose.foundation.shape.CircleShape))
+                    Box(modifier = Modifier.size(8.dp)
+                        .background(NeonCyan, shape = androidx.compose.foundation.shape.CircleShape))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("${type.cost} Credits", style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
                 }

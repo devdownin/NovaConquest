@@ -15,6 +15,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -32,11 +33,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
@@ -74,7 +73,6 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
@@ -94,8 +92,11 @@ import com.novaempire.app.ui.components.pointAlongPath
 import com.novaempire.app.ui.components.rememberMotionLoop
 import com.novaempire.app.ui.map.FactionBadge
 import com.novaempire.app.ui.map.MapDetailLevel
+import com.novaempire.app.ui.map.awakeningAccentVisible
 import com.novaempire.app.ui.map.drawAnomaly
 import com.novaempire.app.ui.map.drawAsteroids
+import com.novaempire.app.ui.map.drawAwakeningAccent
+import com.novaempire.app.ui.map.drawAwakeningXylarContact
 import com.novaempire.app.ui.map.drawBlackHole
 import com.novaempire.app.ui.map.drawCombatReadout
 import com.novaempire.app.ui.map.drawExplosionShards
@@ -471,10 +472,6 @@ fun TacticalMapScreen(
     val planetFlashProgress = remember { Animatable(1f) }
     val prevTiles = remember { mutableStateOf(gameState.map.tiles) }
 
-    // Seuil « compact » de Material : en dessous, la largeur ne permet pas une colonne latérale
-    // sans manger le plateau.
-    val isCompactWidth = LocalConfiguration.current.screenWidthDp < 600
-
     val haptic = LocalHapticFeedback.current
     val playerState = gameState.playerStates[gameState.activeFaction]
     val exploredHexes = playerState?.exploredHexes ?: emptySet()
@@ -484,7 +481,6 @@ fun TacticalMapScreen(
         animationSpec = tween(displaySettings.motionMillis(600), easing = FastOutSlowInEasing),
         label = "Credits"
     )
-    val activeFactionColor = getFactionColor(gameState.activeFaction)
 
     // Income preview comes from the shared IncomeCalculator — the same formula TurnManager grants
     // — instead of a hand-rolled copy that used a different base and mis-scoped event bonuses.
@@ -844,7 +840,11 @@ fun TacticalMapScreen(
         label = "UnitPulse"
     )
 
-    Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    BoxWithConstraints(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        val widthClass = mapWindowClass(maxWidth)
+        val isCompactWidth = widthClass != MapWindowClass.EXPANDED
+        val isAwakening = gameState.campaignState.activeMissionId == "mission_1"
+        val stormActive = gameState.activeEvent == GalacticEvent.ION_STORM
         // Gesture layer. The detectors sit OUTSIDE the map's graphicsLayer (see [screenToHex]):
         // inside it, every pan changed the coordinate system the next pointer event is reported
         // in, so the map lagged the finger by a factor of 1/(scale+1) and pinch-zoom could not be
@@ -1176,6 +1176,11 @@ fun TacticalMapScreen(
                                 )
                             }
 
+                            if (awakeningAccentVisible(gameState.campaignState.activeMissionId,
+                                    tile.coord, exploredHexes)) {
+                                drawAwakeningAccent(tile, Offset(x, y), hexRadius, mapPalette, alpha, stormActive)
+                            }
+
                             // Production indicator: small orange square on planet with active build order
                             if (tile.terrain == TerrainType.PLANET && buildingPlanets.contains(tile.coord)) {
                                 val iconSize = hexRadius * 0.22f
@@ -1279,6 +1284,9 @@ fun TacticalMapScreen(
                         val ux = centerX + horizSpacing * (unit.position.q + unit.position.r / 2f)
                         val uy = centerY + vertSpacing * unit.position.r
                         if (!onScreen(ux, uy)) return@forEach
+                        if (isAwakening && unit.faction == Faction.XYLAR) {
+                            drawAwakeningXylarContact(Offset(ux, uy), hexRadius)
+                        }
                         drawIdentifiedUnit(ux, uy, unit, hexRadius, mapPalette)
                     }
                 }
@@ -1529,6 +1537,9 @@ fun TacticalMapScreen(
                                     start = points[reached], end = position, strokeWidth = 3f
                                 )
                             }
+                            if (isAwakening && anim.unit.faction == Faction.XYLAR) {
+                                drawAwakeningXylarContact(position, hexRadius)
+                            }
                             drawIdentifiedUnit(position.x, position.y, anim.unit, hexRadius, mapPalette)
                         }
                     }
@@ -1536,127 +1547,33 @@ fun TacticalMapScreen(
             }
         }
 
-        // HUD overlay
-        // Top Navigation Bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopCenter)
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onOpenAcademy, modifier = Modifier.size(40.dp)) {
-                    Icon(imageVector = Icons.Default.Star, contentDescription = "Hero Academy", tint = NeonCyan)
-                }
-                IconButton(onClick = {
-                    camera.scale = initScale
-                    camera.pan = Offset(
-                        -horizSpacingInit * (initCoord.q + initCoord.r / 2f) * initScale,
-                        -vertSpacingInit * initCoord.r * initScale
-                    )
-                }, modifier = Modifier.size(40.dp)) {
-                    Icon(imageVector = Icons.Default.Refresh, contentDescription = "Reset view", tint = NeonCyan)
-                }
-                IconButton(
-                    onClick = onUndo,
-                    enabled = canUndo && !isAiThinking,
-                    modifier = Modifier.size(40.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowBack,
-                        // Un éclaireur avance presque toujours dans le brouillard, donc ce bouton
-                        // s'éteint souvent. Dire *pourquoi* évite que la règle passe pour un bug.
-                        contentDescription = when {
-                            canUndo -> "Annuler la dernière action"
-                            undoClosedByExploration ->
-                                "Annulation impossible : la dernière action a découvert du terrain"
-                            else -> "Rien à annuler"
-                        },
-                        tint = if (canUndo && !isAiThinking) NeonOrange else TextSecondary.copy(alpha = 0.4f)
-                    )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                Text("NOVA CONQUEST", style = MaterialTheme.typography.titleSmall, color = NeonCyan)
-            }
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(32.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Credits + income preview
-                IndustrialPanel(modifier = Modifier.padding(vertical = 2.dp),
-                    backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)) {
-                    Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Star, contentDescription = null, tint = NeonOrange,
-                            modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            // Le compteur défile jusqu'à sa nouvelle valeur : un revenu de fin de
-                            // tour ou le prix d'un vaisseau se lisaient jusqu'ici comme un simple
-                            // saut de chiffre, impossible à relier à ce qui venait de se passer.
-                            Text("$rolledCredits C", style = MaterialTheme.typography.labelLarge)
-                            Text(
-                                text = "${if (incomePerTurn >= 0) "+" else ""}$incomePerTurn C/turn",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (incomePerTurn >= 0) NeonGreen else NeonRed
-                            )
-                        }
-                    }
-                }
-
-                // Turn
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("TURN", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-                    Text(gameState.turn.toString(), style = MaterialTheme.typography.labelLarge, color = NeonCyan)
-                }
-
-                // Active faction emblem
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    FactionBadge(gameState.activeFaction, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(gameState.activeFaction.name, style = MaterialTheme.typography.labelLarge,
-                        color = activeFactionColor)
-                }
-
-                if (isAiThinking) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.material3.CircularProgressIndicator(
-                            color = NeonOrange,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "AI Thinking...",
-                            color = NeonOrange,
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
-                }
-
-                // Event
-                if (gameState.activeEvent != GalacticEvent.NONE) {
-                    IndustrialPanel(modifier = Modifier.padding(vertical = 4.dp),
-                        borderColor = NeonOrange.copy(alpha = 0.5f),
-                        backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)) {
-                        Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Menu, contentDescription = null, tint = NeonOrange,
-                                modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(gameState.activeEvent.displayName.uppercase(),
-                                style = MaterialTheme.typography.labelLarge, color = NeonOrange)
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.width(16.dp))
-        }
+        // The map keeps the whole viewport; this overlay reshapes itself to the measured width.
+        MapHud(
+            widthClass = widthClass,
+            credits = rolledCredits,
+            incomePerTurn = incomePerTurn,
+            turn = gameState.turn,
+            faction = gameState.activeFaction,
+            isAiThinking = isAiThinking,
+            event = gameState.activeEvent,
+            isAwakening = isAwakening,
+            visibleXylar = gameState.units.values.count { unit ->
+                unit.faction == Faction.XYLAR &&
+                    unit.position in (gameState.playerStates[gameState.humanFaction]?.visibleHexes ?: emptySet())
+            },
+            canUndo = canUndo,
+            undoClosedByExploration = undoClosedByExploration,
+            onOpenAcademy = onOpenAcademy,
+            onResetView = {
+                camera.scale = initScale
+                camera.pan = Offset(
+                    -horizSpacingInit * (initCoord.q + initCoord.r / 2f) * initScale,
+                    -vertSpacingInit * initCoord.r * initScale
+                )
+            },
+            onUndo = onUndo,
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
 
         // Fiche du secteur sélectionné.
         //
@@ -1673,15 +1590,25 @@ fun TacticalMapScreen(
                     modifier = Modifier
                         .align(if (isCompactWidth) Alignment.BottomCenter else Alignment.CenterEnd)
                         .then(
-                            if (isCompactWidth) Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
-                            else Modifier.padding(end = 32.dp)
+                            when (widthClass) {
+                                MapWindowClass.COMPACT ->
+                                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)
+                                MapWindowClass.MEDIUM ->
+                                    Modifier.widthIn(max = 520.dp).fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                                MapWindowClass.EXPANDED -> Modifier.padding(end = 24.dp)
+                            }
                         )
-                        .heightIn(max = if (isCompactWidth) 300.dp else 600.dp)
+                        .heightIn(max = when (widthClass) {
+                            MapWindowClass.COMPACT -> 220.dp
+                            MapWindowClass.MEDIUM -> 320.dp
+                            MapWindowClass.EXPANDED -> 600.dp
+                        })
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     IndustrialPanel(
-                        modifier = (if (isCompactWidth) Modifier.fillMaxWidth() else Modifier.width(220.dp))
+                        modifier = (if (isCompactWidth) Modifier.fillMaxWidth() else Modifier.width(300.dp))
                             .padding(bottom = 16.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
@@ -2115,7 +2042,8 @@ fun SiegePreviewOverlay(
                     }
                 } else {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Dégâts à la planète", style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
+                        Text("Dégâts à la planète", style = MaterialTheme.typography.bodyLarge,
+                            color = TextSecondary)
                         Text("-$siegeDamage niveaux", style = MaterialTheme.typography.bodyLarge, color = NeonOrange)
                     }
                     Spacer(modifier = Modifier.height(6.dp))
