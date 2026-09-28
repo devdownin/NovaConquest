@@ -137,7 +137,7 @@ fun MapHud(
                 else -> "FRONT DISSIPÉ"
             }
             val contacts = if (visibleXylar == 0) "XYLAR : AUCUN CONTACT"
-                else "XYLAR : $visibleXylar CONTACT${if (visibleXylar > 1) "S" else ""}"
+            else "XYLAR : $visibleXylar CONTACT${if (visibleXylar > 1) "S" else ""}"
             Column(modifier = Modifier.fillMaxWidth().padding(top = 3.dp)
                 .background(Color(0xFF263037), RoundedCornerShape(4.dp))
                 .testTag("awakening_status").padding(horizontal = 10.dp, vertical = 5.dp)) {

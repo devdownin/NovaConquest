@@ -108,7 +108,7 @@ fun StarSystemManagementScreen(
                         verticalAlignment = Alignment.CenterVertically) {
                         Text("TREASURY", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("${credits} C", style = MaterialTheme.typography.headlineMedium, color = NeonCyan)
+                        Text("$credits C", style = MaterialTheme.typography.headlineMedium, color = NeonCyan)
                     }
                 }
                 if (narrow) {

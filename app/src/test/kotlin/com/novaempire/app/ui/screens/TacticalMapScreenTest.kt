@@ -105,7 +105,6 @@ class TacticalMapScreenTest {
         }
     }
 
-
     @Test
     fun theMapComposesAndAnnouncesTheHexUnderTheCursor() {
         setMap(testState(), origin)
