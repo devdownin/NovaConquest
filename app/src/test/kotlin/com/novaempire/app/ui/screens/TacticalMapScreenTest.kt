@@ -3,6 +3,7 @@ package com.novaempire.app.ui.screens
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.novaempire.core.domain.models.Faction
@@ -11,6 +12,7 @@ import com.novaempire.core.domain.models.GameUnit
 import com.novaempire.core.domain.models.HexTile
 import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.models.UnitType
+import com.novaempire.core.domain.state.CampaignState
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.domain.state.PlayerState
 import com.novaempire.core.hex.HexCoord
@@ -147,5 +149,11 @@ class TacticalMapScreenTest {
     fun theUndoControlOffersTheActionOnceThereIsHistory() {
         setMap(testState(), origin, canUndo = true)
         rule.onNodeWithContentDescription("Annuler la dernière action").assertExists()
+    }
+
+    @Test
+    fun awakeningMissionExposesItsCorridorAndStormStatus() {
+        setMap(testState().copy(campaignState = CampaignState(activeMissionId = "mission_1")), origin)
+        rule.onNodeWithTag("awakening_status").assertExists()
     }
 }
