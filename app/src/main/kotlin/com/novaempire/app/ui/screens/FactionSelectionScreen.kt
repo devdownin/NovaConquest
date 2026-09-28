@@ -55,6 +55,7 @@ import com.novaempire.app.ui.theme.NeonOrange
 import com.novaempire.app.ui.theme.NeonRed
 import com.novaempire.app.ui.theme.TextSecondary
 import com.novaempire.app.ui.theme.XylarPurple
+import com.novaempire.core.domain.models.BonusType
 import com.novaempire.core.domain.models.Faction
 import com.novaempire.core.domain.models.MapSize
 import com.novaempire.core.domain.models.MapArchetype
@@ -244,7 +245,10 @@ fun FactionDetailPanel(selectedFaction: Faction) {
             Text(
                 text = selectedFaction.description,
                 style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.padding(start = 16.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)).padding(8.dp)
+                modifier = Modifier
+                    .padding(start = 16.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
+                    .padding(8.dp)
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -254,30 +258,45 @@ fun FactionDetailPanel(selectedFaction: Faction) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 val bonuses = mutableListOf<String>()
-                if (selectedFaction.bonusAttack > 0) bonuses.add("+${(selectedFaction.bonusAttack * 100).toInt()}% Attack")
+                if (selectedFaction.bonusAttack > 0) {
+                    bonuses.add("+${(selectedFaction.bonusAttack * 100).toInt()}% Attack")
+                }
                 if (selectedFaction.bonusCredits > 0) bonuses.add("+${selectedFaction.bonusCredits} Credits/Turn")
-                if (selectedFaction.bonusTechDiscount > 0) bonuses.add("-${(selectedFaction.bonusTechDiscount * 100).toInt()}% Tech Cost")
+                if (selectedFaction.bonusTechDiscount > 0) {
+                    bonuses.add("-${(selectedFaction.bonusTechDiscount * 100).toInt()}% Tech Cost")
+                }
                 if (selectedFaction.bonusMovement > 0) bonuses.add("+${selectedFaction.bonusMovement} Movement")
                 if (selectedFaction.bonusVision > 0) bonuses.add("+${selectedFaction.bonusVision} Vision Range")
                 selectedFaction.extraBonuses.forEach { bonus ->
                     bonuses.add(when (bonus.type) {
-                        com.novaempire.core.domain.models.BonusType.UNIT_HP_ON_SPAWN -> "+${bonus.value} HP on new units"
-                        com.novaempire.core.domain.models.BonusType.INCOME_PERCENT -> "+${bonus.value}% Income"
-                        com.novaempire.core.domain.models.BonusType.RESEARCH_SPEED -> "+${bonus.value} Research Speed"
-                        com.novaempire.core.domain.models.BonusType.UPKEEP_MODIFIER -> "${bonus.value} Upkeep/unit"
-                        com.novaempire.core.domain.models.BonusType.CAPTURE_START_LEVEL -> "Captured worlds +${bonus.value} level"
-                        com.novaempire.core.domain.models.BonusType.PRODUCTION_SPEED -> "+${bonus.value} Production Speed"
+                        BonusType.UNIT_HP_ON_SPAWN -> "+${bonus.value} HP on new units"
+                        BonusType.INCOME_PERCENT -> "+${bonus.value}% Income"
+                        BonusType.RESEARCH_SPEED -> "+${bonus.value} Research Speed"
+                        BonusType.UPKEEP_MODIFIER -> "${bonus.value} Upkeep/unit"
+                        BonusType.CAPTURE_START_LEVEL -> "Captured worlds +${bonus.value} level"
+                        BonusType.PRODUCTION_SPEED -> "+${bonus.value} Production Speed"
                         else -> bonus.type.name
                     })
                 }
 
-                Box(modifier = Modifier.widthIn(min = 200.dp).weight(1f, fill = false).padding(12.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
+                Box(modifier = Modifier
+                    .widthIn(min = 200.dp)
+                    .weight(1f, fill = false)
+                    .padding(12.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
                     Column {
                         Text("FACTION BONUS", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                        Text(bonuses.joinToString(", ").ifEmpty { "No specific bonuses" }, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            bonuses.joinToString(", ").ifEmpty { "No specific bonuses" },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
                 }
-                Box(modifier = Modifier.widthIn(min = 200.dp).weight(1f, fill = false).padding(12.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
+                Box(modifier = Modifier
+                    .widthIn(min = 200.dp)
+                    .weight(1f, fill = false)
+                    .padding(12.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
                     Column {
                         Text("STRATEGIC FOCUS", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
                         val focus = when(selectedFaction) {
@@ -318,7 +337,10 @@ fun ConfigurationPanel(
             )
             HeaderLine(color = TextSecondary, modifier = Modifier.padding(bottom = 24.dp))
 
-            Text("GALAXY ARCHETYPE", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 8.dp))
+            Text(
+                "GALAXY ARCHETYPE", style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
@@ -329,7 +351,10 @@ fun ConfigurationPanel(
                         modifier = Modifier
                             .weight(1f)
                             .clickable { onArchetypeSelect(archetype) }
-                            .background(if (isSelected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.surfaceVariant
+                                else MaterialTheme.colorScheme.surface
+                            )
                             .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -353,7 +378,10 @@ fun ConfigurationPanel(
                         modifier = Modifier
                             .weight(1f)
                             .clickable { onMapSizeSelect(mapSize) }
-                            .background(if (isSelected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.surfaceVariant
+                                else MaterialTheme.colorScheme.surface
+                            )
                             .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -366,7 +394,10 @@ fun ConfigurationPanel(
                 }
             }
 
-            Text("COMMANDER CALLSIGN", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 8.dp))
+            Text(
+                "COMMANDER CALLSIGN", style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
             TextField(
                 value = commanderCallsign,
                 onValueChange = onCallsignChange,
@@ -398,7 +429,8 @@ fun FactionCard(
     onClick: () -> Unit
 ) {
     val borderColor = if (isSelected) getFactionColor(faction) else MaterialTheme.colorScheme.surfaceVariant
-    val backgroundColor = if (isSelected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
+    val backgroundColor = if (isSelected) MaterialTheme.colorScheme.surfaceVariant
+        else MaterialTheme.colorScheme.surface
 
     Box(
         modifier = Modifier
