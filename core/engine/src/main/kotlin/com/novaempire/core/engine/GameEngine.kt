@@ -1,15 +1,15 @@
 package com.novaempire.core.engine
 
 import com.novaempire.core.domain.models.Faction
+import com.novaempire.core.domain.models.GameUnit
 import com.novaempire.core.domain.models.MapArchetype
 import com.novaempire.core.domain.models.MapSize
-import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.models.TechRegistry
+import com.novaempire.core.domain.models.TerrainType
 import com.novaempire.core.domain.models.UnitType
 import com.novaempire.core.domain.state.GameState
 import com.novaempire.core.domain.state.PlayerState
 import com.novaempire.core.hex.HexCoord
-import com.novaempire.core.domain.models.GameUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -102,12 +102,13 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         }
     }
 
-    private fun createInitialState(mapSize: MapSize, archetype: MapArchetype): GameState {
+    private fun createInitialState(mapSize: MapSize, archetype: MapArchetype, missionId: String? = null): GameState {
         // Draw a fresh seed from the injected RNG so every new game produces a different
         // galaxy. Without this the factory falls back to its default fixed seed and every
         // party — STANDARD or ZODIAC — would generate the exact same map. Tests inject a
         // deterministic Random, keeping map generation reproducible where it matters.
-        val map = MapFactory.generateMap(radius = mapSize.radius, archetype = archetype, seed = deps.rng.nextLong())
+        val map = if (missionId == "mission_1") MapFactory.awakeningMap()
+        else MapFactory.generateMap(radius = mapSize.radius, archetype = archetype, seed = deps.rng.nextLong())
         val spawnPoints = MapFactory.spawnPointsFor(mapSize.radius).filter { map.tiles.containsKey(it) }
         val units = mutableMapOf<HexCoord, GameUnit>()
         val playerStates = mutableMapOf<Faction, PlayerState>()
@@ -253,7 +254,9 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
             val nextBuildQueue = currentState.playerStates[humanFaction]?.buildQueue ?: emptyList()
             if (prevBuildQueue.size > nextBuildQueue.size) {
                 val count = prevBuildQueue.size - nextBuildQueue.size
-                _effects.emit(GameEffect.ShowNotification("$count UNIT${if (count > 1) "S" else ""} READY FOR DEPLOYMENT", "CYAN"))
+                _effects.emit(
+                    GameEffect.ShowNotification("$count UNIT${if (count > 1) "S" else ""} READY FOR DEPLOYMENT", "CYAN")
+                )
             }
 
             if (prevState.activeEvent != currentState.activeEvent &&
@@ -393,11 +396,11 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
             _effects.emit(GameEffect.ShakeCamera)
         }
         val outcome = if (combat.targetDestroyed) "$attackerName DESTROYED $defenderName"
-                      else "$attackerName HIT $defenderName"
+        else "$attackerName HIT $defenderName"
         _effects.emit(GameEffect.ShowNotification(outcome, "RED"))
         if (animate) {
             _effects.emit(if (combat.targetDestroyed) GameEffect.PlaySound("COMBAT_EXPLOSION")
-                          else GameEffect.PlaySound("COMBAT_LASER"))
+            else GameEffect.PlaySound("COMBAT_LASER"))
         }
     }
 
@@ -466,7 +469,7 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         val e = state.activeEvent
         val target = state.eventTargetFaction
         return if (target != null) "${e.displayName} → ${target.displayName}: ${e.description}"
-               else "${e.displayName}: ${e.description}"
+        else "${e.displayName}: ${e.description}"
     }
 
     // ── Reducer dispatcher ────────────────────────────────────────────────────
@@ -475,7 +478,10 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         is GameIntent.StartNewGame ->
             GameResult(createInitialState(MapSize.MEDIUM, MapArchetype.STANDARD).keepingCampaignProgress(state))
         is GameIntent.StartNewGameWithSize ->
-            GameResult(createInitialState(intent.mapSize, intent.archetype).keepingCampaignProgress(state))
+            GameResult(
+                createInitialState(intent.mapSize, intent.archetype, intent.missionId)
+                    .keepingCampaignProgress(state)
+            )
         is GameIntent.LoadGame ->
             // A save carries the campaign record as it stood when the file was written, which can
             // be older than the durable progress store the engine was seeded with at boot.
@@ -496,19 +502,19 @@ class GameEngine(private val deps: GameEngineDependencies = GameEngineDependenci
         is GameIntent.Undo -> GameResult(state)
         is GameIntent.SelectFaction ->
             GameResult(state.copy(activeFaction = intent.faction, humanFaction = intent.faction))
-        is GameIntent.MoveUnit     -> handleMoveUnit(state, intent, deps)
-        is GameIntent.AttackUnit   -> handleAttackUnit(state, intent, deps)
+        is GameIntent.MoveUnit -> handleMoveUnit(state, intent, deps)
+        is GameIntent.AttackUnit -> handleAttackUnit(state, intent, deps)
         is GameIntent.ResearchTech -> handleResearchTech(state, intent)
         is GameIntent.CancelResearch -> handleCancelResearch(state)
-        is GameIntent.BuildUnit    -> handleBuildUnit(state, intent)
-        is GameIntent.RecruitHero  -> handleRecruitHero(state, intent)
+        is GameIntent.BuildUnit -> handleBuildUnit(state, intent)
+        is GameIntent.RecruitHero -> handleRecruitHero(state, intent)
         is GameIntent.ChangeRelation -> handleChangeRelation(state, intent)
-        is GameIntent.SiegePlanet  -> handleSiegePlanet(state, intent, deps)
+        is GameIntent.SiegePlanet -> handleSiegePlanet(state, intent, deps)
         is GameIntent.CapturePlanet -> handleCapturePlanet(state, intent, deps)
         is GameIntent.UpgradeSystem -> handleUpgradeSystem(state, intent)
-        is GameIntent.CancelBuild  -> handleCancelBuild(state, intent)
-        is GameIntent.LoadUnit     -> handleLoadUnit(state, intent)
-        is GameIntent.DeployUnit   -> handleDeployUnit(state, intent)
+        is GameIntent.CancelBuild -> handleCancelBuild(state, intent)
+        is GameIntent.LoadUnit -> handleLoadUnit(state, intent)
+        is GameIntent.DeployUnit -> handleDeployUnit(state, intent)
         is GameIntent.UseHeroAbility -> handleUseHeroAbility(state, intent)
     }
 }
@@ -525,11 +531,15 @@ sealed class GameIntent {
     object CancelResearch : GameIntent()
     data class BuildUnit(val unitType: UnitType, val location: HexCoord? = null) : GameIntent()
     data class RecruitHero(val heroId: String) : GameIntent()
-    data class ChangeRelation(val targetFaction: Faction, val newRelation: com.novaempire.core.domain.models.DiplomaticRelation) : GameIntent()
+    data class ChangeRelation(
+        val targetFaction: Faction,
+        val newRelation: com.novaempire.core.domain.models.DiplomaticRelation
+    ) : GameIntent()
     object StartNewGame : GameIntent()
     data class StartNewGameWithSize(
         val mapSize: MapSize = MapSize.MEDIUM,
-        val archetype: MapArchetype = MapArchetype.STANDARD
+        val archetype: MapArchetype = MapArchetype.STANDARD,
+        val missionId: String? = null
     ) : GameIntent()
     data class LoadGame(val loadedState: GameState) : GameIntent()
     data class SiegePlanet(val attackerCoord: HexCoord, val planetCoord: HexCoord) : GameIntent()

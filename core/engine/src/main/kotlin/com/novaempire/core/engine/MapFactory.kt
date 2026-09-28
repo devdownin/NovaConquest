@@ -134,6 +134,46 @@ class MapFactory {
             return GameMap(tiles, radius, archetype, zodiacNodes, seed)
         }
 
+        /** Hand-placed opening frontier for the main campaign. Uses the regular hex map and
+         * terrain vocabulary, so movement, fog, combat and saves follow the same rules. */
+        fun awakeningMap(): GameMap {
+            val radius = 5
+            val base = generateMap(radius, MapArchetype.STANDARD, seed = 20260927L)
+            val tiles = base.tiles.toMutableMap()
+            fun place(q: Int, r: Int, terrain: TerrainType, level: Int = 0,
+                specialty: PlanetSpecialty? = null) {
+                val coord = HexCoord(q, r, -q - r)
+                val old = tiles[coord] ?: return
+                tiles[coord] = old.copy(terrain = terrain, systemLevel = level, specialty = specialty)
+            }
+
+            // An open supply corridor links the Dominion outpost to the central crossing.
+            listOf(0 to -4, 0 to -3, 0 to -2, 0 to -1,
+                1 to -3, 1 to -2, 1 to -1, 2 to -2, 2 to -1).forEach { (q, r) ->
+                place(q, r, TerrainType.EMPTY)
+            }
+            place(0, -3, TerrainType.PLANET, 2, PlanetSpecialty.TRADE_POST)
+            place(2, -2, TerrainType.PLANET, 3, PlanetSpecialty.FORGE_WORLD)
+            place(-2, 0, TerrainType.PLANET, 2, PlanetSpecialty.RESEARCH_HUB)
+            place(0, 2, TerrainType.PLANET, 3)
+            place(3, 0, TerrainType.PLANET, 2)
+
+            // Two asteroid shelves frame the corridor; storms mark the Xylar approach.
+            listOf(-2 to -2, -1 to -2, -2 to -1, 2 to -4, 3 to -3,
+                3 to -2, -3 to 1).forEach { (q, r) -> place(q, r, TerrainType.ASTEROIDS) }
+            listOf(-1 to 1, 1 to 1).forEach { (q, r) -> place(q, r, TerrainType.NEBULA) }
+            place(2, 1, TerrainType.ION_STORM)
+            place(1, 2, TerrainType.PLASMA_CLOUD)
+
+            // Keep all faction capitals and every reachable world valid even after the layout.
+            spawnPointsFor(radius).forEach { coord ->
+                tiles[coord] = tiles.getValue(coord).copy(terrain = TerrainType.PLANET,
+                    systemLevel = 3, specialty = null)
+            }
+            ensureConnectivity(tiles, spawnPointsFor(radius))
+            return base.copy(tiles = tiles)
+        }
+
         /**
          * Places `radius/4` (1‑3) point‑symmetric wormhole pairs at mid‑ring anchors, skipping
          * spawns, planets, black holes and existing wormholes. With `tech_wormhole_nav` every

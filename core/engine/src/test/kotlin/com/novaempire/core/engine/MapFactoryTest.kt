@@ -91,7 +91,9 @@ class MapFactoryTest {
         // A wormhole anchor is skipped if it happens to land on a planet, so counts vary by
         // seed — compare the maximum reached across a spread of seeds instead of a single map.
         fun maxWormholes(radius: Int) = (0L until 20L).maxOf { seed ->
-            MapFactory.generateMap(radius = radius, seed = seed).tiles.values.count { it.terrain == TerrainType.WORMHOLE }
+            MapFactory.generateMap(radius = radius, seed = seed).tiles.values.count {
+                it.terrain == TerrainType.WORMHOLE
+            }
         }
         // Small maps attempt a single pair (<= 2 wormholes); large maps attempt up to three pairs.
         assertTrue("Small map should have at most one wormhole pair", maxWormholes(3) <= 2)
@@ -118,5 +120,32 @@ class MapFactoryTest {
         MapFactory.spawnPointsFor(5).forEach { coord ->
             assertEquals(TerrainType.PLANET, map.tiles[coord]?.terrain)
         }
+    }
+
+    @Test
+    fun awakeningFrontierIsPlayableAndStable() {
+        val map = MapFactory.awakeningMap()
+        assertEquals(91, map.tiles.size)
+        assertEquals(map, MapFactory.awakeningMap())
+        assertEquals(TerrainType.PLANET, map.tiles[HexCoord(0, -3, 3)]?.terrain)
+        assertEquals(TerrainType.ION_STORM, map.tiles[HexCoord(2, 1, -3)]?.terrain)
+        val reachable = reachableFrom(map, MapFactory.spawnPointsFor(5).first())
+        assertTrue(map.tiles.values.filter { it.terrain == TerrainType.PLANET }
+            .all { it.coord in reachable })
+        assertTrue(MapFactory.spawnPointsFor(5).all { it in reachable })
+    }
+
+    @Test
+    fun campaignBoardUsesFrontierWhileFreePlayRemainsProcedural() {
+        val engine = GameEngine(NoOpAI())
+        val initial = engine.state.value
+        val mission = engine.reduce(initial, GameIntent.StartNewGameWithSize(
+            missionId = "mission_1"
+        )).newState
+        assertEquals(MapFactory.awakeningMap().tiles.mapValues { it.value.terrain },
+            mission.map.tiles.mapValues { it.value.terrain })
+        assertEquals(TerrainType.PLANET, mission.map.tiles[HexCoord(0, -5, 5)]?.terrain)
+        assertEquals(com.novaempire.core.domain.models.Faction.DOMINION,
+            mission.map.tiles[HexCoord(0, -5, 5)]?.owner)
     }
 }

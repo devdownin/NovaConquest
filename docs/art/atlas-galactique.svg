@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="810" viewBox="0 0 1200 810" role="img" aria-label="Planche de direction artistique NovaConquest, terrains et interface">
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#111820"/><stop offset="1" stop-color="#0c1016"/></linearGradient>
+    <radialGradient id="planet"><stop stop-color="#b19b77"/><stop offset=".68" stop-color="#645e51"/><stop offset="1" stop-color="#2b3034"/></radialGradient>
+    <radialGradient id="nebula"><stop stop-color="#8b748e" stop-opacity=".9"/><stop offset="1" stop-color="#8b748e" stop-opacity="0"/></radialGradient>
+    <radialGradient id="rift"><stop stop-color="#141b26"/><stop offset=".4" stop-color="#334961"/><stop offset=".7" stop-color="#86aab3"/><stop offset="1" stop-color="#86aab3" stop-opacity="0"/></radialGradient>
+    <pattern id="grain" width="9" height="9" patternUnits="userSpaceOnUse"><circle cx="2" cy="3" r=".5" fill="#d7d3bd" opacity=".16"/><circle cx="7" cy="8" r=".4" fill="#d7d3bd" opacity=".12"/></pattern>
+    <path id="hex" d="M0 -91 L79 -45 L79 45 L0 91 L-79 45 L-79 -45 Z"/>
+    <style>text{font-family:Arial,sans-serif;fill:#e1ddce} .small{font-size:13px;letter-spacing:2px;fill:#a7acaf} .label{font-size:17px;letter-spacing:2px;font-weight:bold} .rule{stroke:#56636c;stroke-width:1} .hex{fill:#202a34;stroke:#6e7c82;stroke-width:2}</style>
+  </defs>
+  <rect width="1200" height="810" fill="url(#bg)"/><rect width="1200" height="810" fill="url(#grain)"/>
+  <path d="M44 121 H1156 M44 523 H1156" class="rule"/>
+  <text x="44" y="61" font-size="30" font-weight="bold" letter-spacing="4">NOVACONQUEST / ATLAS GALACTIQUE</text>
+  <text x="46" y="91" class="small">ENCRE · MÉTAL MAT · LUMIÈRE RARE / RÉFÉRENCE VISUELLE 01</text>
+  <g transform="translate(139 272)"><use href="#hex" class="hex"/><circle r="43" fill="url(#planet)" stroke="#111820" stroke-width="5"/><ellipse rx="59" ry="16" fill="none" stroke="#cbbd93" opacity=".75" stroke-width="2"/><path d="M-22 -21 Q-5 -33 15 -23" fill="none" stroke="#d6c9a6" stroke-width="2"/><circle cx="-20" cy="-19" r="4" fill="#e8dcc0"/><path d="M-75 -40 L-61 -40" stroke="#b28d64" stroke-width="3"/></g>
+  <g transform="translate(370 272)"><use href="#hex" class="hex"/><path d="M-55 12 L-38 -25 L-18 -32 L2 -5 L-14 31 L-48 37Z" fill="#776b5c" stroke="#161a1e" stroke-width="4"/><path d="M10 -43 L37 -38 L58 -13 L44 15 L16 11 L1 -18Z" fill="#9a8266" stroke="#161a1e" stroke-width="4"/><path d="M13 30 L30 23 L44 36 L30 47Z" fill="#776b5c"/><path d="M-38 -20 L-22 -26 M17 -31 L37 -27" stroke="#c6b49a" stroke-width="2"/></g>
+  <g transform="translate(601 272)"><use href="#hex" class="hex"/><circle cx="-20" cy="-3" r="56" fill="url(#nebula)"/><circle cx="28" cy="12" r="42" fill="url(#nebula)"/><path d="M-54 5 Q-10 -34 40 -12 M-29 34 Q20 0 54 11" fill="none" stroke="#b59bb1" opacity=".65" stroke-width="3"/><circle cx="29" cy="-25" r="3" fill="#d4ced0"/></g>
+  <g transform="translate(832 272)"><use href="#hex" class="hex"/><ellipse rx="61" ry="26" fill="none" stroke="#b37e58" stroke-width="9" transform="rotate(-22)"/><circle r="35" fill="#090e15" stroke="#b89067" stroke-width="3"/><path d="M-38 -33 Q-18 -51 14 -43" fill="none" stroke="#e2bd82" stroke-width="3"/></g>
+  <g transform="translate(1063 272)"><use href="#hex" class="hex"/><circle r="58" fill="url(#rift)"/><ellipse rx="54" ry="20" fill="none" stroke="#90b5bb" stroke-width="3" transform="rotate(-22)"/><ellipse rx="39" ry="13" fill="none" stroke="#b5d1cc" stroke-width="2" transform="rotate(25)"/><circle r="14" fill="#101927" stroke="#c0d4d0" stroke-width="3"/></g>
+  <text x="91" y="396" class="label">MONDE</text><text x="310" y="396" class="label">ASTÉROÏDES</text><text x="556" y="396" class="label">NÉBULEUSE</text><text x="779" y="396" class="label">TROU NOIR</text><text x="1008" y="396" class="label">FAILLE</text>
+  <text x="74" y="426" class="small">ANNEAU + SILHOUETTE</text><text x="312" y="426" class="small">MASSE ANGULEUSE</text><text x="555" y="426" class="small">VOILE EN COUCHES</text><text x="782" y="426" class="small">HORIZON SOMBRE</text><text x="1012" y="426" class="small">ELLIPSES</text>
+  <text x="44" y="493" class="small">ZOOM ÉLOIGNÉ : EMBLÈME / ZOOM NORMAL : MATIÈRE / ZOOM PROCHE : GRAVURE FINE</text>
+  <text x="44" y="567" class="small">INTERFACE / CHOIX DU JOUEUR EN PREMIER, ORNEMENT EN SECOND</text>
+  <rect x="44" y="593" width="725" height="162" rx="6" fill="#1a232c" stroke="#5a6c73" stroke-width="2"/>
+  <path d="M64 620 H749 M64 685 H749" class="rule"/>
+  <text x="68" y="614" font-size="13" letter-spacing="2" fill="#a9b5bb">SECTEUR 00 / FRONTIÈRE DU DOMINION</text>
+  <text x="68" y="659" font-size="27" font-weight="bold">THE AWAKENING</text>
+  <text x="68" y="720" font-size="16">Tenir 15 tours · Couloir logistique vers la bordure Xylar</text>
+  <rect x="795" y="593" width="361" height="162" rx="6" fill="#202b33" stroke="#b79568" stroke-width="2"/>
+  <text x="818" y="622" class="small">ACTION DISPONIBLE</text><text x="818" y="667" font-size="25" font-weight="bold">DÉPLACER LA FLOTTE</text>
+  <text x="818" y="716" font-size="15" fill="#c3c8c6">3 hexagones accessibles →</text>
+  <path d="M45 785 H1155" class="rule"/><text x="46" y="799" font-size="10" fill="#8d9a9e">Palette indicative : fonds #0C1016 / encre #161A1E / métal #56636C / accent Dominion #8B2A2A / chaleur #B79568</text>
+</svg>

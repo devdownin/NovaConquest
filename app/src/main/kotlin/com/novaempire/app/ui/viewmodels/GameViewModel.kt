@@ -3,31 +3,33 @@ package com.novaempire.app.ui.viewmodels
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.novaempire.app.audio.AudioManager
+import com.novaempire.app.audio.SoundType
+import com.novaempire.app.settings.AppSettings
+import com.novaempire.app.settings.SettingsStore
+import com.novaempire.core.domain.models.MapArchetype
+import com.novaempire.core.domain.models.MapSize
 import com.novaempire.core.domain.state.GameState
+import com.novaempire.core.engine.GameEffect
 import com.novaempire.core.engine.GameEngine
 import com.novaempire.core.engine.GameIntent
 import com.novaempire.core.engine.save.CampaignProgressRepository
 import com.novaempire.core.engine.save.CampaignProgressStore
+import com.novaempire.core.engine.save.LoadResult
 import com.novaempire.core.engine.save.SaveManager
 import com.novaempire.core.engine.save.SaveRepository
-import com.novaempire.app.audio.AudioManager
-import com.novaempire.app.audio.SoundType
-import com.novaempire.core.engine.GameEffect
-import com.novaempire.core.engine.save.LoadResult
-import com.novaempire.app.settings.AppSettings
-import com.novaempire.app.settings.SettingsStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -164,7 +166,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun dispatch(intent: GameIntent) {
         // Play UI click for every user intent
         AudioManager.playSound(SoundType.UI_CLICK)
-        
+
         engine.processIntent(intent)
 
         // Sound on EndTurn. The autosave itself happens in the turn-counter observer above,
@@ -215,8 +217,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startNewGame(
-        mapSize: com.novaempire.core.domain.models.MapSize = com.novaempire.core.domain.models.MapSize.MEDIUM,
-        archetype: com.novaempire.core.domain.models.MapArchetype = com.novaempire.core.domain.models.MapArchetype.STANDARD
+        mapSize: MapSize = MapSize.MEDIUM,
+        archetype: MapArchetype = MapArchetype.STANDARD
     ) {
         engine.processIntent(GameIntent.StartNewGameWithSize(mapSize, archetype))
     }
@@ -226,7 +228,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         perkIds: Set<String> = emptySet()
     ) {
         // Start a new game with mission parameters
-        engine.processIntent(GameIntent.StartNewGameWithSize(mission.mapSize, mission.mapArchetype))
+        engine.processIntent(GameIntent.StartNewGameWithSize(mission.mapSize, mission.mapArchetype, mission.id))
 
         // Select the correct faction
         engine.processIntent(GameIntent.SelectFaction(mission.playerFaction))
