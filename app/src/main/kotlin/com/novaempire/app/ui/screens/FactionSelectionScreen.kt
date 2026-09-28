@@ -24,8 +24,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,11 +43,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.novaempire.app.ui.components.HalftoneBackground
+import com.novaempire.app.ui.components.HeaderLine
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.components.IndustrialPanel
 import com.novaempire.app.ui.components.NoiseOverlay
-import com.novaempire.app.ui.components.HeaderLine
 import com.novaempire.app.ui.map.FactionBadge
+import com.novaempire.app.ui.theme.AncientBone
 import com.novaempire.app.ui.theme.NeonCyan
 import com.novaempire.app.ui.theme.NeonGold
 import com.novaempire.app.ui.theme.NeonGreen
@@ -57,8 +58,8 @@ import com.novaempire.app.ui.theme.TextSecondary
 import com.novaempire.app.ui.theme.XylarPurple
 import com.novaempire.core.domain.models.BonusType
 import com.novaempire.core.domain.models.Faction
-import com.novaempire.core.domain.models.MapSize
 import com.novaempire.core.domain.models.MapArchetype
+import com.novaempire.core.domain.models.MapSize
 
 @Composable
 fun FactionSelectionScreen(
@@ -299,7 +300,7 @@ fun FactionDetailPanel(selectedFaction: Faction) {
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
                     Column {
                         Text("STRATEGIC FOCUS", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                        val focus = when(selectedFaction) {
+                        val focus = when (selectedFaction) {
                             Faction.DOMINION -> "Military Dominance"
                             Faction.TRADERS -> "Economic Expansion"
                             Faction.SYNTH -> "Scientific Progress"
@@ -430,7 +431,7 @@ fun FactionCard(
 ) {
     val borderColor = if (isSelected) getFactionColor(faction) else MaterialTheme.colorScheme.surfaceVariant
     val backgroundColor = if (isSelected) MaterialTheme.colorScheme.surfaceVariant
-        else MaterialTheme.colorScheme.surface
+    else MaterialTheme.colorScheme.surface
 
     Box(
         modifier = Modifier
