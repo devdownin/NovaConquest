@@ -1170,7 +1170,9 @@ fun TacticalMapScreen(
                             if (tile.terrain == TerrainType.PLANET && tile.owner != null) {
                                 val markCenter = Offset(x, y)
                                 drawCircle(mapPalette.ink.copy(alpha = alpha), hexRadius * 0.25f, markCenter)
-                                drawFactionEmblem(markCenter, hexRadius * 0.17f, tile.owner, Color.White.copy(alpha = alpha))
+                                drawFactionEmblem(
+                                    markCenter, hexRadius * 0.17f, tile.owner, Color.White.copy(alpha = alpha)
+                                )
                             }
 
                             // Production indicator: small orange square on planet with active build order
