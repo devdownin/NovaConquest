@@ -92,8 +92,8 @@ import com.novaempire.app.ui.components.IndustrialPanel
 import com.novaempire.app.ui.components.motionMillis
 import com.novaempire.app.ui.components.pointAlongPath
 import com.novaempire.app.ui.components.rememberMotionLoop
-import com.novaempire.app.ui.map.MapDetailLevel
 import com.novaempire.app.ui.map.FactionBadge
+import com.novaempire.app.ui.map.MapDetailLevel
 import com.novaempire.app.ui.map.drawAnomaly
 import com.novaempire.app.ui.map.drawAsteroids
 import com.novaempire.app.ui.map.drawBlackHole

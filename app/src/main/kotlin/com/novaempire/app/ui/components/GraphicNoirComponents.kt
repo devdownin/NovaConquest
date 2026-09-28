@@ -24,18 +24,18 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import com.novaempire.app.ui.theme.BrunEncre
 import com.novaempire.app.ui.theme.NeonCyan
 import com.novaempire.app.ui.theme.SurfaceDark
 import com.novaempire.app.ui.theme.TextSecondary
 
-val OutlineColor = Color(0xFF3D3428)   // rouille sombre, pas gris froid
+val OutlineColor = Color(0xFF3D3428) // rouille sombre, pas gris froid
 
 // 1. Boulon rouillé
 @Composable
@@ -54,7 +54,7 @@ fun BilalPanel(
     accentColor: Color = NeonCyan,
     content: @Composable BoxScope.() -> Unit
 ) {
-    val shape = CutCornerShape(topStart = 6.dp, bottomEnd = 6.dp)  // asymétrique BD
+    val shape = CutCornerShape(topStart = 6.dp, bottomEnd = 6.dp) // asymétrique BD
     Box(
         modifier = modifier
             .clip(shape)
@@ -150,7 +150,7 @@ fun IndustrialButton(
             .fillMaxWidth()
             .clip(shape)
             .background(backgroundColor)
-            .border(2.dp, borderColor, shape)   // 2dp encre
+            .border(2.dp, borderColor, shape) // 2dp encre
             .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 14.dp, horizontal = 22.dp),
         contentAlignment = Alignment.Center
