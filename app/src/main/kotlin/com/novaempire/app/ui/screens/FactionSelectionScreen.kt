@@ -2,36 +2,64 @@ package com.novaempire.app.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.novaempire.app.ui.components.HalftoneBackground
+import com.novaempire.app.ui.components.HeaderLine
 import com.novaempire.app.ui.components.IndustrialButton
 import com.novaempire.app.ui.components.IndustrialPanel
 import com.novaempire.app.ui.components.NoiseOverlay
-import com.novaempire.app.ui.components.HeaderLine
-import com.novaempire.app.ui.theme.*
+import com.novaempire.app.ui.map.FactionBadge
+import com.novaempire.app.ui.theme.AncientBone
+import com.novaempire.app.ui.theme.NeonCyan
+import com.novaempire.app.ui.theme.NeonGold
+import com.novaempire.app.ui.theme.NeonGreen
+import com.novaempire.app.ui.theme.NeonOrange
+import com.novaempire.app.ui.theme.NeonRed
+import com.novaempire.app.ui.theme.TextSecondary
+import com.novaempire.app.ui.theme.XylarPurple
+import com.novaempire.core.domain.models.BonusType
 import com.novaempire.core.domain.models.Faction
-import com.novaempire.core.domain.models.MapSize
 import com.novaempire.core.domain.models.MapArchetype
+import com.novaempire.core.domain.models.MapSize
 
 @Composable
 fun FactionSelectionScreen(
@@ -218,7 +246,10 @@ fun FactionDetailPanel(selectedFaction: Faction) {
             Text(
                 text = selectedFaction.description,
                 style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.padding(start = 16.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)).padding(8.dp)
+                modifier = Modifier
+                    .padding(start = 16.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
+                    .padding(8.dp)
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -228,33 +259,48 @@ fun FactionDetailPanel(selectedFaction: Faction) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 val bonuses = mutableListOf<String>()
-                if (selectedFaction.bonusAttack > 0) bonuses.add("+${(selectedFaction.bonusAttack * 100).toInt()}% Attack")
+                if (selectedFaction.bonusAttack > 0) {
+                    bonuses.add("+${(selectedFaction.bonusAttack * 100).toInt()}% Attack")
+                }
                 if (selectedFaction.bonusCredits > 0) bonuses.add("+${selectedFaction.bonusCredits} Credits/Turn")
-                if (selectedFaction.bonusTechDiscount > 0) bonuses.add("-${(selectedFaction.bonusTechDiscount * 100).toInt()}% Tech Cost")
+                if (selectedFaction.bonusTechDiscount > 0) {
+                    bonuses.add("-${(selectedFaction.bonusTechDiscount * 100).toInt()}% Tech Cost")
+                }
                 if (selectedFaction.bonusMovement > 0) bonuses.add("+${selectedFaction.bonusMovement} Movement")
                 if (selectedFaction.bonusVision > 0) bonuses.add("+${selectedFaction.bonusVision} Vision Range")
                 selectedFaction.extraBonuses.forEach { bonus ->
                     bonuses.add(when (bonus.type) {
-                        com.novaempire.core.domain.models.BonusType.UNIT_HP_ON_SPAWN -> "+${bonus.value} HP on new units"
-                        com.novaempire.core.domain.models.BonusType.INCOME_PERCENT -> "+${bonus.value}% Income"
-                        com.novaempire.core.domain.models.BonusType.RESEARCH_SPEED -> "+${bonus.value} Research Speed"
-                        com.novaempire.core.domain.models.BonusType.UPKEEP_MODIFIER -> "${bonus.value} Upkeep/unit"
-                        com.novaempire.core.domain.models.BonusType.CAPTURE_START_LEVEL -> "Captured worlds +${bonus.value} level"
-                        com.novaempire.core.domain.models.BonusType.PRODUCTION_SPEED -> "+${bonus.value} Production Speed"
+                        BonusType.UNIT_HP_ON_SPAWN -> "+${bonus.value} HP on new units"
+                        BonusType.INCOME_PERCENT -> "+${bonus.value}% Income"
+                        BonusType.RESEARCH_SPEED -> "+${bonus.value} Research Speed"
+                        BonusType.UPKEEP_MODIFIER -> "${bonus.value} Upkeep/unit"
+                        BonusType.CAPTURE_START_LEVEL -> "Captured worlds +${bonus.value} level"
+                        BonusType.PRODUCTION_SPEED -> "+${bonus.value} Production Speed"
                         else -> bonus.type.name
                     })
                 }
 
-                Box(modifier = Modifier.widthIn(min = 200.dp).weight(1f, fill = false).padding(12.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
+                Box(modifier = Modifier
+                    .widthIn(min = 200.dp)
+                    .weight(1f, fill = false)
+                    .padding(12.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
                     Column {
                         Text("FACTION BONUS", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                        Text(bonuses.joinToString(", ").ifEmpty { "No specific bonuses" }, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            bonuses.joinToString(", ").ifEmpty { "No specific bonuses" },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
                 }
-                Box(modifier = Modifier.widthIn(min = 200.dp).weight(1f, fill = false).padding(12.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
+                Box(modifier = Modifier
+                    .widthIn(min = 200.dp)
+                    .weight(1f, fill = false)
+                    .padding(12.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
                     Column {
                         Text("STRATEGIC FOCUS", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                        val focus = when(selectedFaction) {
+                        val focus = when (selectedFaction) {
                             Faction.DOMINION -> "Military Dominance"
                             Faction.TRADERS -> "Economic Expansion"
                             Faction.SYNTH -> "Scientific Progress"
@@ -292,7 +338,10 @@ fun ConfigurationPanel(
             )
             HeaderLine(color = TextSecondary, modifier = Modifier.padding(bottom = 24.dp))
 
-            Text("GALAXY ARCHETYPE", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 8.dp))
+            Text(
+                "GALAXY ARCHETYPE", style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
@@ -303,7 +352,10 @@ fun ConfigurationPanel(
                         modifier = Modifier
                             .weight(1f)
                             .clickable { onArchetypeSelect(archetype) }
-                            .background(if (isSelected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.surfaceVariant
+                                else MaterialTheme.colorScheme.surface
+                            )
                             .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -327,7 +379,10 @@ fun ConfigurationPanel(
                         modifier = Modifier
                             .weight(1f)
                             .clickable { onMapSizeSelect(mapSize) }
-                            .background(if (isSelected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.surfaceVariant
+                                else MaterialTheme.colorScheme.surface
+                            )
                             .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -340,7 +395,10 @@ fun ConfigurationPanel(
                 }
             }
 
-            Text("COMMANDER CALLSIGN", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 8.dp))
+            Text(
+                "COMMANDER CALLSIGN", style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
             TextField(
                 value = commanderCallsign,
                 onValueChange = onCallsignChange,
@@ -372,7 +430,8 @@ fun FactionCard(
     onClick: () -> Unit
 ) {
     val borderColor = if (isSelected) getFactionColor(faction) else MaterialTheme.colorScheme.surfaceVariant
-    val backgroundColor = if (isSelected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
+    val backgroundColor = if (isSelected) MaterialTheme.colorScheme.surfaceVariant
+    else MaterialTheme.colorScheme.surface
 
     Box(
         modifier = Modifier
@@ -383,12 +442,7 @@ fun FactionCard(
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                Icons.Default.Menu,
-                contentDescription = null,
-                tint = if (isSelected) getFactionColor(faction) else TextSecondary,
-                modifier = Modifier.size(40.dp).padding(bottom = 8.dp)
-            )
+            FactionBadge(faction, modifier = Modifier.size(40.dp).padding(bottom = 8.dp))
             Text(
                 text = faction.name,
                 style = MaterialTheme.typography.labelLarge,

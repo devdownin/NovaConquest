@@ -92,20 +92,22 @@ import com.novaempire.app.ui.components.IndustrialPanel
 import com.novaempire.app.ui.components.motionMillis
 import com.novaempire.app.ui.components.pointAlongPath
 import com.novaempire.app.ui.components.rememberMotionLoop
+import com.novaempire.app.ui.map.FactionBadge
 import com.novaempire.app.ui.map.MapDetailLevel
 import com.novaempire.app.ui.map.drawAnomaly
 import com.novaempire.app.ui.map.drawAsteroids
 import com.novaempire.app.ui.map.drawBlackHole
 import com.novaempire.app.ui.map.drawCombatReadout
 import com.novaempire.app.ui.map.drawExplosionShards
+import com.novaempire.app.ui.map.drawFactionEmblem
 import com.novaempire.app.ui.map.drawHexagonPath
+import com.novaempire.app.ui.map.drawIdentifiedUnit
 import com.novaempire.app.ui.map.drawIonStorm
 import com.novaempire.app.ui.map.drawNebula
 import com.novaempire.app.ui.map.drawPlanet
 import com.novaempire.app.ui.map.drawPlasmaCloud
 import com.novaempire.app.ui.map.drawTerrainEmblem
 import com.novaempire.app.ui.map.drawTerrainEngraving
-import com.novaempire.app.ui.map.drawUnit
 import com.novaempire.app.ui.map.drawWormhole
 import com.novaempire.app.ui.map.mapDetailLevel
 import com.novaempire.app.ui.theme.NeonCyan
@@ -1165,6 +1167,15 @@ fun TacticalMapScreen(
                                 }
                             }
 
+                            val owner = tile.owner
+                            if (tile.terrain == TerrainType.PLANET && owner != null) {
+                                val markCenter = Offset(x, y)
+                                drawCircle(mapPalette.ink.copy(alpha = alpha), hexRadius * 0.25f, markCenter)
+                                drawFactionEmblem(
+                                    markCenter, hexRadius * 0.17f, owner, Color.White.copy(alpha = alpha)
+                                )
+                            }
+
                             // Production indicator: small orange square on planet with active build order
                             if (tile.terrain == TerrainType.PLANET && buildingPlanets.contains(tile.coord)) {
                                 val iconSize = hexRadius * 0.22f
@@ -1268,7 +1279,7 @@ fun TacticalMapScreen(
                         val ux = centerX + horizSpacing * (unit.position.q + unit.position.r / 2f)
                         val uy = centerY + vertSpacing * unit.position.r
                         if (!onScreen(ux, uy)) return@forEach
-                        drawUnit(ux, uy, unit, hexRadius, mapPalette)
+                        drawIdentifiedUnit(ux, uy, unit, hexRadius, mapPalette)
                     }
                 }
 
@@ -1408,7 +1419,7 @@ fun TacticalMapScreen(
                                 rotate(degrees = explosionScale.value * 140f, pivot = Offset(wx, wy))
                                 scale(scaleX = shrink, scaleY = shrink, pivot = Offset(wx, wy))
                             }) {
-                                drawUnit(wx, wy, dead.unit, hexRadius, mapPalette)
+                                drawIdentifiedUnit(wx, wy, dead.unit, hexRadius, mapPalette)
                             }
                         }
                     }
@@ -1518,7 +1529,7 @@ fun TacticalMapScreen(
                                     start = points[reached], end = position, strokeWidth = 3f
                                 )
                             }
-                            drawUnit(position.x, position.y, anim.unit, hexRadius, mapPalette)
+                            drawIdentifiedUnit(position.x, position.y, anim.unit, hexRadius, mapPalette)
                         }
                     }
                 }
@@ -1603,10 +1614,9 @@ fun TacticalMapScreen(
                     Text(gameState.turn.toString(), style = MaterialTheme.typography.labelLarge, color = NeonCyan)
                 }
 
-                // Active Faction (colored dot)
+                // Active faction emblem
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(modifier = Modifier.size(12.dp).background(activeFactionColor,
-                        shape = androidx.compose.foundation.shape.CircleShape))
+                    FactionBadge(gameState.activeFaction, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(gameState.activeFaction.name, style = MaterialTheme.typography.labelLarge,
                         color = activeFactionColor)
@@ -1709,9 +1719,15 @@ fun TacticalMapScreen(
                                 Row(modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text("Owner", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                                    Text(tile.owner?.name ?: "NEUTRAL",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = tile.owner?.let { getFactionColor(it) } ?: NeonGreen)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        tile.owner?.let { owner ->
+                                            FactionBadge(owner, modifier = Modifier.size(18.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                        }
+                                        Text(tile.owner?.name ?: "NEUTRAL",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = tile.owner?.let { getFactionColor(it) } ?: NeonGreen)
+                                    }
                                 }
                                 Row(modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween) {

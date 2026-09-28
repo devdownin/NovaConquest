@@ -3,13 +3,18 @@ package com.novaempire.app.ui.theme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import com.novaempire.app.R
 
-// Note: swap FontFamily.Default with Libre Baskerville Bold + Space Mono once TTFs are in res/font
-val RajdhaniFamily = FontFamily.Monospace
-val InterFamily    = FontFamily.Monospace
+// Local assets keep the display and body hierarchy stable offline and across Android versions.
+val RajdhaniFamily = FontFamily(Font(R.font.rajdhani_bold, weight = FontWeight.Bold))
+val InterFamily = FontFamily(
+    Font(R.font.inter_regular, weight = FontWeight.Normal),
+    Font(R.font.inter_semibold, weight = FontWeight.SemiBold)
+)
 
 /**
  * La typographie tire ses couleurs du [ColorScheme] actif au lieu de les figer sur la palette
@@ -26,45 +31,45 @@ val InterFamily    = FontFamily.Monospace
 fun novaTypography(colorScheme: ColorScheme, highContrast: Boolean = false): Typography = Typography(
     displayLarge = TextStyle(
         fontFamily = RajdhaniFamily,
-        fontWeight = FontWeight.Black,
-        fontSize = 48.sp,
-        letterSpacing = 4.sp,          // titre grande affiche BD
+        fontWeight = FontWeight.Bold,
+        fontSize = 42.sp,
+        letterSpacing = 1.sp,
         color = colorScheme.onBackground
     ),
     headlineLarge = TextStyle(
         fontFamily = RajdhaniFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 30.sp,
-        letterSpacing = 3.sp,
+        fontSize = 28.sp,
+        letterSpacing = 0.7.sp,
         color = colorScheme.onBackground
     ),
     headlineMedium = TextStyle(
         fontFamily = RajdhaniFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 22.sp,
-        letterSpacing = 2.sp,
+        letterSpacing = 0.4.sp,
         color = colorScheme.onBackground
     ),
     bodyLarge = TextStyle(
         fontFamily = InterFamily,
         fontWeight = FontWeight.Normal,
-        fontSize = 15.sp,
-        lineHeight = 22.sp,
-        letterSpacing = 0.3.sp,
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
+        letterSpacing = 0.sp,
         color = colorScheme.onBackground
     ),
     bodyMedium = TextStyle(
         fontFamily = InterFamily,
         fontWeight = FontWeight.Normal,
-        fontSize = 13.sp,
-        lineHeight = 19.sp,
+        fontSize = 14.sp,
+        lineHeight = 21.sp,
         color = if (highContrast) colorScheme.onBackground else colorScheme.onSurfaceVariant
     ),
     labelLarge = TextStyle(
         fontFamily = RajdhaniFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 13.sp,
-        letterSpacing = 2.sp,          // uppercase espacé style gazette
+        fontSize = 14.sp,
+        letterSpacing = 0.6.sp,
         color = colorScheme.onBackground
     )
 )

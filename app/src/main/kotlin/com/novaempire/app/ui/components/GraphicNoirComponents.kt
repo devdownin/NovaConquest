@@ -5,7 +5,17 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -14,19 +24,18 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import com.novaempire.app.ui.theme.BrunEncre
 import com.novaempire.app.ui.theme.NeonCyan
 import com.novaempire.app.ui.theme.SurfaceDark
 import com.novaempire.app.ui.theme.TextSecondary
 
-val OutlineColor = Color(0xFF3D3428)   // rouille sombre, pas gris froid
+val OutlineColor = Color(0xFF3D3428) // rouille sombre, pas gris froid
 
 // 1. Boulon rouillé
 @Composable
@@ -45,7 +54,7 @@ fun BilalPanel(
     accentColor: Color = NeonCyan,
     content: @Composable BoxScope.() -> Unit
 ) {
-    val shape = CutCornerShape(topStart = 6.dp, bottomEnd = 6.dp)  // asymétrique BD
+    val shape = CutCornerShape(topStart = 6.dp, bottomEnd = 6.dp) // asymétrique BD
     Box(
         modifier = modifier
             .clip(shape)
@@ -72,7 +81,7 @@ fun BilalPanel(
     }
 }
 
-// 3. Panneau industriel classique (compatible ancien code)
+// 3. Quiet panels for everyday information; accent panels retain the industrial detailing.
 @Composable
 fun IndustrialPanel(
     modifier: Modifier = Modifier,
@@ -81,25 +90,22 @@ fun IndustrialPanel(
     shape: Shape = CutCornerShape(topStart = 4.dp, bottomEnd = 4.dp),
     content: @Composable BoxScope.() -> Unit
 ) {
-    // Lu depuis le thème plutôt que via un remember sans clé sur le singleton : le flou restait
-    // sinon figé sur la valeur du premier rendu et ignorait le thème choisi. Un CompositionLocal
-    // statique ne coûte rien dans le chemin de rendu.
+    val highlighted = borderColor != OutlineColor
     val blurRadius = com.novaempire.app.ui.theme.LocalGraphicsConfig.current.blurRadius
-    // Le flou « verre dépoli » est l'effet le plus coûteux de l'interface — c'est lui que coupe le
-    // réglage « Holographic Effects ».
     val blurEnabled = com.novaempire.app.settings.LocalDisplaySettings.current.holographicEffects
     Surface(
         modifier = modifier,
         color = Color.Transparent,
         shape = shape,
-        border = BorderStroke(2.dp, borderColor)
+        border = BorderStroke(if (highlighted) 2.dp else 1.dp, borderColor)
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             Box(
                 modifier = Modifier
                     .matchParentSize()
                     .then(
-                        if (blurEnabled && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                        if (highlighted && blurEnabled &&
+                            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                             Modifier.graphicsLayer {
                                 renderEffect = androidx.compose.ui.graphics.BlurEffect(
                                     blurRadius, blurRadius, androidx.compose.ui.graphics.TileMode.Clamp
@@ -114,10 +120,10 @@ fun IndustrialPanel(
                     .background(backgroundColor, shape)
             )
             content()
-            MountingBolt(Modifier.padding(5.dp).align(Alignment.TopStart))
-            MountingBolt(Modifier.padding(5.dp).align(Alignment.TopEnd))
-            MountingBolt(Modifier.padding(5.dp).align(Alignment.BottomStart))
-            MountingBolt(Modifier.padding(5.dp).align(Alignment.BottomEnd))
+            if (highlighted) {
+                MountingBolt(Modifier.padding(5.dp).align(Alignment.TopStart))
+                MountingBolt(Modifier.padding(5.dp).align(Alignment.BottomEnd))
+            }
         }
     }
 }
@@ -144,7 +150,7 @@ fun IndustrialButton(
             .fillMaxWidth()
             .clip(shape)
             .background(backgroundColor)
-            .border(2.dp, borderColor, shape)   // 2dp encre
+            .border(2.dp, borderColor, shape) // 2dp encre
             .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 14.dp, horizontal = 22.dp),
         contentAlignment = Alignment.Center
